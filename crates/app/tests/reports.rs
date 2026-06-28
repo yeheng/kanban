@@ -39,3 +39,21 @@ async fn ai_decisions_empty_when_no_runs() {
     assert!(t.rows.is_empty());
     assert_eq!(t.columns.len(), 5);
 }
+
+use app::service::reports::ReportTable;
+
+#[test]
+fn csv_has_header_and_rows() {
+    let t = ReportTable { title: "X".into(), columns: vec!["a".into(), "b".into()], rows: vec![vec!["1".into(), "2".into()]] };
+    let bytes = ReportService::to_csv(&t).unwrap();
+    let s = String::from_utf8(bytes).unwrap();
+    assert!(s.contains("a,b"));
+    assert!(s.contains("1,2"));
+}
+
+#[test]
+fn xlsx_is_zip() {
+    let t = ReportTable { title: "X".into(), columns: vec!["a".into()], rows: vec![vec!["1".into()]] };
+    let bytes = ReportService::to_xlsx(&t).unwrap();
+    assert_eq!(&bytes[..2], b"PK"); // xlsx is a ZIP
+}

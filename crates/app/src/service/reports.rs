@@ -157,3 +157,31 @@ async fn effective_daily_rate(pool: &SqlitePool, resource_id: i64, project_id: i
 
 fn fmt(v: f64) -> String { format!("{:.2}", v) }
 fn cols<const N: usize>(arr: [&str; N]) -> Vec<String> { arr.iter().map(|s| s.to_string()).collect() }
+
+/// Format generators (CSV / Excel / PDF). Pure: ReportTable → bytes.
+impl ReportService {
+    pub fn to_csv(t: &ReportTable) -> Result<Vec<u8>, AppError> {
+        let mut wtr = csv::Writer::from_writer(Vec::new());
+        wtr.write_record(&t.columns).map_err(|e| AppError::internal(e.to_string()))?;
+        for row in &t.rows {
+            wtr.write_record(row).map_err(|e| AppError::internal(e.to_string()))?;
+        }
+        wtr.into_inner().map_err(|e| AppError::internal(e.to_string()))
+    }
+
+    pub fn to_xlsx(t: &ReportTable) -> Result<Vec<u8>, AppError> {
+        use rust_xlsxwriter::{Workbook, XlsxError};
+        let map = |e: XlsxError| AppError::internal(e.to_string());
+        let mut wb = Workbook::new();
+        let sheet = wb.add_worksheet().set_name(&t.title).map_err(map)?;
+        for (c, col) in t.columns.iter().enumerate() {
+            sheet.write_string(0, c as u16, col).map_err(map)?;
+        }
+        for (r, row) in t.rows.iter().enumerate() {
+            for (c, val) in row.iter().enumerate() {
+                sheet.write_string((r + 1) as u32, c as u16, val).map_err(map)?;
+            }
+        }
+        wb.save_to_buffer().map_err(map)
+    }
+}
