@@ -23,6 +23,9 @@ onMounted(async () => {
       <router-link to="/kanban" style="display:block;padding:6px 0">看板 Kanban</router-link>
       <router-link to="/projects" style="display:block;padding:6px 0">项目 Projects</router-link>
       <router-link to="/resources" style="display:block;padding:6px 0">资源 Resources</router-link>
+      <router-link to="/dashboard" style="display:block;padding:6px 0">仪表盘 Dashboard</router-link>
+      <router-link to="/allocations" style="display:block;padding:6px 0">分配 Allocations</router-link>
+      <router-link to="/calendar" style="display:block;padding:6px 0">日历 Calendar</router-link>
       <hr />
       <small>项目：</small>
       <select v-model.number="projects.current" @change="projects.select(projects.current!)">
