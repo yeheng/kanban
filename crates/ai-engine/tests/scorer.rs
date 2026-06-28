@@ -1,6 +1,5 @@
 use ai_engine::scorer::{FallbackScorer, Scorer};
 use ai_engine::types::*;
-use std::collections::HashMap;
 
 fn res(id: i64, skills: &[(i64, i64)]) -> CandidateResource {
     CandidateResource { id, name: format!("R{}", id), skills: skills.iter().cloned().collect(),

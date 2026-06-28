@@ -35,11 +35,11 @@ impl Solver for GreedySolver {
 
         for t in order {
             let days = window_days(t.start, t.end);
-            let needed = (t.estimate_pd / days as f64).min(1.0).max(0.01);
+            let needed = (t.estimate_pd / days as f64).clamp(0.01, 1.0);
             // candidate resources: mandatory skills met, sorted by score desc
             let mut cands: Vec<&CandidateResource> = problem.resources.iter()
                 .filter(|r| t.skill_reqs.iter().filter(|rq| rq.is_mandatory)
-                    .all(|rq| r.skills.get(&rq.skill_id).map_or(false, |p| *p >= rq.min_proficiency)))
+                    .all(|rq| r.skills.get(&rq.skill_id).is_some_and(|p| *p >= rq.min_proficiency)))
                 .collect();
             cands.sort_by(|a, b| scores.get(&(b.id, t.id)).unwrap_or(&0.0)
                 .partial_cmp(scores.get(&(a.id, t.id)).unwrap_or(&0.0)).unwrap());

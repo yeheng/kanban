@@ -22,7 +22,7 @@ pub struct FallbackScorer;
 
 impl FallbackScorer {
     fn tokens(r: &CandidateResource) -> Vec<String> {
-        let mut v: Vec<String> = r.tags.iter().cloned().collect();
+        let mut v: Vec<String> = r.tags.to_vec();
         for (sid, prof) in &r.skills { v.push(format!("skill{}p{}", sid, prof / 3)); } // coarse bucket
         v.into_iter().map(|s| s.to_lowercase()).collect()
     }
