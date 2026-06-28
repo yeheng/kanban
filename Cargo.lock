@@ -1791,8 +1791,11 @@ dependencies = [
 name = "hr-kanban"
 version = "0.1.0"
 dependencies = [
+ "server",
  "tauri",
  "tauri-build",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

@@ -100,9 +100,10 @@ impl ReportService {
         let allocs = q.fetch_all(pool).await?;
 
         // Aggregate PD per (resource_id, project_id), then resolve rate per (resource, project).
-        use std::collections::HashMap;
-        let mut pd: HashMap<(i64, i64), f64> = HashMap::new();
-        let mut names: HashMap<(i64, i64), (String, String)> = HashMap::new();
+        // BTreeMap (not HashMap) so exported rows are in a stable, reproducible order.
+        use std::collections::BTreeMap;
+        let mut pd: BTreeMap<(i64, i64), f64> = BTreeMap::new();
+        let mut names: BTreeMap<(i64, i64), (String, String)> = BTreeMap::new();
         for (rid, rname, pid, pname, start, end, percent) in &allocs {
             let a = domain::Allocation { id: 0, resource_id: *rid, project_id: *pid, start: *start, end: *end, percent: *percent };
             let span = domain::Window { start: *start, end: *end };
@@ -166,7 +167,13 @@ impl ReportService {
         for row in &t.rows {
             wtr.write_record(row).map_err(|e| AppError::internal(e.to_string()))?;
         }
-        wtr.into_inner().map_err(|e| AppError::internal(e.to_string()))
+        let mut bytes = wtr.into_inner().map_err(|e| AppError::internal(e.to_string()))?;
+        // Prepend a UTF-8 BOM so Excel for Windows reads non-ASCII names correctly
+        // (the csv crate writes valid UTF-8 but no BOM; Excel defaults to ANSI without one).
+        let mut out = Vec::with_capacity(bytes.len() + 3);
+        out.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+        out.append(&mut bytes);
+        Ok(out)
     }
 
     pub fn to_xlsx(t: &ReportTable) -> Result<Vec<u8>, AppError> {

@@ -148,5 +148,7 @@ function triggerDownload(blob: Blob, filename: string): void {
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  // Defer revocation: a.click() only queues the navigation/download as a separate task,
+  // so revoking synchronously can race the browser's download (fails on Firefox/Safari).
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
