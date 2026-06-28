@@ -29,23 +29,38 @@ impl WorkloadService {
         let w = parse_window(start, end)?;
         let rows = AllocationsRepo::list_for_resource(pool, resource_id, start, end).await?;
         let allocs: Vec<domain::Allocation> = rows.iter().map(|r| r.to_domain()).collect();
-        let cap = capacity_pd(&cal, 0, resource_id, w); // 0 ⇒ global calendar
-        let wl = workload_pd(&cal, &allocs, resource_id, w);
-        let util = if cap > 0.0 { wl / cap } else { 0.0 };
         let threshold = effective_overload(pool, resource_id).await?;
-        Ok(ResourceSummary {
-            resource_id, capacity_pd: cap, workload_pd: wl, utilization: util, overloaded: util > threshold,
-        })
+        Ok(Self::summarize(&cal, &allocs, resource_id, w, threshold))
     }
 
     /// All resources whose utilization exceeds their effective threshold (Dashboard alert list).
+    /// The calendar is hydrated ONCE (not per resource) — `hydrate()` is 3 queries and
+    /// identical across resources in one request, so re-fetching it N times would be the
+    /// dominant cost at scale (design §4.9 <5ms target).
     pub async fn overloads(pool: &SqlitePool, start: &str, end: &str) -> Result<Vec<ResourceSummary>, AppError> {
+        let cal = hydrate(pool).await?;
+        let w = parse_window(start, end)?;
         let mut out = Vec::new();
         for r in db::ResourcesRepo::list_active(pool).await? {
-            let s = Self::resource_summary(pool, r.id, start, end).await?;
+            let rows = AllocationsRepo::list_for_resource(pool, r.id, start, end).await?;
+            let allocs: Vec<domain::Allocation> = rows.iter().map(|row| row.to_domain()).collect();
+            let threshold = effective_overload(pool, r.id).await?;
+            let s = Self::summarize(&cal, &allocs, r.id, w, threshold);
             if s.overloaded { out.push(s); }
         }
         Ok(out)
+    }
+
+    /// Pure aggregation shared by `resource_summary` and `overloads`: no DB access, so it
+    /// can be called in a loop without re-hydrating the calendar.
+    fn summarize(
+        cal: &domain::Calendar, allocs: &[domain::Allocation], resource_id: i64,
+        w: Window, threshold: f64,
+    ) -> ResourceSummary {
+        let cap = capacity_pd(cal, 0, resource_id, w); // 0 ⇒ global calendar
+        let wl = workload_pd(cal, allocs, resource_id, w);
+        let util = if cap > 0.0 { wl / cap } else { 0.0 };
+        ResourceSummary { resource_id, capacity_pd: cap, workload_pd: wl, utilization: util, overloaded: util > threshold }
     }
 }
 
