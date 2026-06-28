@@ -1,6 +1,10 @@
 pub mod allocations;
 pub mod projects;
 pub mod resources;
+pub mod skills;
+pub mod tags;
 pub use allocations::AllocationsRepo;
 pub use projects::ProjectsRepo;
 pub use resources::ResourcesRepo;
+pub use skills::SkillsRepo;
+pub use tags::TagsRepo;
