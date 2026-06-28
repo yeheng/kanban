@@ -9,7 +9,6 @@ db = { path = "../db" }
 domain = { path = "../domain" }
 
 axum = "0.8"
-chrono = { workspace = true }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate"] }
 tokio = { workspace = true }
 serde = { version = "1", features = ["derive"] }

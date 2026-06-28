@@ -1,5 +1,7 @@
 pub mod catalog;
+pub mod calendar;
 pub mod occupancy;
+pub mod optimization;
 pub mod projects;
 pub mod resources;
 pub mod tasks;

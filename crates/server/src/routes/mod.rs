@@ -5,6 +5,7 @@ pub mod allocations;
 pub mod calendar;
 pub mod catalog;
 pub mod gantt;
+pub mod optimization;
 pub mod projects;
 pub mod resources;
 pub mod tasks;
@@ -22,4 +23,5 @@ pub fn api_router() -> Router<AppState> {
         .merge(allocations::router())
         .merge(calendar::router())
         .merge(gantt::router())
+        .merge(optimization::router())
 }
