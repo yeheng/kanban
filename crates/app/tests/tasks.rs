@@ -52,3 +52,20 @@ async fn set_status_transitions() {
     let err = TasksService::set_status(&pool, tid, "bogus").await.unwrap_err();
     assert_eq!(err.code, "VALIDATION");
 }
+
+#[tokio::test]
+async fn task_create_rolls_back_on_child_failure() {
+    // A skill_id that doesn't exist must violate the FK and abort the whole tx —
+    // no orphan task row should remain. This verifies with_write_tx rollback.
+    let pool = fresh().await;
+    let pid = ProjectsService::create(&pool, "P", None, None, None, 5, 0.0).await.unwrap();
+
+    let res = TasksService::create(
+        &pool, pid, "Orphan", None, 1.0, None, None, false, 0,
+        &[(9999, 3, true, 1.0)], &[]).await; // skill_id 9999 does not exist
+    assert!(res.is_err(), "FK violation on skill_req must fail");
+
+    // No task row should survive the rollback.
+    let kb = TasksService::kanban(&pool, pid).await.unwrap();
+    assert!(kb.is_empty(), "task row must not persist after child-insert failure");
+}

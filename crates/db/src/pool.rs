@@ -26,6 +26,13 @@ pub async fn connect_with_key(url: &str, key: Option<&str>) -> Result<SqlitePool
         .foreign_keys(true)
         .busy_timeout(std::time::Duration::from_millis(5000));
     if let Some(k) = key {
+        // sqlx interpolates pragma values verbatim, so the passphrase is single-quoted
+        // here with `'` doubled per the SQL string-literal rule. A NUL byte would
+        // truncate the C string passed to SQLite and silently change the key, so
+        // reject it outright.
+        if k.contains('\0') {
+            return Err(DbError::Other("passphrase must not contain NUL bytes".into()));
+        }
         let escaped = k.replace('\'', "''");
         opts = opts.pragma("key", format!("'{}'", escaped));
     }

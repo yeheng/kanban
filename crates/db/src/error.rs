@@ -8,4 +8,6 @@ pub enum DbError {
     Migrate(#[from] sqlx::migrate::MigrateError),
     #[error("not found")]
     NotFound,
+    #[error("{0}")]
+    Other(String),
 }
