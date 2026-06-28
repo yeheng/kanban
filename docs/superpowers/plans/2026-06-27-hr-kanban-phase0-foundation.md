@@ -1091,13 +1091,27 @@ use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::SqlitePool;
 use std::str::FromStr;
 
-/// Connect to a SQLite file (or `:memory:`) with the design's PRAGMAs applied per
-/// connection (design §3.1). WAL is skipped for in-memory DBs (unsupported).
+/// Connect to a SQLite file (or `:memory:`), unencrypted (design §3.1 PRAGMAs).
+/// WAL is skipped for in-memory DBs (unsupported). Delegates to `connect_with_key`
+/// with `None`.
 pub async fn connect(url: &str) -> Result<SqlitePool, DbError> {
+    connect_with_key(url, None).await
+}
+
+/// Connect with optional SQLCipher encryption. When `key` is `Some`, `PRAGMA key`
+/// is issued **first** (SQLCipher requires the key before any other op) — honoring
+/// decision #55 (encryption default-on). The SQLCipher build is enabled via the
+/// `db` Cargo.toml (see Phase 1 Task 8); without it, `PRAGMA key` is a harmless no-op
+/// on plain SQLite, so headless `:memory:` tests (which pass `None`) are unaffected.
+pub async fn connect_with_key(url: &str, key: Option<&str>) -> Result<SqlitePool, DbError> {
     let mut opts = SqliteConnectOptions::from_str(url)?
         .create_if_missing(true)
         .foreign_keys(true)
-        .busy_timeout(std::time::Duration::from_millis(5000))
+        .busy_timeout(std::time::Duration::from_millis(5000));
+    if let Some(k) = key {
+        opts = opts.pragma("key", k); // SQLCipher key — MUST be the first pragma
+    }
+    opts = opts
         .pragma("synchronous", "NORMAL")
         .pragma("temp_store", "MEMORY");
     if !url.contains(":memory:") {
@@ -1199,44 +1213,45 @@ Implements the design's unified write-transaction helper (design §6.5 / §3.7):
 ```rust
 use crate::error::DbError;
 use sqlx::SqlitePool;
-use std::future::Future;
-use std::time::Duration;
+use std::pin::Pin;
 
 /// Run `f` inside a write transaction with busy-retry (design §6.5).
 ///
-/// `f` receives a pinned async closure returning `Result<T, DbError>`. On
-/// `SQLITE_BUSY` (single writer in WAL), the whole tx is retried with backoff
-/// up to 3 times.
-pub async fn with_write_tx<F, T, Fut>(pool: &SqlitePool, f: F) -> Result<T, DbError>
+/// Uses the canonical **borrowed-transaction callback** pattern so it compiles on
+/// stable Rust: `f` receives `&mut Transaction` and returns a pinned boxed future
+/// yielding `Result<T, DbError>`. The transaction is NOT returned — `with_write_tx`
+/// owns it and commits on `Ok`, drops (rolls back) on `Err`. On `SQLITE_BUSY`
+/// (single writer in WAL) the whole tx is retried with backoff up to 3 times.
+pub async fn with_write_tx<F, T>(pool: &SqlitePool, f: F) -> Result<T, DbError>
 where
-    F: Fn(sqlx::Transaction<'_, sqlx::Sqlite>) -> Fut + Send,
-    Fut: Future<Output = Result<(sqlx::Transaction<'_, sqlx::Sqlite>, T), DbError>> + Send,
+    F: for<'c> FnOnce(
+            &'c mut sqlx::Transaction<'c, sqlx::Sqlite>,
+        ) -> Pin<Box<dyn std::future::Future<Output = Result<T, DbError>> + Send + 'c>>,
     T: Send,
 {
-    let backoff = [Duration::from_millis(50), Duration::from_millis(100), Duration::from_millis(200)];
-    let mut last_err = None;
-    for &delay in backoff.iter().chain(std::iter::once(&Duration::ZERO)) {
-        let tx = pool.begin().await.map_err(|e| { last_err = Some(DbError::Sqlx(e)); DbError::Sqlx(sqlx::Error::PoolClosed) })?;
-        // acquire IMMEDIATE-like write lock: issue an immediate write to the busy_timeout-protected conn
-        // (sqlx begins a deferred tx; the first write upgrades it. busy_timeout handles contention.)
-        match f(tx).await {
-            Ok((tx, val)) => {
+    const BACKOFF_MS: [u64; 3] = [50, 100, 200];
+    let mut last: Option<DbError> = None;
+    for &ms in BACKOFF_MS.iter() {
+        let mut tx = pool.begin().await?;
+        match f(&mut tx).await {
+            Ok(val) => {
                 tx.commit().await?;
                 return Ok(val);
             }
             Err(DbError::Sqlx(sqlx::Error::Database(e))) if e.is_busy() => {
-                tokio::time::sleep(delay).await;
-                last_err = Some(DbError::Sqlx(sqlx::Error::Database(e)));
-                continue;
+                last = Some(DbError::Sqlx(sqlx::Error::Database(e)));
+                tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                return Err(e); // tx drops here -> rollback
+            }
         }
     }
-    Err(last_err.unwrap_or(DbError::NotFound))
+    Err(last.unwrap_or(DbError::NotFound))
 }
 ```
 
-> The closure signature returns `(Transaction, T)` so the transaction is handed back for commit/rollback. Callers commit by returning the tx; on error the tx drops and rolls back automatically.
+> **Why borrowed, not owned:** stable Rust cannot easily express an owned-`Transaction` async closure (the `(Transaction, T)` hand-back fights the borrow checker across the boxed future). The `for<'c> FnOnce(&'c mut Transaction<'c,_>) -> Pin<Box<Future + 'c>>` shape is the standard sqlx pattern. Callers use `&mut *tx` (reborrow as `Executor`) and return `Ok(value)`.
 
 - [ ] **Step 2: Write the failing test `crates/db/tests/tx.rs`**
 
@@ -1250,14 +1265,14 @@ async fn tx_commits_on_success() {
     let pool = connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
 
-    let id = with_write_tx(&pool, |mut tx| async move {
+    let id = with_write_tx(&pool, |tx| Box::pin(async move {
         sqlx::query("INSERT INTO skills (name) VALUES (?)")
             .bind("Rust")
             .execute(&mut *tx)
             .await?;
         let row: (i64,) = sqlx::query_as("SELECT count(*) FROM skills").fetch_one(&mut *tx).await?;
-        Ok((tx, row.0))
-    }).await.unwrap();
+        Ok(row.0)
+    })).await.unwrap();
     assert_eq!(id, 1);
 
     // visible after commit on a fresh connection
@@ -1270,12 +1285,12 @@ async fn tx_rolls_back_on_error() {
     let pool = connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
 
-    let res = with_write_tx(&pool, |mut tx| async move {
+    let res = with_write_tx(&pool, |tx| Box::pin(async move {
         sqlx::query("INSERT INTO skills (name) VALUES (?)").bind("Rust").execute(&mut *tx).await?;
-        // force a failure
-        let _ = sqlx::query("INSERT INTO no_such_table VALUES (1)").execute(&mut *tx).await?;
-        Ok((tx, ()))
-    }).await;
+        // force a failure -> closure returns Err -> with_write_tx drops tx (rollback)
+        sqlx::query("INSERT INTO no_such_table VALUES (1)").execute(&mut *tx).await?;
+        Ok(())
+    })).await;
     assert!(res.is_err());
 
     let count: (i64,) = sqlx::query_as("SELECT count(*) FROM skills").fetch_one(&pool).await.unwrap();
