@@ -7,12 +7,6 @@ edition.workspace = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-app = { path = "../crates/app" }
-db = { path = "../crates/db" }
-domain = { path = "../crates/domain" }
-tokio = { workspace = true }
-serde = { version = "1", features = ["derive"] }
-sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "chrono"] }
 tauri = { version = "2", features = [] }
 
 [features]
