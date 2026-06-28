@@ -12,5 +12,6 @@ export const router = createRouter({
     { path: "/resources", component: ResourcesView },
     { path: "/dashboard", component: () => import("./views/DashboardView.vue") },
     { path: "/allocations", component: () => import("./views/AllocationsView.vue") },
+    { path: "/calendar", component: () => import("./views/CalendarView.vue") },
   ],
 });
