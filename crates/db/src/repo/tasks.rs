@@ -81,3 +81,30 @@ impl TasksRepo {
             .bind(project_id).fetch_all(pool).await?)
     }
 }
+
+pub struct TaskDepsRepo;
+
+impl TaskDepsRepo {
+    pub async fn add(pool: &SqlitePool, task_id: i64, predecessor_id: i64, lag_days: i64) -> Result<(), DbError> {
+        sqlx::query(
+            "INSERT INTO task_dependencies (task_id, predecessor_id, lag_days) VALUES (?,?,?) \
+             ON CONFLICT(task_id, predecessor_id) DO UPDATE SET lag_days = excluded.lag_days")
+            .bind(task_id).bind(predecessor_id).bind(lag_days)
+            .execute(pool).await?;
+        Ok(())
+    }
+
+    /// All (task_id, predecessor_id) edges, for in-memory cycle detection.
+    pub async fn all_edges(pool: &SqlitePool) -> Result<Vec<(i64, i64)>, DbError> {
+        Ok(sqlx::query_as("SELECT task_id, predecessor_id FROM task_dependencies")
+            .fetch_all(pool).await?)
+    }
+
+    /// Direct predecessors of a task (for the Kanban/Gantt dependency display).
+    pub async fn predecessors(pool: &SqlitePool, task_id: i64) -> Result<Vec<i64>, DbError> {
+        let rows: Vec<(i64,)> = sqlx::query_as(
+            "SELECT predecessor_id FROM task_dependencies WHERE task_id = ?")
+            .bind(task_id).fetch_all(pool).await?;
+        Ok(rows.into_iter().map(|r| r.0).collect())
+    }
+}

@@ -50,3 +50,60 @@ impl TasksService {
         Ok(TasksRepo::list_kanban(pool, project_id).await?)
     }
 }
+
+use db::TaskDepsRepo;
+
+impl TasksService {
+    /// Add a dependency edge after checking it creates no cycle (design §3.3.12).
+    pub async fn add_dependency(
+        pool: &SqlitePool, task_id: i64, predecessor_id: i64, lag_days: i64,
+    ) -> Result<(), AppError> {
+        if task_id == predecessor_id {
+            return Err(domain::DomainError::InvalidRatio(0.0).into()); // self-dep invalid
+        }
+        // Tentative new edge set: existing edges + the proposed one.
+        let mut edges = TaskDepsRepo::all_edges(pool).await?;
+        edges.push((task_id, predecessor_id));
+        if has_cycle(&edges) {
+            return Err(domain::DomainError::DependencyCycle(task_id).into());
+        }
+        TaskDepsRepo::add(pool, task_id, predecessor_id, lag_days).await?;
+        Ok(())
+    }
+}
+
+/// Edge direction: task depends on predecessor (task must come after predecessor).
+/// A cycle in this graph means impossible ordering.
+fn has_cycle(edges: &[(i64, i64)]) -> bool {
+    use std::collections::{HashMap, HashSet};
+    let mut adj: HashMap<i64, Vec<i64>> = HashMap::new();
+    for &(t, p) in edges { adj.entry(p).or_default().push(t); } // p -> t
+    let nodes: HashSet<i64> = edges.iter().flat_map(|(t, p)| [*t, *p]).collect();
+    let mut white = nodes.clone();
+    while let Some(&start) = white.iter().next() {
+        let mut stack = vec![start];
+        let mut on_path = HashSet::new();
+        while let Some(&n) = stack.last() {
+            if !white.contains(&n) { stack.pop(); continue; }
+            white.remove(&n);
+            on_path.insert(n);
+            let neighbors = adj.get(&n).cloned().unwrap_or_default();
+            let mut descended = false;
+            for nb in neighbors {
+                if on_path.contains(&nb) { return true; } // back edge -> cycle
+                if white.contains(&nb) { stack.push(nb); descended = true; break; }
+            }
+            if !descended { on_path.remove(&n); stack.pop(); }
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod cycle_tests {
+    use super::has_cycle;
+    #[test]
+    fn acyclic_ok() { assert!(!has_cycle(&[(1, 2), (2, 3)])); }
+    #[test]
+    fn cycle_detected() { assert!(has_cycle(&[(1, 2), (2, 3), (3, 1)])); }
+}

@@ -9,4 +9,4 @@ pub use projects::ProjectsRepo;
 pub use resources::ResourcesRepo;
 pub use skills::SkillsRepo;
 pub use tags::TagsRepo;
-pub use tasks::{TaskCreate, TasksRepo};
+pub use tasks::{TaskCreate, TaskDepsRepo, TasksRepo};
