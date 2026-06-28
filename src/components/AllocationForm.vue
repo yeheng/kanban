@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import { useAllocationsStore } from "../stores/allocations";
 import { useResourcesStore } from "../stores/resources";
 import { useProjectsStore } from "../stores/projects";
@@ -33,7 +33,9 @@ async function submit() {
   }
 }
 resources.load();
-loadTasks();
+// Reload tasks whenever the selected project changes (sidebar switch) so the dropdown
+// never shows a stale project's tasks (review I1).
+watch(() => projects.current, () => { loadTasks(); }, { immediate: true });
 </script>
 <template>
   <form @submit.prevent="submit">

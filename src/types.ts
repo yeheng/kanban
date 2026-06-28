@@ -42,4 +42,6 @@ export interface Holiday { id: number; project_id: number | null; day: string; f
 export interface WeekTemplate {
   id: number; scope: string; project_id: number | null;
   mon: number; tue: number; wed: number; thu: number; fri: number; sat: number; sun: number;
+  mon_frac: number; tue_frac: number; wed_frac: number; thu_frac: number;
+  fri_frac: number; sat_frac: number; sun_frac: number;
 }

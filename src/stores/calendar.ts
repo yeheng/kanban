@@ -4,10 +4,13 @@ import { api } from "../api";
 import type { Holiday, WeekTemplate } from "../types";
 
 function weekFromTemplate(t: WeekTemplate | undefined): number[] {
-  // On/off bits are authoritative; frac is irrelevant to the editor (full vs half handled
-  // by the UI's own state). Reflect the bit as 1 (working) or 0 (off) — simplest correct read.
   if (!t) return [1, 1, 1, 1, 1, 0, 0];
-  return [t.mon, t.tue, t.wed, t.thu, t.fri, t.sat, t.sun].map((b) => (b ? 1 : 0));
+  // Mirror the backend's frac_of semantics (crates/db/src/repo/calendar.rs): the on/off bit
+  // is authoritative; an off-day yields 0 regardless of frac, a working day yields its frac.
+  // Reading the frac (not just the bit) is what makes half-days round-trip correctly.
+  const f = (bit: number, frac: number) => (bit ? frac : 0);
+  return [f(t.mon, t.mon_frac), f(t.tue, t.tue_frac), f(t.wed, t.wed_frac),
+          f(t.thu, t.thu_frac), f(t.fri, t.fri_frac), f(t.sat, t.sat_frac), f(t.sun, t.sun_frac)];
 }
 
 export const useCalendarStore = defineStore("calendar", () => {
