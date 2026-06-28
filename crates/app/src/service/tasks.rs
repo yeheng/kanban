@@ -52,8 +52,6 @@ impl TasksService {
     }
 }
 
-use db::TaskDepsRepo;
-
 impl TasksService {
     /// Add a dependency edge after checking it creates no cycle (design §3.3.12).
     pub async fn add_dependency(
@@ -62,13 +60,22 @@ impl TasksService {
         if task_id == predecessor_id {
             return Err(domain::DomainError::InvalidRatio(0.0).into()); // self-dep invalid
         }
-        // Tentative new edge set: existing edges + the proposed one.
-        let mut edges = TaskDepsRepo::all_edges(pool).await?;
+
+        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut edges: Vec<(i64, i64)> = sqlx::query_as(
+            "SELECT task_id, predecessor_id FROM task_dependencies")
+            .fetch_all(&mut *tx).await?;
         edges.push((task_id, predecessor_id));
         if has_cycle(&edges) {
             return Err(domain::DomainError::DependencyCycle(task_id).into());
         }
-        TaskDepsRepo::add(pool, task_id, predecessor_id, lag_days).await?;
+
+        sqlx::query(
+            "INSERT INTO task_dependencies (task_id, predecessor_id, lag_days) VALUES (?,?,?) \
+             ON CONFLICT(task_id, predecessor_id) DO UPDATE SET lag_days = excluded.lag_days")
+            .bind(task_id).bind(predecessor_id).bind(lag_days)
+            .execute(&mut *tx).await?;
+        tx.commit().await?;
         Ok(())
     }
 }

@@ -9,7 +9,14 @@ const gantt = useGanttStore();
 
 const startMs = computed(() => Date.parse(props.start));
 const totalDays = computed(() => Math.max(1, Math.round((Date.parse(props.end) - startMs.value) / 86400000) + 1));
-const days = computed(() => Array.from({ length: totalDays.value }, (_, i) => toStr(startMs.value + i * 86400000)));
+// DST-safe day list: advance via the Date object (wall-clock), not raw ms, so a
+// fall-back day doesn't duplicate a column.
+const days = computed(() => {
+  const out: string[] = [];
+  const d = new Date(startMs.value);
+  for (let i = 0; i < totalDays.value; i++) { out.push(toStr(d.getTime())); d.setDate(d.getDate() + 1); }
+  return out;
+});
 
 function dayIndexOf(dateStr: string) { return Math.round((Date.parse(dateStr) - startMs.value) / 86400000); }
 function barLeft(b: GanttBar) { return dayIndexOf(b.start_date) * DAY_W; }
@@ -57,19 +64,27 @@ function onUp() {
 // ---- dependency arrows (SVG overlay) ----
 type Arrow = { x1: number; y1: number; x2: number; y2: number };
 const arrows = computed<Arrow[]>(() => {
-  // map task_id -> bar position (pred end -> succ start)
-  const pos = new Map<number, { x: number; y: number }>();
+  // For each task, track the START-x and END-x of its earliest-starting bar
+  // (a task may have allocations across several resources). Arrows go from the
+  // predecessor's END (right edge) to the successor's START (left edge).
+  // Multi-resource tasks collapse to one endpoint — a known MVP simplification.
+  const pos = new Map<number, { startX: number; endX: number; y: number; startMs: number }>();
   let rowIdx = 0;
   for (const r of rows.value) {
     for (const b of r.bars) {
-      pos.set(b.task_id, { x: barLeft(b) + barWidth(b), y: rowIdx * 32 + 16 });
+      const left = barLeft(b);
+      const startMs = Date.parse(b.start_date);
+      const prev = pos.get(b.task_id);
+      if (!prev || startMs < prev.startMs) {
+        pos.set(b.task_id, { startX: left, endX: left + barWidth(b), y: rowIdx * 32 + 16, startMs });
+      }
     }
     rowIdx++;
   }
   const out: Arrow[] = [];
   for (const e of gantt.deps) {
     const p = pos.get(e.predecessor_id); const s = pos.get(e.task_id);
-    if (p && s) out.push({ x1: p.x, y1: p.y, x2: s.x, y2: s.y });
+    if (p && s) out.push({ x1: p.endX, y1: p.y, x2: s.startX, y2: s.y });
   }
   return out;
 });

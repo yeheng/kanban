@@ -31,7 +31,7 @@ async function toProjectMode() { gantt.mode = "project"; await safeLoad(); }
   <div style="margin-bottom:8px">
     模式：
     <button :disabled="gantt.mode==='project'" @click="toProjectMode">项目</button>
-    <select v-model.number="projects.current" @change="safeLoad" :disabled="gantt.mode!=='project'">
+    <select v-model.number="projects.current" :disabled="gantt.mode!=='project'">
       <option v-for="p in projects.items" :key="p.id" :value="p.id">{{ p.name }}</option>
     </select>
     <span> 或资源视角：</span>

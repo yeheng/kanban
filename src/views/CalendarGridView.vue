@@ -13,9 +13,14 @@ const items = ref<DayOccupancy[]>([]);
 const days = ref<string[]>([]);
 
 function buildDays() {
-  const out: string[] = []; let ms = Date.parse(start.value);
-  const endMs = Date.parse(end.value);
-  while (ms <= endMs) { out.push(toStr(ms)); ms += 86400000; }
+  // DST-safe: advance the Date object's day (wall-clock) instead of raw ms so a
+  // fall-back day doesn't produce a duplicate column.
+  const out: string[] = [];
+  const d0 = new Date(start.value + "T00:00:00");
+  const d1 = new Date(end.value + "T00:00:00");
+  for (let d = new Date(d0); d <= d1; d.setDate(d.getDate() + 1)) {
+    out.push(toStr(d.getTime()));
+  }
   days.value = out;
 }
 function toStr(ms: number) {
