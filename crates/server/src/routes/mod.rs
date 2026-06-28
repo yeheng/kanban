@@ -1,11 +1,13 @@
 use crate::state::AppState;
 use axum::Router;
 
+pub mod calendar;
 pub mod catalog;
 pub mod projects;
 pub mod resources;
 pub mod tasks;
 pub mod teams;
+pub mod workload;
 
 pub fn api_router() -> Router<AppState> {
     Router::new()
@@ -14,4 +16,6 @@ pub fn api_router() -> Router<AppState> {
         .merge(tasks::router())
         .merge(resources::router())
         .merge(teams::router())
+        .merge(workload::router())
+        .merge(calendar::router())
 }
