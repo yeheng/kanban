@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 domain = { path = "../domain" }
 chrono = { workspace = true }
+serde = { version = "1", features = ["derive"] }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 

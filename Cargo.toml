@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["crates/domain", "crates/db"]
+members = ["crates/domain", "crates/db", "crates/app"]
 
 [workspace.package]
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-chrono = { version = "0.4", features = ["clock"], default-features = false }
+chrono = { version = "0.4", features = ["clock", "serde"], default-features = false }
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
