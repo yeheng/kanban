@@ -5,4 +5,5 @@ pub mod models;
 pub mod repo;
 
 pub use error::DbError;
+pub use repo::*;
 pub use sqlx::SqlitePool;
