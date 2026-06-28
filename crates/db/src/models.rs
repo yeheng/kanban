@@ -61,6 +61,43 @@ pub struct AllocationView {
     pub source: String,
 }
 
+/// One allocation bar for a Gantt view (joined with resource/task/project names).
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct GanttBar {
+    pub allocation_id: i64,
+    pub resource_id: i64,
+    pub resource_name: String,
+    pub task_id: i64,
+    pub task_title: String,
+    pub project_id: i64,
+    pub project_name: String,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub percent: f64,
+    pub status: String,
+    pub source: String,
+}
+
+/// A dependency edge for drawing Gantt arrows.
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct DepEdge {
+    pub task_id: i64,
+    pub predecessor_id: i64,
+    pub lag_days: i64,
+    pub dep_type: String,
+}
+
+/// Per-day per-resource occupancy (calendar view).
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct DayOccupancy {
+    pub date: NaiveDate,
+    pub resource_id: i64,
+    pub resource_name: String,
+    pub workload_pd: f64,
+    pub capacity_pd: f64,
+    pub utilization: f64,
+}
+
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Project {
     pub id: i64,

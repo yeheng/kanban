@@ -1,5 +1,6 @@
 pub mod allocations;
 pub mod calendar;
+pub mod gantt;
 pub mod projects;
 pub mod resources;
 pub mod settings;
@@ -9,6 +10,7 @@ pub mod tasks;
 pub mod teams;
 pub use allocations::AllocationsRepo;
 pub use calendar::{HolidayRepo, TimeOffRepo, WeekTemplateRepo};
+pub use gantt::GanttRepo;
 pub use projects::ProjectsRepo;
 pub use resources::ResourcesRepo;
 pub use settings::{SettingsRepo, Thresholds};
