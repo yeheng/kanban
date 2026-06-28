@@ -20,8 +20,12 @@ pub struct OptimizationService;
 impl OptimizationService {
     /// Build the problem from DB (all active resources + a project's todo/in_progress tasks),
     /// run the engine, persist a reproducible run (status='proposed'), return the plan.
-    pub async fn run_for_project(pool: &SqlitePool, project_id: i64) -> Result<RunResult, AppError> {
-        let problem = build_problem(pool, project_id).await?;
+    /// `weights` overrides the default balanced objective (design §5; confirmed #6 UI-tunable).
+    pub async fn run_for_project(
+        pool: &SqlitePool, project_id: i64, weights: Option<ObjectiveWeights>,
+    ) -> Result<RunResult, AppError> {
+        let mut problem = build_problem(pool, project_id).await?;
+        if let Some(w) = weights { problem.weights = w; }
 
         // Default offline pipeline; swap in SemanticScorer/MilpSolver/LlmExplainer when Ollama is up.
         let engine = OptimizationEngine {
@@ -58,7 +62,6 @@ impl OptimizationService {
 
         // Now stamp the real run_id into the problem + solution, serialize, and backfill the
         // snapshot/plan JSON so the persisted row is self-consistent for reproducibility.
-        let mut problem = problem;
         problem.run_id = run_id;
         plan.solution.run_id = run_id;
         let snap = serde_json::to_string(&problem).unwrap_or_default();

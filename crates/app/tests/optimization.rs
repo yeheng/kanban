@@ -14,7 +14,7 @@ async fn run_then_apply_creates_ai_allocations() {
     sqlx::query("INSERT INTO resource_skills (resource_id,skill_id,proficiency) VALUES (1,?,4)").bind(rust).execute(&pool).await.unwrap();
     TasksService::create(&pool, pid, "T1", None, 5.0, Some("2026-07-01"), Some("2026-07-05"), false, 0, &[(rust, 3, true, 1.0)], &[]).await.unwrap();
 
-    let res = OptimizationService::run_for_project(&pool, pid).await.unwrap();
+    let res = OptimizationService::run_for_project(&pool, pid, None).await.unwrap();
     assert!(!res.plan.solution.assignments.is_empty());
     assert_eq!(res.plan.solution.assignments[0].resource_id, 1);
     assert!(res.plan.explanation_md.contains("优化方案说明"));

@@ -1,4 +1,4 @@
-import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy } from "../types";
+import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunRow } from "../types";
 
 export type SkillReq = [number, number, boolean, number];
 
@@ -106,4 +106,14 @@ export const api = {
     request("GET", `/api/occupancy?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
   updateAllocation: (id: number, start: string, end: string, percent: number): Promise<void> =>
     request("PUT", `/api/allocations/${id}`, { start, end, percent }),
+
+  // ---- Phase 4: AI optimization ----
+  runOptimization: (projectId: number, weights: ObjectiveWeights | null): Promise<RunResult> =>
+    request("POST", `/api/optimization/run/${projectId}`, weights ?? undefined),
+  listOptimizationRuns: (limit: number | null): Promise<RunRow[]> =>
+    request("GET", `/api/optimization/runs${limit != null ? `?limit=${limit}` : ""}`),
+  applySolution: (runId: number): Promise<number> =>
+    request("POST", `/api/optimization/runs/${runId}/apply`),
+  rejectSolution: (runId: number): Promise<void> =>
+    request("POST", `/api/optimization/runs/${runId}/reject`),
 };

@@ -57,3 +57,14 @@ export interface DayOccupancy {
   date: string; resource_id: number; resource_name: string;
   workload_pd: number; capacity_pd: number; utilization: number;
 }
+
+// Phase 4: AI optimization
+export interface ObjectiveWeights { skill_fit: number; balance: number; budget: number; }
+export interface ScoredAssignment {
+  resource_id: number; task_id: number; start: string; end: string;
+  percent: number; score: number; rationale: string;
+}
+export interface SolutionMetrics { overall: number; skill_fit: number; utilization: number; fairness: number; }
+export interface Solution { run_id: number; assignments: ScoredAssignment[]; unscheduled: number[]; metrics: SolutionMetrics; }
+export interface RunResult { run_id: number; plan: { solution: Solution; explanation_md: string; }; }
+export interface RunRow { id: number; objective: string; status: string; applied: number; score_overall: number | null; created_at: string; }
