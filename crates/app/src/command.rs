@@ -1,7 +1,7 @@
 use crate::error::AppError;
-use crate::service::{catalog, projects, tasks};
+use crate::service::{catalog, projects, tasks, teams};
 use crate::state::AppState;
-use db::models::{KanbanTask, Project, Skill, Tag};
+use db::models::{KanbanTask, Project, Skill, Tag, TeamOverride};
 
 #[tauri::command]
 pub async fn create_project(
@@ -58,4 +58,17 @@ pub async fn set_task_status(state: tauri::State<'_, AppState>, id: i64, status:
 #[tauri::command]
 pub async fn kanban_tasks(state: tauri::State<'_, AppState>, project_id: i64) -> Result<Vec<KanbanTask>, AppError> {
     tasks::TasksService::kanban(&state.pool, project_id).await
+}
+
+#[tauri::command]
+pub async fn create_team(state: tauri::State<'_, AppState>, name: String, description: Option<String>) -> Result<i64, AppError> {
+    teams::TeamsService::create(&state.pool, &name, description.as_deref()).await
+}
+#[tauri::command]
+pub async fn add_team_member(state: tauri::State<'_, AppState>, team_id: i64, resource_id: i64, role: Option<String>) -> Result<(), AppError> {
+    teams::TeamsService::add_member(&state.pool, team_id, resource_id, role.as_deref()).await
+}
+#[tauri::command]
+pub async fn set_team_override(state: tauri::State<'_, AppState>, o: TeamOverride) -> Result<(), AppError> {
+    teams::TeamsService::set_override(&state.pool, o).await
 }
