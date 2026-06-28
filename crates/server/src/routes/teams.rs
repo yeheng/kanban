@@ -4,7 +4,6 @@ use axum::extract::{Path, State};
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use db::models::{Team, TeamMember, TeamOverride};
-use db::{TeamMembersRepo, TeamsRepo};
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
@@ -15,14 +14,14 @@ pub fn router() -> Router<AppState> {
 }
 
 async fn list_teams(State(state): State<AppState>) -> Result<Json<Vec<Team>>, HttpError> {
-    Ok(Json(TeamsRepo::list_active(&state.pool).await?))
+    Ok(Json(app::service::teams::TeamsService::list(&state.pool).await?))
 }
 
 async fn list_team_members(
     State(state): State<AppState>,
     Path(team_id): Path<i64>,
 ) -> Result<Json<Vec<TeamMember>>, HttpError> {
-    Ok(Json(TeamMembersRepo::list_members(&state.pool, team_id).await?))
+    Ok(Json(app::service::teams::TeamsService::members(&state.pool, team_id).await?))
 }
 
 #[derive(Debug, Deserialize)]

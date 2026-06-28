@@ -4,7 +4,6 @@ use axum::extract::{Path, State};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
 use db::models::Task;
-use db::TasksRepo;
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
@@ -18,7 +17,7 @@ async fn list_tasks(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
 ) -> Result<Json<Vec<Task>>, HttpError> {
-    Ok(Json(TasksRepo::list_by_project(&state.pool, project_id).await?))
+    Ok(Json(app::service::tasks::TasksService::list_by_project(&state.pool, project_id).await?))
 }
 
 #[derive(Debug, Deserialize)]

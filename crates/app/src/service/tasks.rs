@@ -62,9 +62,10 @@ impl TasksService {
         }
 
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-        let mut edges: Vec<(i64, i64)> = sqlx::query_as(
-            "SELECT task_id, predecessor_id FROM task_dependencies")
-            .fetch_all(&mut *tx).await?;
+        let mut edges: Vec<(i64, i64)> =
+            sqlx::query_as("SELECT task_id, predecessor_id FROM task_dependencies")
+                .fetch_all(&mut *tx)
+                .await?;
         edges.push((task_id, predecessor_id));
         if has_cycle(&edges) {
             return Err(domain::DomainError::DependencyCycle(task_id).into());
@@ -72,9 +73,13 @@ impl TasksService {
 
         sqlx::query(
             "INSERT INTO task_dependencies (task_id, predecessor_id, lag_days) VALUES (?,?,?) \
-             ON CONFLICT(task_id, predecessor_id) DO UPDATE SET lag_days = excluded.lag_days")
-            .bind(task_id).bind(predecessor_id).bind(lag_days)
-            .execute(&mut *tx).await?;
+             ON CONFLICT(task_id, predecessor_id) DO UPDATE SET lag_days = excluded.lag_days",
+        )
+        .bind(task_id)
+        .bind(predecessor_id)
+        .bind(lag_days)
+        .execute(&mut *tx)
+        .await?;
         tx.commit().await?;
         Ok(())
     }
@@ -99,7 +104,11 @@ fn has_cycle(edges: &[(i64, i64)]) -> bool {
             let mut descended = false;
             for nb in neighbors {
                 if on_path.contains(&nb) { return true; } // back edge -> cycle
-                if white.contains(&nb) { stack.push(nb); descended = true; break; }
+                if white.contains(&nb) {
+                    stack.push(nb);
+                    descended = true;
+                    break;
+                }
             }
             if !descended { on_path.remove(&n); stack.pop(); }
         }
