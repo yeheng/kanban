@@ -113,7 +113,7 @@ impl TaskDepsRepo {
         Ok(sqlx::query_as::<_, crate::models::DepEdge>(
             "SELECT d.task_id, d.predecessor_id, d.lag_days, d.dep_type \
              FROM task_dependencies d JOIN tasks t ON t.id = d.task_id \
-             WHERE t.project_id = ?")
+             WHERE t.project_id = ? AND t.deleted_at IS NULL")
             .bind(project_id).fetch_all(pool).await?)
     }
 }

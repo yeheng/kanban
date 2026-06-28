@@ -14,7 +14,7 @@ impl GanttRepo {
              JOIN resources r ON r.id = a.resource_id \
              JOIN tasks t ON t.id = a.task_id \
              JOIN projects p ON p.id = t.project_id \
-             WHERE t.project_id = ? AND a.deleted_at IS NULL \
+             WHERE t.project_id = ? AND a.deleted_at IS NULL AND t.deleted_at IS NULL \
              ORDER BY r.name, a.start_date")
             .bind(project_id).fetch_all(pool).await?)
     }
@@ -29,7 +29,7 @@ impl GanttRepo {
              JOIN resources r ON r.id = a.resource_id \
              JOIN tasks t ON t.id = a.task_id \
              JOIN projects p ON p.id = t.project_id \
-             WHERE a.resource_id = ? AND a.deleted_at IS NULL \
+             WHERE a.resource_id = ? AND a.deleted_at IS NULL AND t.deleted_at IS NULL \
              ORDER BY a.start_date")
             .bind(resource_id).fetch_all(pool).await?)
     }
