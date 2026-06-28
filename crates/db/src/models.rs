@@ -1,0 +1,1 @@
+// Entity structs added in Task 10.

@@ -1,6 +1,6 @@
 use crate::calendar::Calendar;
 use crate::types::{Allocation, Window};
-use chrono::{Datelike, Days, NaiveDate};
+use chrono::{Days, NaiveDate};
 
 /// Calendar-day count between two inclusive dates (>=1 when a<=b), else 0.
 pub fn count_calendar_days(a: NaiveDate, b: NaiveDate) -> i64 {
