@@ -10,7 +10,6 @@ sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio",
 tokio = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 thiserror = { workspace = true }
-tauri = { version = "2", default-features = false, features = ["wry"] }
 
 [dev-dependencies]
 tokio = { workspace = true }

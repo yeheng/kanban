@@ -114,7 +114,7 @@ pub struct TeamMember {
     pub role: Option<String>,
 }
 
-#[derive(Debug, Clone, FromRow, serde::Serialize)]
+#[derive(Debug, Clone, FromRow, serde::Serialize, serde::Deserialize)]
 pub struct TeamOverride {
     pub team_id: i64,
     pub pd_hours: Option<f64>,
