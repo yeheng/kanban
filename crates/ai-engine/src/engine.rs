@@ -15,6 +15,9 @@ impl OptimizationEngine {
         let scores = self.scorer.matrix(problem).await;
         let solution = self.solver.solve(problem, &scores);
         let explanation_md = self.explainer.explain(problem, &solution).await;
-        OptimizedPlan { solution, explanation_md }
+        OptimizedPlan {
+            solution,
+            explanation_md,
+        }
     }
 }

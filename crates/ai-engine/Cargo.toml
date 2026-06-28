@@ -13,14 +13,17 @@ tokio = { workspace = true }
 
 [features]
 default = []
-llm = ["rig-core"]
+llm = ["rig"]
 milp = ["good_lp"]
 
-# Production impls (behind features). Version caveat (plan Task 1): rig-core ≈0.24.x
-# and good_lp = 1 + highs; the deterministic core builds without these.
-[dependencies.rig-core]
-version = "0.24"
+# Production impls (behind features). The package is `rig-core` but its lib is `rig`
+# (verified against the locked 0.36 source: package name "rig-core", lib name "rig").
+# Plan assumed rig 0.24; the actual resolved version is 0.36 with a substantially
+# different API (generic Client<OllamaExt>, embed_text, AgentBuilder, Prompt returns String).
+[dependencies.rig]
+version = "0.36"
 optional = true
+package = "rig-core"
 
 [dependencies.good_lp]
 version = "1"

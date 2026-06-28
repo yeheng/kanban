@@ -1,8 +1,8 @@
 use ai_engine::explainer::TemplateExplainer;
 use ai_engine::scorer::FallbackScorer;
 use ai_engine::solver::GreedySolver;
-use ai_engine::OptimizationEngine;
 use ai_engine::types::*;
+use ai_engine::OptimizationEngine;
 use chrono::NaiveDate;
 use std::sync::Arc;
 
@@ -10,8 +10,28 @@ use std::sync::Arc;
 async fn engine_pipeline_produces_plan_with_explanation() {
     let p = AllocationProblem {
         run_id: 42,
-        resources: vec![CandidateResource { id: 1, name: "R1".into(), skills: std::collections::HashMap::from([(1,4)]), tags: vec![], daily_capacity_pd: 1.0 }],
-        tasks: vec![CandidateTask { id: 10, project_id: 1, title: "T1".into(), estimate_pd: 5.0, start: NaiveDate::from_ymd_opt(2026,7,1).unwrap(), end: NaiveDate::from_ymd_opt(2026,7,5).unwrap(), priority: 1, skill_reqs: vec![SkillReq{skill_id:1,min_proficiency:3,is_mandatory:true,weight:1.0}] }],
+        resources: vec![CandidateResource {
+            id: 1,
+            name: "R1".into(),
+            skills: std::collections::HashMap::from([(1, 4)]),
+            tags: vec![],
+            daily_capacity_pd: 1.0,
+        }],
+        tasks: vec![CandidateTask {
+            id: 10,
+            project_id: 1,
+            title: "T1".into(),
+            estimate_pd: 5.0,
+            start: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+            end: NaiveDate::from_ymd_opt(2026, 7, 5).unwrap(),
+            priority: 1,
+            skill_reqs: vec![SkillReq {
+                skill_id: 1,
+                min_proficiency: 3,
+                is_mandatory: true,
+                weight: 1.0,
+            }],
+        }],
         ..Default::default()
     };
 

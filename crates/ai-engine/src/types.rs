@@ -13,7 +13,12 @@ pub struct CandidateResource {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SkillReq { pub skill_id: i64, pub min_proficiency: i64, pub is_mandatory: bool, pub weight: f64 }
+pub struct SkillReq {
+    pub skill_id: i64,
+    pub min_proficiency: i64,
+    pub is_mandatory: bool,
+    pub weight: f64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CandidateTask {
@@ -28,17 +33,35 @@ pub struct CandidateTask {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExistingAlloc { pub resource_id: i64, pub start: NaiveDate, pub end: NaiveDate, pub percent: f64 }
+pub struct ExistingAlloc {
+    pub resource_id: i64,
+    pub start: NaiveDate,
+    pub end: NaiveDate,
+    pub percent: f64,
+}
 
 /// Multi-objective weights (design §1; default balanced 0.4/0.4/0.2; UI-tunable, confirmed #6).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ObjectiveWeights { pub skill_fit: f64, pub balance: f64, pub budget: f64 }
+pub struct ObjectiveWeights {
+    pub skill_fit: f64,
+    pub balance: f64,
+    pub budget: f64,
+}
 impl Default for ObjectiveWeights {
-    fn default() -> Self { Self { skill_fit: 0.4, balance: 0.4, budget: 0.2 } }
+    fn default() -> Self {
+        Self {
+            skill_fit: 0.4,
+            balance: 0.4,
+            budget: 0.2,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum OverloadPolicy { SoftWarn, HardBlock }
+pub enum OverloadPolicy {
+    SoftWarn,
+    HardBlock,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ConstraintFlags {
@@ -48,9 +71,19 @@ pub struct ConstraintFlags {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SolverConfig { pub backend: String, pub timeout_ms: u64, pub seed: u64 }
+pub struct SolverConfig {
+    pub backend: String,
+    pub timeout_ms: u64,
+    pub seed: u64,
+}
 impl Default for SolverConfig {
-    fn default() -> Self { Self { backend: "greedy".into(), timeout_ms: 5000, seed: 1 } }
+    fn default() -> Self {
+        Self {
+            backend: "greedy".into(),
+            timeout_ms: 5000,
+            seed: 1,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -66,13 +99,22 @@ pub struct AllocationProblem {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ScoredAssignment {
-    pub resource_id: i64, pub task_id: i64,
-    pub start: NaiveDate, pub end: NaiveDate, pub percent: f64,
-    pub score: f64, pub rationale: String,
+    pub resource_id: i64,
+    pub task_id: i64,
+    pub start: NaiveDate,
+    pub end: NaiveDate,
+    pub percent: f64,
+    pub score: f64,
+    pub rationale: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SolutionMetrics { pub overall: f64, pub skill_fit: f64, pub utilization: f64, pub fairness: f64 }
+pub struct SolutionMetrics {
+    pub overall: f64,
+    pub skill_fit: f64,
+    pub utilization: f64,
+    pub fairness: f64,
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Solution {
@@ -86,4 +128,7 @@ pub struct Solution {
 pub type ScoreMatrix = HashMap<(i64, i64), f64>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OptimizedPlan { pub solution: Solution, pub explanation_md: String }
+pub struct OptimizedPlan {
+    pub solution: Solution,
+    pub explanation_md: String,
+}
