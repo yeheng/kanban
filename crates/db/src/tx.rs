@@ -30,7 +30,7 @@ pub fn with_write_tx<'p, F, T>(
 where
     F: FnMut(
             sqlx::Transaction<'static, sqlx::Sqlite>,
-        ) -> Pin<Box<dyn Future<Output = Result<(sqlx::Transaction<'static, sqlx::Sqlite>, T), DbError>> + Send>>
+        ) -> Pin<Box<dyn Future<Output = Result<(sqlx::Transaction<'static, sqlx::Sqlite>, T), DbError>> + Send + 'p>>
         + Send
         + 'p,
     T: Send + 'p,

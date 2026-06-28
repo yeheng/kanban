@@ -1,7 +1,7 @@
 use crate::error::AppError;
-use crate::service::{catalog, projects};
+use crate::service::{catalog, projects, tasks};
 use crate::state::AppState;
-use db::models::{Project, Skill, Tag};
+use db::models::{KanbanTask, Project, Skill, Tag};
 
 #[tauri::command]
 pub async fn create_project(
@@ -35,4 +35,27 @@ pub async fn ensure_tag(state: tauri::State<'_, AppState>, name: String, color: 
 #[tauri::command]
 pub async fn list_tags(state: tauri::State<'_, AppState>) -> Result<Vec<Tag>, AppError> {
     catalog::CatalogService::list_tags(&state.pool).await
+}
+
+#[tauri::command]
+pub async fn create_task(
+    state: tauri::State<'_, AppState>,
+    project_id: i64, title: String, description: Option<String>,
+    estimate_pd: f64, start: Option<String>, end: Option<String>,
+    is_long_term: bool, sort_order: i64,
+    skill_reqs: Vec<(i64, i64, bool, f64)>, tag_ids: Vec<i64>,
+) -> Result<i64, AppError> {
+    tasks::TasksService::create(
+        &state.pool, project_id, &title, description.as_deref(), estimate_pd,
+        start.as_deref(), end.as_deref(), is_long_term, sort_order, &skill_reqs, &tag_ids).await
+}
+
+#[tauri::command]
+pub async fn set_task_status(state: tauri::State<'_, AppState>, id: i64, status: String) -> Result<(), AppError> {
+    tasks::TasksService::set_status(&state.pool, id, &status).await
+}
+
+#[tauri::command]
+pub async fn kanban_tasks(state: tauri::State<'_, AppState>, project_id: i64) -> Result<Vec<KanbanTask>, AppError> {
+    tasks::TasksService::kanban(&state.pool, project_id).await
 }
