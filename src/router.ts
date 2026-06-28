@@ -13,5 +13,6 @@ export const router = createRouter({
     { path: "/dashboard", component: () => import("./views/DashboardView.vue") },
     { path: "/allocations", component: () => import("./views/AllocationsView.vue") },
     { path: "/calendar", component: () => import("./views/CalendarView.vue") },
+    { path: "/gantt", component: () => import("./views/GanttView.vue") },
   ],
 });
