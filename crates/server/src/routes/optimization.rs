@@ -14,19 +14,15 @@ pub fn router() -> Router<AppState> {
         .route("/api/optimization/runs/{id}/reject", post(reject_solution))
 }
 
-/// Optional multi-objective weights override (design §5; confirmed #6). Omitted ⇒ balanced default.
-#[derive(Debug, Deserialize)]
-struct WeightsBody {
-    #[serde(flatten)]
-    weights: Option<ai_engine::ObjectiveWeights>,
-}
-
+/// Optional multi-objective weights override (design §5; confirmed #6). Omitted body ⇒ balanced
+/// default. Takes the flat ObjectiveWeights directly (no flatten wrapper) — matches what the
+/// frontend sends and avoids a serde foot-gun on partial bodies.
 async fn run_optimization(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
-    body: Option<Json<WeightsBody>>,
+    body: Option<Json<ai_engine::ObjectiveWeights>>,
 ) -> Result<Json<RunResult>, HttpError> {
-    let weights = body.and_then(|Json(b)| b.weights);
+    let weights = body.map(|Json(w)| w);
     Ok(Json(OptimizationService::run_for_project(&state.pool, project_id, weights).await?))
 }
 
