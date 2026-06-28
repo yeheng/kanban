@@ -181,6 +181,7 @@ dependencies = [
 name = "db"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "domain",
  "libsqlite3-sys",
  "sqlx",
