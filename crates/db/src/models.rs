@@ -45,6 +45,22 @@ impl AllocationRow {
     }
 }
 
+/// Allocation joined with resource name + task title (allocation editor / Gantt later).
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct AllocationView {
+    pub id: i64,
+    pub resource_id: i64,
+    pub resource_name: String,
+    pub task_id: i64,
+    pub task_title: String,
+    pub project_id: i64,
+    pub start_date: NaiveDate,
+    pub end_date: NaiveDate,
+    pub percent: f64,
+    pub status: String,
+    pub source: String,
+}
+
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
 pub struct Project {
     pub id: i64,

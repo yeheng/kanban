@@ -1,14 +1,24 @@
 use crate::error::HttpError;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::{patch, post};
+use axum::routing::{get, patch, post};
 use axum::{Json, Router};
+use db::models::Task;
+use db::TasksRepo;
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/tasks", post(create_task))
         .route("/api/tasks/{id}/status", patch(set_status))
+        .route("/api/projects/{id}/tasks", get(list_tasks))
+}
+
+async fn list_tasks(
+    State(state): State<AppState>,
+    Path(project_id): Path<i64>,
+) -> Result<Json<Vec<Task>>, HttpError> {
+    Ok(Json(TasksRepo::list_by_project(&state.pool, project_id).await?))
 }
 
 #[derive(Debug, Deserialize)]

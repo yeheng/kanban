@@ -4,7 +4,7 @@ use app::service::workload::{ProjectBurn, ResourceSummary, TeamSummary, Workload
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -13,6 +13,22 @@ pub fn router() -> Router<AppState> {
         .route("/api/workload/teams/{id}", get(team_summary))
         .route("/api/workload/overloads", get(overloads))
         .route("/api/projects/{id}/burn", get(project_burn))
+        // Dashboard color bands (global thresholds)
+        .route("/api/thresholds", get(get_thresholds))
+}
+
+/// Effective global thresholds for Dashboard color bands.
+#[derive(Debug, Serialize)]
+pub struct ThresholdsDto {
+    pub overload: f64,
+    pub underload: f64,
+    pub green: f64,
+    pub yellow: f64,
+}
+
+async fn get_thresholds(State(state): State<AppState>) -> Result<Json<ThresholdsDto>, HttpError> {
+    let t = db::SettingsRepo::thresholds(&state.pool).await?;
+    Ok(Json(ThresholdsDto { overload: t.overload, underload: t.underload, green: t.green, yellow: t.yellow }))
 }
 
 #[derive(Debug, Deserialize)]

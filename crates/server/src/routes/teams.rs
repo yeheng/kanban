@@ -1,16 +1,28 @@
 use crate::error::HttpError;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::{post, put};
+use axum::routing::{get, put};
 use axum::{Json, Router};
-use db::models::TeamOverride;
+use db::models::{Team, TeamMember, TeamOverride};
+use db::{TeamMembersRepo, TeamsRepo};
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/api/teams", post(create_team))
-        .route("/api/teams/{id}/members", post(add_member))
+        .route("/api/teams", get(list_teams).post(create_team))
+        .route("/api/teams/{id}/members", get(list_team_members).post(add_member))
         .route("/api/teams/overrides", put(set_override))
+}
+
+async fn list_teams(State(state): State<AppState>) -> Result<Json<Vec<Team>>, HttpError> {
+    Ok(Json(TeamsRepo::list_active(&state.pool).await?))
+}
+
+async fn list_team_members(
+    State(state): State<AppState>,
+    Path(team_id): Path<i64>,
+) -> Result<Json<Vec<TeamMember>>, HttpError> {
+    Ok(Json(TeamMembersRepo::list_members(&state.pool, team_id).await?))
 }
 
 #[derive(Debug, Deserialize)]

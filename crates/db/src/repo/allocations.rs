@@ -53,4 +53,25 @@ impl AllocationsRepo {
         .await?;
         Ok(rows)
     }
+
+    /// All active allocations on a project, joined with resource name + task title.
+    /// Column order matches `AllocationView` field order.
+    pub async fn list_by_project(
+        pool: &SqlitePool,
+        project_id: i64,
+    ) -> Result<Vec<crate::models::AllocationView>, DbError> {
+        let rows: Vec<crate::models::AllocationView> = sqlx::query_as(
+            "SELECT a.id, a.resource_id, r.name AS resource_name, a.task_id, t.title AS task_title, \
+                    t.project_id, a.start_date, a.end_date, a.percent, a.status, a.source \
+             FROM allocations a \
+             JOIN resources r ON r.id = a.resource_id \
+             JOIN tasks t ON t.id = a.task_id \
+             WHERE t.project_id = ? AND a.deleted_at IS NULL \
+             ORDER BY a.start_date"
+        )
+        .bind(project_id)
+        .fetch_all(pool)
+        .await?;
+        Ok(rows)
+    }
 }
