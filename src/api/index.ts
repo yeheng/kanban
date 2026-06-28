@@ -1,4 +1,4 @@
-import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus } from "../types";
+import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, Holiday, WeekTemplate } from "../types";
 
 export type SkillReq = [number, number, boolean, number];
 
@@ -60,4 +60,38 @@ export const api = {
   listResources: (): Promise<Resource[]> => request("GET", "/api/resources"),
   createResource: (name: string, email: string | null): Promise<number> =>
     request("POST", "/api/resources", { name, email }),
+
+  // ---- Phase 2: workload ----
+  resourceSummary: (resourceId: number, start: string, end: string): Promise<ResourceSummary> =>
+    request("GET", `/api/workload/resources/${resourceId}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  teamSummary: (teamId: number, start: string, end: string): Promise<TeamSummary> =>
+    request("GET", `/api/workload/teams/${teamId}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  overloads: (start: string, end: string): Promise<ResourceSummary[]> =>
+    request("GET", `/api/workload/overloads?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  projectBurn: (projectId: number): Promise<ProjectBurn> =>
+    request("GET", `/api/projects/${projectId}/burn`),
+  getThresholds: (): Promise<Thresholds> => request("GET", "/api/thresholds"),
+
+  // ---- Phase 2: allocations ----
+  createAllocation: (resourceId: number, taskId: number, start: string, end: string, percent: number): Promise<number> =>
+    request("POST", "/api/allocations", { resource_id: resourceId, task_id: taskId, start, end, percent }),
+  listAllocations: (projectId: number): Promise<AllocationView[]> =>
+    request("GET", `/api/projects/${projectId}/allocations`),
+  listTasks: (projectId: number): Promise<Task[]> =>
+    request("GET", `/api/projects/${projectId}/tasks`),
+
+  // ---- Phase 2: calendar ----
+  setGlobalWorkWeek: (week: number[]): Promise<void> =>
+    request("POST", "/api/calendar/work-week", { week }),
+  listWorkWeeks: (): Promise<WeekTemplate[]> => request("GET", "/api/calendar/work-week"),
+  addHoliday: (projectId: number | null, day: string, fraction: number | null, name: string | null): Promise<number> =>
+    request("POST", "/api/calendar/holidays", { project_id: projectId, day, fraction, name }),
+  listHolidays: (): Promise<Holiday[]> => request("GET", "/api/calendar/holidays"),
+  addTimeOff: (resourceId: number, day: string, fraction: number | null, reason: string | null): Promise<number> =>
+    request("POST", "/api/calendar/time-off", { resource_id: resourceId, day, fraction, reason }),
+
+  // ---- Phase 2: teams ----
+  listTeams: (): Promise<Team[]> => request("GET", "/api/teams"),
+  listTeamMembers: (teamId: number): Promise<TeamMember[]> =>
+    request("GET", `/api/teams/${teamId}/members`),
 };
