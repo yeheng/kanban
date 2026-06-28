@@ -4,6 +4,7 @@ use axum::Router;
 pub mod allocations;
 pub mod calendar;
 pub mod catalog;
+pub mod gantt;
 pub mod projects;
 pub mod resources;
 pub mod tasks;
@@ -20,4 +21,5 @@ pub fn api_router() -> Router<AppState> {
         .merge(workload::router())
         .merge(allocations::router())
         .merge(calendar::router())
+        .merge(gantt::router())
 }

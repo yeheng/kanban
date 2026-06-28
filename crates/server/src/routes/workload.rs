@@ -1,9 +1,11 @@
 use crate::error::HttpError;
 use crate::state::AppState;
+use app::service::occupancy::CalendarOccupancyService;
 use app::service::workload::{ProjectBurn, ResourceSummary, TeamSummary, WorkloadService};
 use axum::extract::{Path, Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
+use db::models::DayOccupancy;
 use serde::{Deserialize, Serialize};
 
 pub fn router() -> Router<AppState> {
@@ -13,6 +15,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/workload/teams/{id}", get(team_summary))
         .route("/api/workload/overloads", get(overloads))
         .route("/api/projects/{id}/burn", get(project_burn))
+        // calendar daily occupancy grid
+        .route("/api/occupancy", get(daily_occupancy))
         // Dashboard color bands (global thresholds)
         .route("/api/thresholds", get(get_thresholds))
 }
@@ -62,4 +66,11 @@ async fn project_burn(
     Path(project_id): Path<i64>,
 ) -> Result<Json<ProjectBurn>, HttpError> {
     Ok(Json(WorkloadService::project_burn(&state.pool, project_id).await?))
+}
+
+async fn daily_occupancy(
+    State(state): State<AppState>,
+    Query(q): Query<WindowQuery>,
+) -> Result<Json<Vec<DayOccupancy>>, HttpError> {
+    Ok(Json(CalendarOccupancyService::range(&state.pool, &q.start, &q.end).await?))
 }
