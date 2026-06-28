@@ -99,8 +99,11 @@ CREATE TABLE team_overrides (
     updated_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 
--- NOTE: projects + tasks created here (before work_week_template / holiday) so their
--- forward FK references resolve cleanly under foreign_keys=ON at migration time.
+-- NOTE: projects + tasks are created before work_week_template / holiday. SQLite
+-- does NOT validate forward FK references at CREATE TABLE time (FKs are checked
+-- lazily at DML), so ordering is not strictly required for the DDL itself. We keep
+-- this dependency-respecting order anyway for readability and so the seed INSERT
+-- into work_week_template runs after all referenced tables exist.
 
 CREATE TABLE projects (
     id                          INTEGER PRIMARY KEY AUTOINCREMENT,

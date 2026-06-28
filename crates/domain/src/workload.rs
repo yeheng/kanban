@@ -150,4 +150,48 @@ mod tests {
         // 2 members, only one loaded at 50% -> team = 2.5 / 10.0 = 0.25
         assert!((team_utilization(&c, &[a], &[1, 2], 1, win(MON, FRI)) - 0.25).abs() < 1e-9);
     }
+
+    /// Design §4.10 flagship scenario: Alice split across two projects in one week,
+    /// with a full-day holiday (Wed) and a half-day time-off (Thu). Pins the three
+    /// core properties: (1) calendar deductions apply equally to capacity & workload;
+    /// (2) cross-project allocations sum directly; (3) window clipping is correct
+    /// (this is the case `SUM(allocated_pd)` gets wrong by 51%).
+    #[test]
+    fn design_4_10_flagship_two_projects_holiday_and_timeoff() {
+        // Week Mon 2026-06-29 .. Sun 2026-07-05. Wed 07-01 = full holiday,
+        // Thu 07-02 = Alice half-day leave.
+        let mut c = cal();
+        c.holidays_global.insert(d(WED), 1.0);          // Wed full-day holiday
+        c.time_off.insert((1, d("2026-07-02")), 0.5);   // Thu half-day leave
+
+        // Project A: 50% Mon–Fri. Project B: 60% Tue–Fri.
+        let a = Allocation { id: 1, resource_id: 1, project_id: 1,
+            start: d(MON), end: d(FRI), percent: 0.5 };
+        let b = Allocation { id: 2, resource_id: 1, project_id: 2,
+            start: d("2026-06-30"), end: d(FRI), percent: 0.6 }; // Tue–Fri
+        let allocs = [a, b];
+
+        // Capacity (project 1's calendar; same global week): day_factor sum
+        // = 1.0(Mon)+1.0(Tue)+0(Wed)+0.5(Thu)+1.0(Fri) = 3.5 PD.
+        let week = win(MON, "2026-07-05"); // Mon..Sun
+        assert!((capacity_pd(&c, 1, 1, week) - 3.5).abs() < 1e-9,
+            "§4.10 capacity: 3.5 PD");
+
+        // Workload across both allocations:
+        // Mon 0.5 | Tue 0.5+0.6=1.1 | Wed 0 | Thu 0.25+0.30=0.55 | Fri 0.5+0.6=1.1
+        // = 3.25 PD.
+        assert!((workload_pd(&c, &allocs, 1, week) - 3.25).abs() < 1e-9,
+            "§4.10 workload: 3.25 PD");
+
+        // Utilization = 3.25 / 3.5 = 0.9286 (92.9%, green — under 100%).
+        assert!((utilization(&c, &allocs, 1, 1, week) - 0.9286).abs() < 1e-3,
+            "§4.10 utilization: 0.9286");
+
+        // Clipped-window sub-case (§4.10 Step 7): shrink to Mon..Thu.
+        // Correct workload = 0.5+1.1+0+0.55 = 2.15 PD. A naive SUM(allocated_pd)
+        // would still return 3.25 (full-range value, no overlap clipping) — 51% high.
+        let mon_thu = win(MON, "2026-07-02");
+        assert!((workload_pd(&c, &allocs, 1, mon_thu) - 2.15).abs() < 1e-9,
+            "§4.10 clipped Mon..Thu workload: 2.15 PD (not the 3.25 a full-range sum gives)");
+    }
 }
