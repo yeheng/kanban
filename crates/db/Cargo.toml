@@ -16,8 +16,8 @@ default-features = false
 features = ["runtime-tokio", "sqlite", "macros", "migrate", "chrono"]
 
 [dependencies.libsqlite3-sys]
-version = "*"
-features = ["bundled"]
+version = "0.30"
+features = ["bundled-sqlcipher-vendored-openssl"]
 
 [dev-dependencies]
 tokio = { workspace = true }

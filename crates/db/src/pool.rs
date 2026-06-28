@@ -10,19 +10,24 @@ pub async fn connect(url: &str) -> Result<SqlitePool, DbError> {
     connect_with_key(url, None).await
 }
 
-/// Connect with optional SQLCipher encryption. When `key` is `Some`, `PRAGMA key`
-/// is issued **first** (SQLCipher requires the key before any other op) — honoring
-/// decision #55 (encryption default-on). NOTE: SQLCipher itself is **not** wired up
-/// yet — `Cargo.toml` pulls plain `libsqlite3-sys` (`bundled` only), so `PRAGMA key`
-/// is currently a harmless no-op. Enabling the `sqlcipher` feature is deferred to
-/// Phase 1 (design §3.1 / §6). Headless `:memory:` tests pass `None` and are unaffected.
+/// Connect with optional SQLCipher encryption (design §6.8 / decision #55).
+///
+/// When `key` is `Some`, `PRAGMA key = '...'` is issued so SQLCipher unlocks the
+/// file. sqlx interpolates pragma values verbatim (no auto-quoting), so the
+/// passphrase is single-quoted here with `'` doubled per the SQL string-literal
+/// rule. The non-key PRAGMAs (synchronous/journal_mode/...) run after `PRAGMA key`
+/// on an already-unlocked DB, which is safe. With a WRONG key the non-key PRAGMAs
+/// touch the encrypted header, so the connection itself fails with code 26
+/// ("file is not a database") — callers see a connection error, which is the
+/// desired reject-wrong-passphrase behavior.
 pub async fn connect_with_key(url: &str, key: Option<&str>) -> Result<SqlitePool, DbError> {
     let mut opts = SqliteConnectOptions::from_str(url)?
         .create_if_missing(true)
         .foreign_keys(true)
         .busy_timeout(std::time::Duration::from_millis(5000));
     if let Some(k) = key {
-        opts = opts.pragma("key", k.to_owned()); // SQLCipher key — MUST be the first pragma
+        let escaped = k.replace('\'', "''");
+        opts = opts.pragma("key", format!("'{}'", escaped));
     }
     opts = opts
         .pragma("synchronous", "NORMAL")

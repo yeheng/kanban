@@ -38,6 +38,7 @@ pub async fn list_tags(state: tauri::State<'_, AppState>) -> Result<Vec<Tag>, Ap
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // task-create surface is wide by design
 pub async fn create_task(
     state: tauri::State<'_, AppState>,
     project_id: i64, title: String, description: Option<String>,

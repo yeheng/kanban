@@ -7,6 +7,7 @@ use sqlx::SqlitePool;
 pub struct TasksService;
 
 impl TasksService {
+    #[allow(clippy::too_many_arguments)]
     pub async fn create(
         pool: &SqlitePool,
         project_id: i64, title: &str, description: Option<&str>,
