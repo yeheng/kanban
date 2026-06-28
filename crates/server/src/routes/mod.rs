@@ -7,6 +7,7 @@ pub mod catalog;
 pub mod gantt;
 pub mod optimization;
 pub mod projects;
+pub mod reports;
 pub mod resources;
 pub mod tasks;
 pub mod teams;
@@ -24,4 +25,5 @@ pub fn api_router() -> Router<AppState> {
         .merge(calendar::router())
         .merge(gantt::router())
         .merge(optimization::router())
+        .merge(reports::router())
 }

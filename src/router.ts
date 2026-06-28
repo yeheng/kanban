@@ -16,5 +16,6 @@ export const router = createRouter({
     { path: "/gantt", component: () => import("./views/GanttView.vue") },
     { path: "/calendar-grid", component: () => import("./views/CalendarGridView.vue") },
     { path: "/ai", component: () => import("./views/AiPanelView.vue") },
+    { path: "/reports", component: () => import("./views/ReportsView.vue") },
   ],
 });

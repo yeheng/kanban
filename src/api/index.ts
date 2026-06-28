@@ -116,4 +116,37 @@ export const api = {
     request("POST", `/api/optimization/runs/${runId}/apply`),
   rejectSolution: (runId: number): Promise<void> =>
     request("POST", `/api/optimization/runs/${runId}/reject`),
+
+  // ---- Phase 5: reports ----
+  /** Fetch a report file and trigger a browser download (no Tauri save dialog — the app is HTTP). */
+  async exportReport(kind: ReportKind, projectId: number | null, start: string, end: string, format: "csv" | "xlsx"): Promise<boolean> {
+    const params = new URLSearchParams({ start, end, format });
+    if (projectId != null) params.set("project_id", String(projectId));
+    const res = await fetch(`${BASE}/api/reports/${kind}?${params}`);
+    if (!res.ok) throw new Error(await res.text().catch(() => "export failed"));
+    triggerDownload(await res.blob(), `${kind}.${format}`);
+    return true;
+  },
+  async exportSnapshot(start: string, end: string): Promise<boolean> {
+    const params = new URLSearchParams({ start, end });
+    const res = await fetch(`${BASE}/api/reports/snapshot?${params}`);
+    if (!res.ok) throw new Error(await res.text().catch(() => "export failed"));
+    triggerDownload(await res.blob(), "workforce-snapshot.json");
+    return true;
+  },
 };
+
+export const reportKinds = ["ResourceUtilization", "ProjectBurn", "AiDecisions", "Cost"] as const;
+export type ReportKind = typeof reportKinds[number];
+
+/** Trigger a browser file download from a Blob (used by report exports). */
+function triggerDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
