@@ -45,3 +45,15 @@ export interface WeekTemplate {
   mon_frac: number; tue_frac: number; wed_frac: number; thu_frac: number;
   fri_frac: number; sat_frac: number; sun_frac: number;
 }
+
+// Phase 3: Gantt + calendar occupancy
+export interface GanttBar {
+  allocation_id: number; resource_id: number; resource_name: string;
+  task_id: number; task_title: string; project_id: number; project_name: string;
+  start_date: string; end_date: string; percent: number; status: string; source: string;
+}
+export interface DepEdge { task_id: number; predecessor_id: number; lag_days: number; dep_type: string; }
+export interface DayOccupancy {
+  date: string; resource_id: number; resource_name: string;
+  workload_pd: number; capacity_pd: number; utilization: number;
+}

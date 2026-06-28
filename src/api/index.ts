@@ -1,4 +1,4 @@
-import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, Holiday, WeekTemplate } from "../types";
+import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy } from "../types";
 
 export type SkillReq = [number, number, boolean, number];
 
@@ -94,4 +94,16 @@ export const api = {
   listTeams: (): Promise<Team[]> => request("GET", "/api/teams"),
   listTeamMembers: (teamId: number): Promise<TeamMember[]> =>
     request("GET", `/api/teams/${teamId}/members`),
+
+  // ---- Phase 3: Gantt + occupancy ----
+  ganttProject: (projectId: number): Promise<GanttBar[]> =>
+    request("GET", `/api/gantt/projects/${projectId}`),
+  ganttResource: (resourceId: number): Promise<GanttBar[]> =>
+    request("GET", `/api/gantt/resources/${resourceId}`),
+  dependenciesForProject: (projectId: number): Promise<DepEdge[]> =>
+    request("GET", `/api/projects/${projectId}/dependencies`),
+  dailyOccupancy: (start: string, end: string): Promise<DayOccupancy[]> =>
+    request("GET", `/api/occupancy?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+  updateAllocation: (id: number, start: string, end: string, percent: number): Promise<void> =>
+    request("PUT", `/api/allocations/${id}`, { start, end, percent }),
 };

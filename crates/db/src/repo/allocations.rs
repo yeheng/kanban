@@ -74,4 +74,19 @@ impl AllocationsRepo {
         .await?;
         Ok(rows)
     }
+
+    /// Update an allocation's window/percent. The trg_allocation_validate_update
+    /// trigger enforces the task/resource window intersection (design §3.3.15a).
+    pub async fn update(
+        pool: &SqlitePool, id: i64, start: &str, end: &str, percent: f64,
+    ) -> Result<(), DbError> {
+        let n = sqlx::query(
+            "UPDATE allocations SET start_date=?, end_date=?, percent=?, \
+                    updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+             WHERE id=? AND deleted_at IS NULL")
+            .bind(start).bind(end).bind(percent).bind(id)
+            .execute(pool).await?.rows_affected();
+        if n == 0 { return Err(DbError::NotFound); }
+        Ok(())
+    }
 }
