@@ -133,3 +133,37 @@ pub struct TaskSkillRequirement {
     pub is_mandatory: i64,
     pub weight: f64,
 }
+
+/// Work-week template row (design §3.3.9a). `mon..sun` are 0/1 on/off bits;
+/// `*_frac` are the per-day capacity fractions in (0, 1.0]. Off-day fracs are
+/// ignored by hydration (`frac_of` zeroes them) so they are stored as 1.0 to
+/// satisfy the schema CHECK (`*_frac > 0`).
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct WeekTemplate {
+    pub id: i64,
+    pub scope: String,
+    pub project_id: Option<i64>,
+    pub mon: i64, pub tue: i64, pub wed: i64, pub thu: i64, pub fri: i64, pub sat: i64, pub sun: i64,
+    pub mon_frac: f64, pub tue_frac: f64, pub wed_frac: f64, pub thu_frac: f64,
+    pub fri_frac: f64, pub sat_frac: f64, pub sun_frac: f64,
+}
+
+/// Holiday row (design §3.3.9b). `project_id = NULL` ⇒ global holiday.
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct Holiday {
+    pub id: i64,
+    pub project_id: Option<i64>,
+    pub day: String,
+    pub fraction: f64,
+    pub name: Option<String>,
+}
+
+/// Per-resource time-off row (design §3.3.9c).
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct TimeOff {
+    pub id: i64,
+    pub resource_id: i64,
+    pub day: String,
+    pub fraction: f64,
+    pub reason: Option<String>,
+}

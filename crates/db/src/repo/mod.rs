@@ -1,4 +1,5 @@
 pub mod allocations;
+pub mod calendar;
 pub mod projects;
 pub mod resources;
 pub mod skills;
@@ -6,6 +7,7 @@ pub mod tags;
 pub mod tasks;
 pub mod teams;
 pub use allocations::AllocationsRepo;
+pub use calendar::{HolidayRepo, TimeOffRepo, WeekTemplateRepo};
 pub use projects::ProjectsRepo;
 pub use resources::ResourcesRepo;
 pub use skills::SkillsRepo;
