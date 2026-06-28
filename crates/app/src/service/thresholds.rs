@@ -13,3 +13,19 @@ pub async fn effective_overload(pool: &SqlitePool, resource_id: i64) -> Result<f
     }
     Ok(SettingsRepo::thresholds(pool).await?.overload)
 }
+
+/// Like `effective_overload` but avoids re-querying global settings when called in a loop.
+/// `global_threshold` should be `SettingsRepo::thresholds(pool).await?.overload` loaded once
+/// before the loop.
+pub async fn effective_overload_cached(
+    pool: &SqlitePool,
+    resource_id: i64,
+    global_threshold: f64,
+) -> Result<f64, AppError> {
+    if let Some(team_id) = TeamMembersRepo::team_of_resource(pool, resource_id).await? {
+        if let Some(o) = TeamOverridesRepo::get(pool, team_id).await? {
+            if let Some(t) = o.overload_threshold { return Ok(t); }
+        }
+    }
+    Ok(global_threshold)
+}

@@ -138,7 +138,7 @@ impl Solver for GreedySolver {
             assignments,
             unscheduled,
             metrics: SolutionMetrics {
-                overall: skill_fit * 0.6 + scheduled_ratio * 0.4,
+                overall: skill_fit * problem.weights.skill_fit + scheduled_ratio * problem.weights.balance,
                 skill_fit,
                 utilization: scheduled_ratio,
                 fairness: 0.0,

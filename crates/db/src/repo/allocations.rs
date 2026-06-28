@@ -42,7 +42,7 @@ impl AllocationsRepo {
             "SELECT a.id, a.resource_id, a.task_id, t.project_id, \
                     a.start_date, a.end_date, a.percent, a.status, a.source, a.run_id \
              FROM allocations a JOIN tasks t ON t.id = a.task_id \
-             WHERE a.resource_id = ? AND a.deleted_at IS NULL \
+             WHERE a.resource_id = ? AND a.deleted_at IS NULL AND t.deleted_at IS NULL \
                AND a.start_date <= ? AND a.end_date >= ? \
              ORDER BY a.start_date"
         )
@@ -66,7 +66,7 @@ impl AllocationsRepo {
              FROM allocations a \
              JOIN resources r ON r.id = a.resource_id \
              JOIN tasks t ON t.id = a.task_id \
-             WHERE t.project_id = ? AND a.deleted_at IS NULL \
+             WHERE t.project_id = ? AND a.deleted_at IS NULL AND r.deleted_at IS NULL AND t.deleted_at IS NULL \
              ORDER BY a.start_date"
         )
         .bind(project_id)

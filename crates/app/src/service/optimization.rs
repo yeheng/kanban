@@ -28,8 +28,14 @@ impl OptimizationService {
         if let Some(w) = weights { problem.weights = w; }
 
         // Default offline pipeline; swap in SemanticScorer/MilpSolver/LlmExplainer when Ollama is up.
+        // Scorer weights mirror the problem's objective weights: jaccard weight = skill_fit,
+        // proficiency weight = balance (normalized so they sum to 1).
+        let total = (problem.weights.skill_fit + problem.weights.balance).max(0.001);
         let engine = OptimizationEngine {
-            scorer: Arc::new(FallbackScorer),
+            scorer: Arc::new(FallbackScorer {
+                w_jaccard: problem.weights.skill_fit / total,
+                w_proficiency: problem.weights.balance / total,
+            }),
             solver: Arc::new(GreedySolver),
             explainer: Arc::new(TemplateExplainer),
         };
@@ -142,12 +148,19 @@ async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationP
         "SELECT id, name, daily_capacity_pd, available_from, available_to \
          FROM resources WHERE deleted_at IS NULL AND status='active'")
         .fetch_all(pool).await?;
+
+    // Batch-load all resource skills (1 query instead of N).
+    let skill_rows: Vec<(i64, i64, i64)> = sqlx::query_as(
+        "SELECT resource_id, skill_id, proficiency FROM resource_skills")
+        .fetch_all(pool).await?;
+    let mut skills_by_res: HashMap<i64, HashMap<i64, i64>> = HashMap::new();
+    for (rid, sid, prof) in skill_rows {
+        skills_by_res.entry(rid).or_default().insert(sid, prof);
+    }
+
     let mut cand = Vec::new();
     for (id, name, cap, avail_from, avail_to) in resources {
-        let skills: HashMap<i64, i64> = sqlx::query_as::<_, (i64, i64)>(
-            "SELECT skill_id, proficiency FROM resource_skills WHERE resource_id=?")
-            .bind(id).fetch_all(pool).await?
-            .into_iter().collect();
+        let skills = skills_by_res.remove(&id).unwrap_or_default();
         cand.push(CandidateResource {
             id, name, skills, tags: vec![], daily_capacity_pd: cap,
             available_from: avail_from, available_to: avail_to,
@@ -161,12 +174,35 @@ async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationP
          FROM tasks t JOIN projects p ON p.id = t.project_id \
          WHERE t.project_id=? AND t.deleted_at IS NULL AND t.status IN ('todo','in_progress')")
         .bind(project_id).fetch_all(pool).await?;
+
+    // Batch-load all task skill requirements for this project's tasks (1 query instead of M).
+    let task_ids: Vec<i64> = tasks.iter().map(|t| t.0).collect();
+    let req_rows: Vec<(i64, i64, i64, i64, f64)> = if task_ids.is_empty() {
+        Vec::new()
+    } else {
+        // Build a parameterized IN clause dynamically. sqlx supports binding a slice/vec
+        // only for specific drivers; for SQLite we build the placeholders string and bind
+        // each id individually via a raw query.
+        let placeholders: String = task_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT task_id, skill_id, min_proficiency, is_mandatory, weight \
+             FROM task_skill_requirements WHERE task_id IN ({})", placeholders);
+        let mut query = sqlx::query_as::<_, (i64, i64, i64, i64, f64)>(&sql);
+        for id in &task_ids {
+            query = query.bind(id);
+        }
+        query.fetch_all(pool).await?
+    };
+    let mut reqs_by_task: HashMap<i64, Vec<SkillReq>> = HashMap::new();
+    for (tid, sid, prof, mandatory, weight) in req_rows {
+        reqs_by_task.entry(tid).or_default().push(SkillReq {
+            skill_id: sid, min_proficiency: prof, is_mandatory: mandatory != 0, weight,
+        });
+    }
+
     let mut cand_tasks = Vec::new();
     for (id, title, est, start, end, pri) in tasks {
-        let reqs: Vec<SkillReq> = sqlx::query_as::<_, (i64, i64, i64, f64)>(
-            "SELECT skill_id, min_proficiency, is_mandatory, weight FROM task_skill_requirements WHERE task_id=?")
-            .bind(id).fetch_all(pool).await?
-            .into_iter().map(|(s, p, m, w)| SkillReq { skill_id: s, min_proficiency: p, is_mandatory: m != 0, weight: w }).collect();
+        let reqs = reqs_by_task.remove(&id).unwrap_or_default();
         cand_tasks.push(CandidateTask {
             id, project_id, title, estimate_pd: est,
             start: start.unwrap_or_else(|| NaiveDate::from_ymd_opt(2026, 1, 1).unwrap()),
@@ -175,10 +211,10 @@ async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationP
         });
     }
 
-    let (run_id,): (i64,) = sqlx::query_as("SELECT COALESCE(MAX(id),0)+1 FROM ai_optimization_runs")
-        .fetch_one(pool).await?;
+    // Placeholder run_id (0) — the real run_id is assigned by INSERT RETURNING id in
+    // run_for_project and stamped back into the problem struct before snapshot serialization.
     Ok(AllocationProblem {
-        run_id, resources: cand, tasks: cand_tasks, existing: vec![],
+        run_id: 0, resources: cand, tasks: cand_tasks, existing: vec![],
         weights: ObjectiveWeights::default(), flags: ConstraintFlags::default(),
         config: SolverConfig::default(),
     })

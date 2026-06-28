@@ -31,9 +31,10 @@ impl ReportService {
     }
 
     async fn resource_utilization(pool: &SqlitePool, start: &str, end: &str) -> Result<ReportTable, AppError> {
+        let cal = db::repo::calendar::hydrate(pool).await?;
         let mut rows = Vec::new();
         for r in db::ResourcesRepo::list_active(pool).await? {
-            let s = crate::service::workload::WorkloadService::resource_summary(pool, r.id, start, end).await?;
+            let s = crate::service::workload::WorkloadService::resource_summary_with_cal(pool, &cal, r.id, start, end).await?;
             rows.push(vec![
                 r.name, fmt(s.capacity_pd), fmt(s.workload_pd), fmt(s.utilization),
                 s.overloaded.to_string(),
@@ -90,12 +91,12 @@ impl ReportService {
                 "SELECT r.id, r.name, p.id, p.name, a.start_date, a.end_date, a.percent \
                  FROM allocations a JOIN resources r ON r.id=a.resource_id \
                  JOIN tasks t ON t.id=a.task_id JOIN projects p ON p.id=t.project_id \
-                 WHERE p.id=? AND a.deleted_at IS NULL").bind(pid),
+                 WHERE p.id=? AND a.deleted_at IS NULL AND r.deleted_at IS NULL AND t.deleted_at IS NULL AND p.deleted_at IS NULL").bind(pid),
             None => sqlx::query_as::<_, (i64, String, i64, String, chrono::NaiveDate, chrono::NaiveDate, f64)>(
                 "SELECT r.id, r.name, p.id, p.name, a.start_date, a.end_date, a.percent \
                  FROM allocations a JOIN resources r ON r.id=a.resource_id \
                  JOIN tasks t ON t.id=a.task_id JOIN projects p ON p.id=t.project_id \
-                 WHERE a.deleted_at IS NULL"),
+                 WHERE a.deleted_at IS NULL AND r.deleted_at IS NULL AND t.deleted_at IS NULL AND p.deleted_at IS NULL"),
         };
         let allocs = q.fetch_all(pool).await?;
 
@@ -130,9 +131,10 @@ impl ReportService {
 
     /// Workforce snapshot (JSON) — current utilization of all resources over a window.
     pub async fn snapshot_json(pool: &SqlitePool, start: &str, end: &str) -> Result<String, AppError> {
+        let cal = db::repo::calendar::hydrate(pool).await?;
         let mut entries = Vec::new();
         for r in db::ResourcesRepo::list_active(pool).await? {
-            let s = crate::service::workload::WorkloadService::resource_summary(pool, r.id, start, end).await?;
+            let s = crate::service::workload::WorkloadService::resource_summary_with_cal(pool, &cal, r.id, start, end).await?;
             entries.push(serde_json::json!({
                 "resource": r.name, "capacity_pd": s.capacity_pd, "workload_pd": s.workload_pd,
                 "utilization": s.utilization, "overloaded": s.overloaded,

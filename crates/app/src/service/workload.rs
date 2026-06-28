@@ -1,8 +1,8 @@
 use crate::error::AppError;
-use crate::service::thresholds::effective_overload;
+use crate::service::thresholds::{effective_overload, effective_overload_cached};
 use chrono::NaiveDate;
 use db::repo::calendar::hydrate;
-use db::{AllocationsRepo, ResourcesRepo};
+use db::{AllocationsRepo, ResourcesRepo, SettingsRepo};
 use domain::{capacity_pd, workload_pd, Window};
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -30,29 +30,41 @@ impl WorkloadService {
     ) -> Result<ResourceSummary, AppError> {
         ResourcesRepo::get(pool, resource_id).await?;
         let cal = hydrate(pool).await?;
+        Self::resource_summary_with_cal(pool, &cal, resource_id, start, end).await
+    }
+
+    /// Like `resource_summary` but reuses a pre-hydrated calendar to avoid the 3-query
+    /// `hydrate()` call per resource when computing many summaries in one request.
+    pub async fn resource_summary_with_cal(
+        pool: &SqlitePool,
+        cal: &domain::Calendar,
+        resource_id: i64,
+        start: &str,
+        end: &str,
+    ) -> Result<ResourceSummary, AppError> {
         let w = parse_window(start, end)?;
         let rows = AllocationsRepo::list_for_resource(pool, resource_id, start, end).await?;
         let allocs: Vec<domain::Allocation> = rows.iter().map(|r| r.to_domain()).collect();
         let threshold = effective_overload(pool, resource_id).await?;
-        Ok(Self::summarize(&cal, &allocs, resource_id, w, threshold))
+        Ok(Self::summarize(cal, &allocs, resource_id, w, threshold))
     }
 
     /// All resources whose utilization exceeds their effective threshold (Dashboard alert list).
-    /// The calendar is hydrated ONCE (not per resource) — `hydrate()` is 3 queries and
-    /// identical across resources in one request, so re-fetching it N times would be the
-    /// dominant cost at scale (design §4.9 <5ms target).
+    /// The calendar and global thresholds are hydrated ONCE (not per resource) to avoid
+    /// redundant DB queries at scale (design §4.9 <5ms target).
     pub async fn overloads(
         pool: &SqlitePool,
         start: &str,
         end: &str,
     ) -> Result<Vec<ResourceSummary>, AppError> {
         let cal = hydrate(pool).await?;
+        let global_threshold = SettingsRepo::thresholds(pool).await?.overload;
         let w = parse_window(start, end)?;
         let mut out = Vec::new();
         for r in db::ResourcesRepo::list_active(pool).await? {
             let rows = AllocationsRepo::list_for_resource(pool, r.id, start, end).await?;
             let allocs: Vec<domain::Allocation> = rows.iter().map(|row| row.to_domain()).collect();
-            let threshold = effective_overload(pool, r.id).await?;
+            let threshold = effective_overload_cached(pool, r.id, global_threshold).await?;
             let s = Self::summarize(&cal, &allocs, r.id, w, threshold);
             if s.overloaded {
                 out.push(s);
@@ -124,6 +136,7 @@ impl WorkloadService {
     ) -> Result<TeamSummary, AppError> {
         TeamsRepo::get(pool, team_id).await?;
         let cal = hydrate(pool).await?;
+        let global_threshold = SettingsRepo::thresholds(pool).await?.overload;
         let w = parse_window(start, end)?;
         let members = TeamMembersRepo::list_members(pool, team_id).await?;
         let ids: Vec<i64> = members.iter().map(|m| m.resource_id).collect();
@@ -139,7 +152,7 @@ impl WorkloadService {
             total_wl += wl;
             total_cap += cap;
             let util = if cap > 0.0 { wl / cap } else { 0.0 };
-            if util > effective_overload(pool, rid).await? {
+            if util > effective_overload_cached(pool, rid, global_threshold).await? {
                 overloaded.push(rid);
             }
         }
@@ -171,7 +184,7 @@ impl WorkloadService {
         let rows: Vec<(i64, i64, NaiveDate, NaiveDate, f64)> = sqlx::query_as(
             "SELECT a.resource_id, a.task_id, a.start_date, a.end_date, a.percent \
              FROM allocations a JOIN tasks t ON t.id = a.task_id \
-             WHERE t.project_id = ? AND a.deleted_at IS NULL",
+             WHERE t.project_id = ? AND a.deleted_at IS NULL AND t.deleted_at IS NULL",
         )
         .bind(project_id)
         .fetch_all(pool)

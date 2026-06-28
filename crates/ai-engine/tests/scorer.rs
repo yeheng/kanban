@@ -35,7 +35,7 @@ fn task(id: i64, reqs: &[(i64, i64, bool)]) -> CandidateTask {
 
 #[tokio::test]
 async fn mandatory_unmet_scores_zero() {
-    let s = FallbackScorer;
+    let s = FallbackScorer::default();
     let r = res(1, &[(1, 2)]); // proficiency 2
     let t = task(10, &[(1, 3, true)]); // needs 3
     assert_eq!(s.score(&r, &t).await, 0.0);
@@ -43,7 +43,7 @@ async fn mandatory_unmet_scores_zero() {
 
 #[tokio::test]
 async fn matched_skill_scores_higher_than_mismatched() {
-    let s = FallbackScorer;
+    let s = FallbackScorer::default();
     let good = res(1, &[(1, 4)]);
     let weak = res(2, &[(2, 4)]);
     let t = task(10, &[(1, 3, true)]);

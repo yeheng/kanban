@@ -38,7 +38,7 @@ async fn engine_pipeline_produces_plan_with_explanation() {
     };
 
     let engine = OptimizationEngine {
-        scorer: Arc::new(FallbackScorer),
+        scorer: Arc::new(FallbackScorer::default()),
         solver: Arc::new(GreedySolver),
         explainer: Arc::new(TemplateExplainer),
     };

@@ -74,7 +74,7 @@ impl TasksRepo {
         Ok(sqlx::query_as::<_, KanbanTask>(
             "SELECT t.id, t.project_id, t.title, t.status, t.sort_order, t.estimate_pd, \
                     (SELECT r.name FROM allocations a JOIN resources r ON r.id = a.resource_id \
-                     WHERE a.task_id = t.id AND a.deleted_at IS NULL LIMIT 1) AS assignee, \
+                     WHERE a.task_id = t.id AND a.deleted_at IS NULL AND r.deleted_at IS NULL LIMIT 1) AS assignee, \
                     (SELECT count(*) FROM task_skill_requirements sr WHERE sr.task_id = t.id) AS skill_count \
              FROM tasks t WHERE t.project_id = ? AND t.deleted_at IS NULL \
              ORDER BY t.sort_order, t.id")
@@ -94,9 +94,13 @@ impl TaskDepsRepo {
         Ok(())
     }
 
-    /// All (task_id, predecessor_id) edges, for in-memory cycle detection.
+    /// All (task_id, predecessor_id) edges for live tasks, for in-memory cycle detection.
     pub async fn all_edges(pool: &SqlitePool) -> Result<Vec<(i64, i64)>, DbError> {
-        Ok(sqlx::query_as("SELECT task_id, predecessor_id FROM task_dependencies")
+        Ok(sqlx::query_as(
+            "SELECT d.task_id, d.predecessor_id \
+             FROM task_dependencies d \
+             JOIN tasks t1 ON t1.id = d.task_id AND t1.deleted_at IS NULL \
+             JOIN tasks t2 ON t2.id = d.predecessor_id AND t2.deleted_at IS NULL")
             .fetch_all(pool).await?)
     }
 
@@ -109,11 +113,14 @@ impl TaskDepsRepo {
     }
 
     /// Dependency edges among tasks of one project (for Gantt arrows).
+    /// Filters both the dependent task and the predecessor for soft-deletes.
     pub async fn for_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<crate::models::DepEdge>, DbError> {
         Ok(sqlx::query_as::<_, crate::models::DepEdge>(
             "SELECT d.task_id, d.predecessor_id, d.lag_days, d.dep_type \
-             FROM task_dependencies d JOIN tasks t ON t.id = d.task_id \
-             WHERE t.project_id = ? AND t.deleted_at IS NULL")
+             FROM task_dependencies d \
+             JOIN tasks t ON t.id = d.task_id AND t.deleted_at IS NULL \
+             JOIN tasks tp ON tp.id = d.predecessor_id AND tp.deleted_at IS NULL \
+             WHERE t.project_id = ?")
             .bind(project_id).fetch_all(pool).await?)
     }
 }

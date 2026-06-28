@@ -18,7 +18,17 @@ pub trait Scorer: Send + Sync {
 /// Deterministic offline scorer (no LLM). Keyword-Jaccard over resource
 /// skills+tags vs task title+skill_reqs (coarse proficiency buckets), plus a
 /// proficiency bonus. Mandatory skills unmet ⇒ 0 (hard filter reflected in score).
-pub struct FallbackScorer;
+/// Weights are configurable (default 0.6/0.4 jaccard/proficiency).
+pub struct FallbackScorer {
+    pub w_jaccard: f64,
+    pub w_proficiency: f64,
+}
+
+impl Default for FallbackScorer {
+    fn default() -> Self {
+        Self { w_jaccard: 0.6, w_proficiency: 0.4 }
+    }
+}
 
 impl FallbackScorer {
     fn tokens(r: &CandidateResource) -> Vec<String> {
@@ -76,7 +86,7 @@ impl Scorer for FallbackScorer {
                 .sum();
             s / (t.skill_reqs.len() as f64 * 5.0)
         };
-        (base * 0.6 + bonus * 0.4).clamp(0.0, 1.0)
+        (base * self.w_jaccard + bonus * self.w_proficiency).clamp(0.0, 1.0)
     }
 }
 

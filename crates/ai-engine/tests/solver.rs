@@ -65,7 +65,7 @@ async fn problem() -> (AllocationProblem, ScoreMatrix) {
         ],
         ..Default::default()
     };
-    let m = FallbackScorer.matrix(&p).await;
+    let m = FallbackScorer::default().matrix(&p).await;
     (p, m)
 }
 
