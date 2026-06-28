@@ -15,6 +15,12 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 csv = "1"
 rust_xlsxwriter = "0.79"
+# PDF generator (pure-Rust printpdf 0.7, no Chromium). Optional behind the 'pdf' feature.
+printpdf = { version = "0.7", default-features = false, optional = true }
+
+[features]
+default = []
+pdf = ["dep:printpdf"]
 
 [dev-dependencies]
 tokio = { workspace = true }

@@ -185,3 +185,32 @@ impl ReportService {
         wb.save_to_buffer().map_err(map)
     }
 }
+
+/// PDF generator via pure-Rust `printpdf` (no Chromium; HTML→PDF remains optional #41).
+/// Feature-gated (`pdf`); simple paginated text table — multi-page when y drops below margin.
+#[cfg(feature = "pdf")]
+impl ReportService {
+    pub fn to_pdf(t: &ReportTable) -> Result<Vec<u8>, AppError> {
+        use printpdf::{BuiltinFont, Mm, PdfDocument};
+        let (doc, page_idx, layer_idx) =
+            PdfDocument::new("report", Mm(210.0), Mm(297.0), "Layer 1");
+        let font = doc.add_builtin_font(BuiltinFont::Helvetica)
+            .map_err(|e| AppError::internal(e.to_string()))?;
+        let mut y = 280.0_f32;
+        let mut layer = doc.get_page(page_idx).get_layer(layer_idx);
+        layer.use_text(&t.title, 14.0, Mm(15.0), Mm(y), &font);
+        y -= 10.0;
+        layer.use_text(&t.columns.join("   |   "), 9.0, Mm(15.0), Mm(y), &font);
+        y -= 8.0;
+        for row in &t.rows {
+            if y < 20.0 {
+                let (p, l) = doc.add_page(Mm(210.0), Mm(297.0), "Layer 1");
+                layer = doc.get_page(p).get_layer(l);
+                y = 280.0;
+            }
+            layer.use_text(&row.join("   |   "), 9.0, Mm(15.0), Mm(y), &font);
+            y -= 8.0;
+        }
+        doc.save_to_bytes().map_err(|e| AppError::internal(e.to_string()))
+    }
+}

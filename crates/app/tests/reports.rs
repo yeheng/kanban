@@ -57,3 +57,11 @@ fn xlsx_is_zip() {
     let bytes = ReportService::to_xlsx(&t).unwrap();
     assert_eq!(&bytes[..2], b"PK"); // xlsx is a ZIP
 }
+
+#[cfg(feature = "pdf")]
+#[test]
+fn pdf_starts_with_header() {
+    let t = ReportTable { title: "X".into(), columns: vec!["a".into()], rows: vec![vec!["1".into()]] };
+    let bytes = ReportService::to_pdf(&t).unwrap();
+    assert_eq!(&bytes[..4], b"%PDF"); // PDF magic
+}
