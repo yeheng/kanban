@@ -28,6 +28,7 @@ onMounted(async () => {
       <router-link to="/calendar" style="display:block;padding:6px 0">日历 Calendar</router-link>
       <router-link to="/gantt" style="display:block;padding:6px 0">甘特图 Gantt</router-link>
       <router-link to="/calendar-grid" style="display:block;padding:6px 0">占用网格 Calendar Grid</router-link>
+      <router-link to="/ai" style="display:block;padding:6px 0">AI 优化 Optimization</router-link>
       <hr />
       <small>项目：</small>
       <select v-model.number="projects.current" @change="projects.select(projects.current!)">
