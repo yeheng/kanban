@@ -11,7 +11,9 @@ pub trait Solver: Send + Sync {
 pub struct GreedySolver;
 
 fn window_days(start: chrono::NaiveDate, end: chrono::NaiveDate) -> i64 {
-    (end - start).num_days() + 1
+    // Floor at 1 so a degenerate/NULL-defaulted window (end < start) can't produce
+    // ≤0 days → inf/NaN percent downstream.
+    ((end - start).num_days() + 1).max(1)
 }
 
 impl Solver for GreedySolver {
@@ -34,10 +36,11 @@ impl Solver for GreedySolver {
         }
 
         let mut order: Vec<&CandidateTask> = problem.tasks.iter().collect();
+        // total_cmp (not partial_cmp().unwrap()) so a NaN score can't panic the sort.
         order.sort_by(|a, b| {
             a.priority
                 .cmp(&b.priority)
-                .then_with(|| b.estimate_pd.partial_cmp(&a.estimate_pd).unwrap())
+                .then_with(|| b.estimate_pd.total_cmp(&a.estimate_pd))
         });
 
         let mut assignments = Vec::new();
@@ -47,24 +50,30 @@ impl Solver for GreedySolver {
         for t in order {
             let days = window_days(t.start, t.end);
             let needed = (t.estimate_pd / days as f64).clamp(0.01, 1.0);
-            // candidate resources: mandatory skills met, sorted by score desc
+            // candidate resources: mandatory skills met AND within the resource's
+            // availability window (mirrors trg_allocation_validate_insert, so anything
+            // the solver accepts the DB trigger will accept on apply()). Sorted by score desc.
             let mut cands: Vec<&CandidateResource> = problem
                 .resources
                 .iter()
                 .filter(|r| {
-                    t.skill_reqs.iter().filter(|rq| rq.is_mandatory).all(|rq| {
+                    let skills_ok = t.skill_reqs.iter().filter(|rq| rq.is_mandatory).all(|rq| {
                         r.skills
                             .get(&rq.skill_id)
                             .is_some_and(|p| *p >= rq.min_proficiency)
-                    })
+                    });
+                    let avail_ok = match (r.available_from, r.available_to) {
+                        (Some(from), Some(to)) => t.start >= from && t.end <= to,
+                        _ => true, // no window set ⇒ unconstrained (matches the trigger)
+                    };
+                    skills_ok && avail_ok
                 })
                 .collect();
             cands.sort_by(|a, b| {
                 scores
                     .get(&(b.id, t.id))
                     .unwrap_or(&0.0)
-                    .partial_cmp(scores.get(&(a.id, t.id)).unwrap_or(&0.0))
-                    .unwrap()
+                    .total_cmp(scores.get(&(a.id, t.id)).unwrap_or(&0.0))
             });
 
             let mut chosen = None;

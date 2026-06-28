@@ -8,6 +8,8 @@ fn res(id: i64, skills: &[(i64, i64)]) -> CandidateResource {
         skills: skills.iter().cloned().collect(),
         tags: vec![],
         daily_capacity_pd: 1.0,
+        available_from: None,
+        available_to: None,
     }
 }
 fn task(id: i64, reqs: &[(i64, i64, bool)]) -> CandidateTask {

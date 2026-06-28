@@ -166,6 +166,8 @@ pub mod semantic {
                         skills: Default::default(),
                         tags: vec!["rust".into()],
                         daily_capacity_pd: 1.0,
+                        available_from: None,
+                        available_to: None,
                     },
                     &CandidateTask {
                         id: 1,

@@ -16,6 +16,8 @@ async fn engine_pipeline_produces_plan_with_explanation() {
             skills: std::collections::HashMap::from([(1, 4)]),
             tags: vec![],
             daily_capacity_pd: 1.0,
+                available_from: None,
+                available_to: None,
         }],
         tasks: vec![CandidateTask {
             id: 10,

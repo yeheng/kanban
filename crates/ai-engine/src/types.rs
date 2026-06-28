@@ -10,6 +10,11 @@ pub struct CandidateResource {
     pub skills: HashMap<i64, i64>,
     pub tags: Vec<String>,
     pub daily_capacity_pd: f64,
+    /// Availability window (design §3.3.2). When both are Some, the solver gates
+    /// assignments to [available_from, available_to] to mirror the
+    /// trg_allocation_validate_insert trigger (else apply() would ABORT).
+    pub available_from: Option<NaiveDate>,
+    pub available_to: Option<NaiveDate>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

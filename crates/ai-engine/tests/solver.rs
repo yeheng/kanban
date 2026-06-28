@@ -18,6 +18,8 @@ async fn problem() -> (AllocationProblem, ScoreMatrix) {
                 skills: HashMap::from([(1, 4)]),
                 tags: vec![],
                 daily_capacity_pd: 1.0,
+                available_from: None,
+                available_to: None,
             },
             CandidateResource {
                 id: 2,
@@ -25,6 +27,8 @@ async fn problem() -> (AllocationProblem, ScoreMatrix) {
                 skills: HashMap::from([(1, 4)]),
                 tags: vec![],
                 daily_capacity_pd: 1.0,
+                available_from: None,
+                available_to: None,
             },
         ],
         tasks: vec![
@@ -85,6 +89,8 @@ async fn unscheduled_when_no_feasible_resource() {
         skills: HashMap::from([(1, 4)]),
         tags: vec![],
         daily_capacity_pd: 1.0,
+                available_from: None,
+                available_to: None,
     }];
     let sol = GreedySolver.solve(&p, &m);
     // one task fills R1 to 1.0; the other can't fit -> unscheduled
