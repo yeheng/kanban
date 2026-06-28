@@ -2,17 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the running Tauri v2 desktop app with a Vue 3 frontend that drives the Phase 1 backend CRUD and renders a drag-and-drop **Kanban** of tasks grouped by status.
+**Goal:** Build a running Vue 3 frontend that drives the Phase 1 backend CRUD via HTTP API and renders a drag-and-drop **Kanban** of tasks grouped by status. A Tauri v2 desktop shell remains optional.
 
-**Architecture:** Tauri v2 shell (`src-tauri/`) wrapping the `app` crate; the Vue 3 SPA (Vite + TypeScript) talks to Rust only via typed `invoke` wrappers. State lives in Pinia stores (projects, tasks, catalog, resources, ui). The Kanban uses native HTML5 drag-and-drop (no extra dep) to move cards between status columns, calling `set_task_status`. Tests cover the typed API client and stores via Vitest (pure logic); the Kanban DnD is verified by an end-to-end manual smoke.
+**Architecture:** The backend is an HTTP API server (`crates/server`, axum) wrapping the `app` crate services. The Vue 3 SPA (Vite + TypeScript) talks to the backend via native `fetch` against `/api/*` endpoints. State lives in Pinia stores (projects, tasks, catalog, resources, ui). The Kanban uses native HTML5 drag-and-drop (no extra dep) to move cards between status columns, calling `PATCH /api/tasks/:id/status`. Tests cover the typed API client and stores via Vitest (pure logic); the Kanban DnD is verified by an end-to-end manual smoke.
 
-**Tech Stack:** Tauri v2, Vite, Vue 3 (`<script setup>` + TS), Pinia, Vue Router, Naive UI (design §7 recommendation), `@tauri-apps/api`, Vitest + `@vue/test-utils`.
+**Tech Stack:** Vite, Vue 3 (`<script setup>` + TS), Pinia, Vue Router, Naive UI (design §7 recommendation), Vitest + `@vue/test-utils`; Rust axum server; optional Tauri v2 desktop shell.
 
-**Prerequisite:** Phase 0 + Phase 1 backend plans implemented and `cargo test --workspace` green. The `app` crate exposes `#[tauri::command]` functions (`create_project`, `list_projects`, `ensure_skill`, `list_skills`, `ensure_tag`, `list_tags`, `create_task`, `set_task_status`, `kanban_tasks`, `create_team`, `add_team_member`) and `app::crypto::open_encrypted`.
+**Prerequisite:** Phase 0 + Phase 1 backend plans implemented and `cargo test --workspace` green. The `app` crate exposes service functions (`create_project`, `list_projects`, `ensure_skill`, `list_skills`, `ensure_tag`, `list_tags`, `create_task`, `set_task_status`, `kanban_tasks`, `create_team`, `add_team_member`). SQLite encryption is deferred; the server opens a plain SQLite DB.
 
-**Scope note:** Kanban + project/task/resource CRUD only. Gantt, calendar, allocations UI, and the AI panel are later phases. The production first-run passphrase prompt + OS keychain storage (§6.8) is a deferred hardening task — here the DB is opened at startup from an env passphrase with a dev fallback so the app runs end-to-end.
+**Scope note:** Kanban + project/task/resource CRUD only. Gantt, calendar, allocations UI, Dashboard/workload, and the AI panel are later phases. SQLite encryption and production first-run passphrase prompt + OS keychain storage (§6.8) are explicitly deferred.
 
 **Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§7 Frontend & UI).
+
+> **Post-implementation architecture change:** The original plan used Tauri `invoke` IPC. It was changed to HTTP API calls to support multi-client deployment (web, desktop, mobile). See the updated Task 2/Task 3/Task 8 below.
 
 ---
 
@@ -20,14 +22,25 @@
 
 ```
 kanban/
-├── src-tauri/                      # Tauri v2 shell (NEW)
+├── crates/
+│   ├── app/                        # business services + AppError
+│   ├── db/                         # repositories + migrations
+│   ├── domain/                     # pure domain logic
+│   └── server/                     # axum HTTP API (NEW)
+│       ├── Cargo.toml
+│       └── src/
+│           ├── main.rs
+│           ├── lib.rs
+│           ├── state.rs
+│           ├── error.rs
+│           └── routes/
+├── src-tauri/                      # Tauri v2 shell (optional desktop wrapper)
 │   ├── Cargo.toml
 │   ├── build.rs
 │   ├── tauri.conf.json
 │   ├── icons/
 │   └── src/
-│       ├── main.rs                 # tauri::Builder + manage(AppState) + generate_handler!
-│       └── commands_extra.rs       # create_resource/list_resource commands (repo from Phase 0)
+│       └── main.rs                 # minimal Tauri builder, no commands/state
 ├── index.html                      # NEW
 ├── package.json                    # NEW
 ├── vite.config.ts                  # NEW
@@ -37,7 +50,7 @@ kanban/
 │   ├── App.vue
 │   ├── router.ts
 │   ├── api/
-│   │   ├── index.ts                # typed invoke wrappers
+│   │   ├── index.ts                # typed HTTP fetch wrappers
 │   │   └── index.test.ts
 │   ├── stores/
 │   │   ├── projects.ts
@@ -61,7 +74,7 @@ kanban/
 └── tests/                          # (Rust integration tests stay in crates/*/tests)
 ```
 
-**Responsibilities:** `src-tauri` is the thin shell — it constructs `AppState` (encrypted open) and registers commands. `src/api` is the ONLY place that calls `invoke`; everything else uses Pinia stores. Views are dumb; stores own data + actions.
+**Responsibilities:** `crates/server` owns the HTTP API and DB pool. `src-tauri` is an optional desktop wrapper with no backend logic. `src/api` is the ONLY place that calls `fetch`; everything else uses Pinia stores. Views are dumb; stores own data + actions.
 
 ---
 
@@ -249,120 +262,105 @@ git commit -m "chore: scaffold Tauri v2 + Vite + Vue 3 + TS"
 
 ---
 
-## Task 2: Tauri wiring — AppState, command registration, dev DB open
+## Task 2: HTTP API server + dev DB open
 
 **Files:**
-- Create: `src-tauri/src/main.rs`
-- Create: `src-tauri/src/commands_extra.rs`
-- Modify: workspace `Cargo.toml` (add `src-tauri` member, excluded from default test if needed)
+- Create: `crates/server/Cargo.toml`
+- Create: `crates/server/src/main.rs`
+- Create: `crates/server/src/lib.rs`
+- Create: `crates/server/src/state.rs`
+- Create: `crates/server/src/error.rs`
+- Create: `crates/server/src/routes/*.rs`
+- Modify: workspace `Cargo.toml` (add `crates/server` member)
+- Modify: `src-tauri/src/main.rs` (strip commands, keep shell)
 
-- [ ] **Step 1: Add resource commands the UI needs — `src-tauri/src/commands_extra.rs`**
+- [ ] **Step 1: Add `crates/server` HTTP API backend**
 
-(Phase 0's `ResourcesRepo` exists but has no command yet; add two thin wrappers.)
-
+Create `crates/server/src/state.rs`:
 ```rust
-use app::error::AppError;
-use app::state::AppState;
-use db::models::Resource;
-use db::ResourcesRepo;
+use sqlx::SqlitePool;
 
-#[tauri::command]
-pub async fn create_resource(state: tauri::State<'_, AppState>, name: String, email: Option<String>) -> Result<i64, AppError> {
-    Ok(ResourcesRepo::create(&state.pool, &name, email.as_deref()).await?)
+#[derive(Clone)]
+pub struct AppState {
+    pub pool: SqlitePool,
 }
 
-#[tauri::command]
-pub async fn list_resources(state: tauri::State<'_, AppState>) -> Result<Vec<Resource>, AppError> {
-    Ok(ResourcesRepo::list_active(&state.pool).await?)
+impl AppState {
+    pub async fn open(url: &str) -> Self {
+        let pool = db::pool::connect(url).await.expect("db connect");
+        sqlx::migrate!("../db/migrations").run(&pool).await.expect("migrate");
+        Self { pool }
+    }
 }
 ```
 
-- [ ] **Step 2: `src-tauri/src/main.rs`**
+Create routes under `crates/server/src/routes/` that call `app::service::*` and `db::*Repo`:
+- `GET /api/projects`, `POST /api/projects`
+- `GET /api/skills`, `POST /api/skills`
+- `GET /api/tags`, `POST /api/tags`
+- `POST /api/tasks`, `PATCH /api/tasks/{id}/status`, `GET /api/projects/{id}/kanban`
+- `GET /api/resources`, `POST /api/resources`
+- `POST /api/teams`, `POST /api/teams/{id}/members`, `PUT /api/teams/overrides`
+
+Use axum `0.8`+ path syntax `{id}` for capture groups.
+
+- [ ] **Step 2: `crates/server/src/main.rs`**
 
 ```rust
-mod commands_extra;
-
-use app::state::AppState;
 use std::env;
 
-// Re-export every Phase 1 command so the handler list stays in one place.
-use app::command::{
-    add_team_member, create_project, create_task, create_team, ensure_skill, ensure_tag,
-    kanban_tasks, list_projects, list_skills, list_tags, set_task_status, set_team_override,
-};
-use commands_extra::{create_resource, list_resources};
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .init();
 
+    let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| {
+        let home = env::var("HOME").expect("HOME env var");
+        let dir = std::path::Path::new(&home).join("Library/Application Support/com.hrkanban.app");
+        std::fs::create_dir_all(&dir).ok();
+        format!("sqlite://{}/hrk.db?mode=rwc", dir.to_string_lossy())
+    });
+
+    let port = env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(3000);
+    let state = server::state::AppState::open(&db_url).await;
+    server::run_server(state.pool, port).await;
+}
+```
+
+- [ ] **Step 3: Simplify `src-tauri/src/main.rs`**
+
+Tauri no longer manages DB state or registers commands. It is an optional desktop wrapper:
+```rust
 fn main() {
     tauri::Builder::default()
-        .setup(|app| {
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let db_path = db_path_for(&handle);
-                let state = match env::var("HRK_DB_PASSPHRASE") {
-                    Ok(p) if !p.is_empty() => app::crypto::open_encrypted(&db_path, &p)
-                        .await
-                        .expect("failed to open encrypted DB"),
-                    _ => {
-                        // Dev fallback: unencrypted file so `tauri dev` runs without a passphrase.
-                        // Production first-run prompt + keychain is a deferred task (§6.8).
-                        let url = format!("sqlite://{}?mode=rwc", db_path);
-                        let pool = db::pool::connect(&url).await.expect("dev db open");
-                        sqlx::migrate!("../crates/db/migrations").run(&pool).await.expect("migrate");
-                        AppState { pool }
-                    }
-                };
-                handle.manage(state);
-            });
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            create_project, list_projects,
-            ensure_skill, list_skills, ensure_tag, list_tags,
-            create_task, set_task_status, kanban_tasks,
-            create_team, add_team_member, set_team_override,
-            create_resource, list_resources,
-        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-
-fn db_path_for(app: &tauri::AppHandle) -> String {
-    use tauri::Manager;
-    let dir = app.path().app_data_dir().expect("app_data_dir");
-    std::fs::create_dir_all(&dir).ok();
-    dir.join("hrk.db").to_string_lossy().into_owned()
-}
 ```
 
-> Commands are registered immediately; `AppState` is managed asynchronously inside `setup`. A command invoked before the pool is ready will fail with a Tauri "state not managed" error — acceptable during the brief startup window. (If needed, gate the UI behind the `FirstRun` view until ready; see Task 5.)
-
-- [ ] **Step 3: Add `src-tauri` to the workspace**
+- [ ] **Step 4: Add `crates/server` and keep `src-tauri` in the workspace**
 
 Root `Cargo.toml` `members`:
 ```toml
-members = ["crates/domain", "crates/db", "crates/app", "src-tauri"]
+members = ["crates/domain", "crates/db", "crates/app", "crates/server", "src-tauri"]
 ```
 
-Add to root `Cargo.toml` `[workspace.dependencies]`:
-```toml
-tauri = { version = "2", features = [] }
-```
+- [ ] **Step 5: Verify it compiles**
 
-- [ ] **Step 4: Verify it compiles**
+Run: `cargo build -p server && cargo build -p hr-kanban`
+Expected: clean build.
 
-Run: `cargo build -p hr-kanban`
-Expected: clean build (may emit Tauri capability warnings — fine).
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add -A
-git commit -m "feat(tauri): wire AppState + command handler + dev DB open"
+git commit -m "feat(server): add axum HTTP API backend; strip Tauri commands"
 ```
 
 ---
 
-## Task 3: Typed API client (TDD)
+## Task 3: Typed HTTP API client (TDD)
 
 **Files:**
 - Create: `src/types.ts`
@@ -392,91 +390,154 @@ export type TaskStatus = "todo" | "in_progress" | "blocked" | "review" | "done" 
 - [ ] **Step 2: `src/api/index.ts`**
 
 ```ts
-import { invoke } from "@tauri-apps/api/core";
 import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus } from "../types";
 
-// Skill requirement tuple mirrors Rust (i64,i64,bool,f64): [skillId, minProf, mandatory, weight]
 export type SkillReq = [number, number, boolean, number];
 
-export const api = {
-  listProjects: (): Promise<Project[]> => invoke("list_projects"),
-  createProject: (name: string, priority: number, budgetPd: number): Promise<number> =>
-    invoke("create_project", { name, priority, budgetPd: budgetPd }),
+const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
-  listSkills: (): Promise<Skill[]> => invoke("list_skills"),
-  ensureSkill: (name: string): Promise<number> => invoke("ensure_skill", { name }),
-  listTags: (): Promise<Tag[]> => invoke("list_tags"),
-  ensureTag: (name: string, color: string | null): Promise<number> => invoke("ensure_tag", { name, color }),
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = {};
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    init.body = JSON.stringify(body);
+  }
+  init.headers = headers;
+
+  const res = await fetch(`${BASE}${path}`, init);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "request failed");
+    throw new Error(text);
+  }
+  if (res.status === 204) return undefined as T;
+  return res.json() as Promise<T>;
+}
+
+export const api = {
+  listProjects: (): Promise<Project[]> => request("GET", "/api/projects"),
+  createProject: (name: string, priority: number, budgetPd: number): Promise<number> =>
+    request("POST", "/api/projects", { name, priority, budget_pd: budgetPd }),
+
+  listSkills: (): Promise<Skill[]> => request("GET", "/api/skills"),
+  ensureSkill: (name: string): Promise<number> => request("POST", "/api/skills", { name }),
+  listTags: (): Promise<Tag[]> => request("GET", "/api/tags"),
+  ensureTag: (name: string, color: string | null): Promise<number> =>
+    request("POST", "/api/tags", { name, color }),
 
   createTask: (args: {
     projectId: number; title: string; estimatePd: number;
     start: string | null; end: string | null;
     skillReqs: SkillReq[]; tagIds: number[];
   }): Promise<number> =>
-    invoke("create_task", {
-      projectId: args.projectId, title: args.title, estimatePd: args.estimatePd,
-      start: args.start, end: args.end, skillReqs: args.skillReqs, tagIds: args.tagIds,
-      description: null, isLongTerm: false, sortOrder: 0,
+    request("POST", "/api/tasks", {
+      project_id: args.projectId, title: args.title, estimate_pd: args.estimatePd,
+      start: args.start, end: args.end, skill_reqs: args.skillReqs, tag_ids: args.tagIds,
+      description: null, is_long_term: false, sort_order: 0,
     }),
   setTaskStatus: (id: number, status: TaskStatus): Promise<void> =>
-    invoke("set_task_status", { id, status }),
-  kanbanTasks: (projectId: number): Promise<KanbanTask[]> => invoke("kanban_tasks", { projectId }),
+    request("PATCH", `/api/tasks/${id}/status`, { status }),
+  kanbanTasks: (projectId: number): Promise<KanbanTask[]> =>
+    request("GET", `/api/projects/${projectId}/kanban`),
 
-  listResources: (): Promise<Resource[]> => invoke("list_resources"),
+  listResources: (): Promise<Resource[]> => request("GET", "/api/resources"),
   createResource: (name: string, email: string | null): Promise<number> =>
-    invoke("create_resource", { name, email }),
+    request("POST", "/api/resources", { name, email }),
 };
 ```
 
-- [ ] **Step 3: `src/api/index.test.ts`** (mocks `invoke`)
+- [ ] **Step 3: Update `vite.config.ts` dev proxy**
+
+```ts
+import { defineConfig } from "vite";
+import vue from "@vitejs/plugin-vue";
+
+export default defineConfig({
+  plugins: [vue()],
+  clearScreen: false,
+  server: {
+    port: 1420,
+    strictPort: true,
+    proxy: {
+      "/api": { target: "http://localhost:3000", changeOrigin: true },
+    },
+  },
+  test: { environment: "jsdom", globals: true },
+});
+```
+
+- [ ] **Step 4: `src/api/index.test.ts`** (mocks `globalThis.fetch`)
 
 ```ts
 import { describe, it, expect, vi, beforeEach } from "vitest";
-
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
-
-import { invoke } from "@tauri-apps/api/core";
 import { api } from "./index";
 
-beforeEach(() => vi.mocked(invoke).mockReset());
+beforeEach(() => vi.restoreAllMocks());
+
+function mockFetch(response: { ok: boolean; status: number; json?: unknown; text?: string }) {
+  globalThis.fetch = vi.fn().mockResolvedValue({
+    ok: response.ok,
+    status: response.status,
+    json: async () => response.json,
+    text: async () => response.text ?? "",
+  } as Response);
+}
 
 describe("api client", () => {
-  it("createProject passes snake_case budgetPd", async () => {
-    vi.mocked(invoke).mockResolvedValue(7);
+  it("createProject sends snake_case budget_pd", async () => {
+    mockFetch({ ok: true, status: 201, json: 7 });
     const id = await api.createProject("Atlas", 3, 40);
     expect(id).toBe(7);
-    expect(invoke).toHaveBeenCalledWith("create_project", { name: "Atlas", priority: 3, budgetPd: 40 });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/projects",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ name: "Atlas", priority: 3, budget_pd: 40 }),
+      })
+    );
   });
 
-  it("createTask maps camelCase to the command args", async () => {
-    vi.mocked(invoke).mockResolvedValue(1);
+  it("createTask maps camelCase to snake_case body", async () => {
+    mockFetch({ ok: true, status: 201, json: 1 });
     await api.createTask({ projectId: 2, title: "T", estimatePd: 5, start: null, end: null, skillReqs: [[1, 3, true, 1]], tagIds: [9] });
-    const args = vi.mocked(invoke).mock.calls[0][1] as Record<string, unknown>;
-    expect(args.projectId).toBe(2);
-    expect(args.estimatePd).toBe(5);
-    expect(args.isLongTerm).toBe(false);
+    const body = JSON.parse((globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls[0][1].body);
+    expect(body.project_id).toBe(2);
+    expect(body.estimate_pd).toBe(5);
+    expect(body.is_long_term).toBe(false);
+    expect(body.skill_reqs).toEqual([[1, 3, true, 1]]);
   });
 
-  it("setTaskStatus calls the command", async () => {
-    vi.mocked(invoke).mockResolvedValue(undefined);
+  it("setTaskStatus calls PATCH endpoint", async () => {
+    mockFetch({ ok: true, status: 204 });
     await api.setTaskStatus(1, "done");
-    expect(invoke).toHaveBeenCalledWith("set_task_status", { id: 1, status: "done" });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "/api/tasks/1/status",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ status: "done" }),
+      })
+    );
   });
 });
 ```
 
-- [ ] **Step 4: Run test — verify PASS**
+- [ ] **Step 5: Update `tsconfig.json` types**
+
+Add `"vite/client"` to `compilerOptions.types` so `import.meta.env` is typed:
+```json
+"types": ["vitest/globals", "vite/client"]
+```
+
+- [ ] **Step 6: Run test — verify PASS**
 
 Run: `npm test -- src/api/index.test.ts`
 Expected: `3 passed`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add -A
-git commit -m "feat(web): typed invoke API client + tests"
+git commit -m "feat(web): typed HTTP fetch API client + tests + vite proxy"
 ```
 
 ---
@@ -665,7 +726,7 @@ const catalog = useCatalogStore();
 const ready = ref(false);
 
 onMounted(async () => {
-  // Retry briefly until the Rust AppState (managed async in setup) is ready.
+  // Retry briefly until the HTTP API server is reachable.
   for (let i = 0; i < 40; i++) {
     try { await projects.load(); await catalog.load(); ready.value = true; return; }
     catch { await new Promise((r) => setTimeout(r, 100)); }
@@ -1002,36 +1063,44 @@ git commit -m "feat(web): CRUD forms (project/task/resource) + views"
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the desktop app (dev mode, unencrypted fallback)**
+- [ ] **Step 1: Start the HTTP API server**
 
 ```bash
-npm install        # if not already
-cargo build -p hr-kanban
-npm run tauri dev
+cargo run -p server
 ```
-Expected: a desktop window opens, sidebar shows, "正在打开数据库…" then the Kanban view.
+Expected: server logs `API server listening on http://127.0.0.1:3000`.
 
-- [ ] **Step 2: Manual E2E (verify each, check the box)**
+- [ ] **Step 2: Run the frontend dev server**
+
+In a second terminal:
+```bash
+npm install        # if not already
+npm run dev
+```
+Expected: browser/Tauri window opens, sidebar shows, "正在打开数据库…" then the Kanban view.
+
+- [ ] **Step 3: Manual E2E (verify each, check the box)**
 
 - [ ] In **Projects**, create project "Atlas" (priority 3, budget 40) → it appears in the sidebar selector.
 - [ ] Select Atlas, create task "Build API" (5 PD, pick a skill) → success.
 - [ ] Switch to **Kanban** → the task card appears in the **todo** column with "5 PD · 1 skill".
-- [ ] Drag the card to **in_progress** → it moves columns (calls `set_task_status`); refresh-free, persisted (restart app → still in_progress).
+- [ ] Drag the card to **in_progress** → it moves columns (calls `PATCH /api/tasks/:id/status`); refresh-free, persisted (restart server + frontend → still in_progress).
 - [ ] Create a resource in **Resources** → appears in list.
 
-- [ ] **Step 3: Run encrypted (verify Phase 1 Task 8 wiring end-to-end)**
+- [ ] **Step 4: (Optional) Tauri desktop shell**
 
+With the server already running:
 ```bash
-rm -rf ~/Library/Application\ Support/com.hrkanban.app   # clear dev db
-HRK_DB_PASSPHRASE="correct-horse-battery-staple" npm run tauri dev
+cargo build -p hr-kanban
+npm run tauri dev
 ```
-Expected: app opens encrypted DB (created on first run), same CRUD works; the DB file at the app-data dir is encrypted (not readable as plain SQLite).
+Expected: desktop window loads the frontend and talks to the same HTTP API.
 
-- [ ] **Step 4: Commit the working state**
+- [ ] **Step 5: Commit the working state**
 
 ```bash
 git add -A
-git commit -m "test: Phase 1b end-to-end smoke (kanban DnD + encrypted open)"
+git commit -m "test: Phase 1b end-to-end smoke (kanban DnD over HTTP API)"
 ```
 
 ---
@@ -1040,39 +1109,34 @@ git commit -m "test: Phase 1b end-to-end smoke (kanban DnD + encrypted open)"
 
 **Spec coverage (design §7 frontend + roadmap Phase 1):**
 - §7 Naive UI + Pinia + Vue Router selection → Tasks 1, 4, 5 ✓
-- §7 typed invoke interaction layer → Task 3 ✓
+- §7 typed interaction layer → Task 3 (HTTP fetch instead of invoke) ✓
 - §7 Kanban view (status columns, cards w/ assignee + skills) → Task 6 ✓
-- §7 Kanban DnD → status change → Task 6 (moveStatus → set_task_status) ✓
+- §7 Kanban DnD → status change → Task 6 (`moveStatus` → `PATCH /api/tasks/:id/status`) ✓
 - §7 resource/project/task CRUD UIs → Task 7 ✓
-- §6.8 encrypted open (confirmed #55) → Task 2 wiring + Task 8 encrypted smoke ✓
-- Roadmap "资源/团队/项目/任务 CRUD + Kanban" → Kanban (T6) + project/task/resource CRUD (T7); **teams CRUD UI deferred** (commands exist in backend; a TeamsView following the ResourcesView pattern is a trivial follow-up) — noted.
+- §6.8 SQLite encryption → explicitly deferred; plain SQLite used in `crates/server`.
+- Roadmap "资源/团队/项目/任务 CRUD + Kanban" → Kanban (T6) + project/task/resource CRUD (T7); **teams CRUD UI deferred** (endpoints exist in `crates/server`; a `TeamsView` following the `ResourcesView` pattern is a trivial follow-up) — noted.
 
 **Deferred (explicitly out of scope, not placeholders):**
 - Gantt, calendar, allocations UI, Dashboard/workload, AI panel → later phases.
-- Production first-run passphrase prompt + OS keychain storage (§6.8) → deferred task (Task 5 `FirstRun.vue` is a placeholder; full flow needs lazy-unlock or keychain read at startup).
-- Teams CRUD view (backend commands ready) → trivial follow-up.
+- SQLite encryption + production first-run passphrase prompt + OS keychain storage (§6.8) → deferred task (Task 5 `FirstRun.vue` is a placeholder; full flow needs lazy-unlock or keychain read at startup).
+- Teams CRUD view (backend endpoints ready) → trivial follow-up.
 - Component/visual testing (Playwright) → the Kanban DnD is verified by the Task 8 manual smoke; stores + API are unit-tested.
 
 **Placeholder scan:** none. Every code step contains complete code; tests assert concrete values.
 
 **Type consistency:**
-- `api.createProject(name, priority, budgetPd)` → command args `{name, priority, budgetPd}` match Rust `create_project(name, description?, start?, end?, priority, budget_pd?)` — `budgetPd` maps to `budget_pd` via Tauri's snake_case command-arg convention (Tauri v2 converts camelCase JS keys to snake_case Rust params). Test asserts this.
-- `api.createTask` camelCase args map to `create_task` Rust params (`projectId→project_id`, `estimatePd→estimate_pd`, `isLongTerm→is_long_term`, `skillReqs→skill_reqs`, `tagIds→tag_ids`).
+- `api.createProject(name, priority, budgetPd)` → JSON body `{name, priority, budget_pd}` matches Rust `create_project(name, description?, start?, end?, priority, budget_pd?)`. Test asserts this.
+- `api.createTask` camelCase args map to snake_case JSON body (`projectId→project_id`, `estimatePd→estimate_pd`, `isLongTerm→is_long_term`, `skillReqs→skill_reqs`, `tagIds→tag_ids`).
 - `KanbanTask` TS fields match the Rust `KanbanTask` Serialize fields (snake_case: `project_id`, `sort_order`, `estimate_pd`, `skill_count`).
 - `TaskStatus` TS union matches the Rust `tasks.status` CHECK constraint values.
 
 **Known impl-time items (from design, not blockers):**
-- Tauri v2 converts JS camelCase invoke arg keys to Rust snake_case params automatically; verify with the Task 3 test (if a command reports a missing arg, align the key).
-- AppState is managed async in `setup`; `AppLayout` polls until ready (40 × 100 ms). If startup is slower, raise the retry count or surface an error.
+- `AppLayout` polls until the HTTP API server is reachable (40 × 100 ms). If startup is slower, raise the retry count or surface an error.
 - The Kanban uses native HTML5 DnD (no library); touch-device support is out of scope (desktop app).
+- CORS is currently permissive (`Any` origin/method/headers) for local development; tighten for production deployments.
 
 ---
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase1b-frontend.md`. Two execution options:
-
-1. **Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks.
-2. **Inline Execution** — Execute tasks in this session in batches with checkpoints.
-
-Which approach? (Phase 0 → Phase 1 backend → **Phase 1b** now form a runnable desktop app with Kanban. Next would be Phase 2: allocations UI + Dashboard/workload, or the deferred teams CRUD / first-run hardening.)
+Plan updated and saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase1b-frontend.md`. The IPC→HTTP migration is already implemented; remaining optional work includes the Task 8 manual smoke, Phase 2 (allocations UI + Dashboard/workload), and the deferred teams CRUD / first-run hardening.
