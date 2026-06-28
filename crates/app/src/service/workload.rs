@@ -55,3 +55,76 @@ fn parse_window(start: &str, end: &str) -> Result<Window, AppError> {
     if e < s { return Err(domain::DomainError::InvalidDateWindow.into()); }
     Ok(Window { start: s, end: e })
 }
+
+use db::{ProjectsRepo, TeamMembersRepo};
+
+#[derive(Debug, Serialize)]
+pub struct TeamSummary {
+    pub team_id: i64,
+    pub capacity_pd: f64,
+    pub workload_pd: f64,
+    pub utilization: f64,
+    pub overloaded_members: Vec<i64>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProjectBurn {
+    pub project_id: i64,
+    pub budget_pd: f64,
+    pub allocated_pd: f64,
+    pub usage: f64, // allocated / budget (0 if budget 0)
+}
+
+impl WorkloadService {
+    /// Team utilization = Σ workload / Σ capacity over members (design §4.9 team_utilization).
+    /// Also lists members whose individual utilization exceeds their threshold.
+    pub async fn team_summary(
+        pool: &SqlitePool, team_id: i64, start: &str, end: &str,
+    ) -> Result<TeamSummary, AppError> {
+        let cal = hydrate(pool).await?;
+        let w = parse_window(start, end)?;
+        let members = TeamMembersRepo::list_members(pool, team_id).await?;
+        let ids: Vec<i64> = members.iter().map(|m| m.resource_id).collect();
+
+        let mut total_wl = 0.0; let mut total_cap = 0.0; let mut overloaded = Vec::new();
+        for &rid in &ids {
+            let rows = AllocationsRepo::list_for_resource(pool, rid, start, end).await?;
+            let allocs: Vec<domain::Allocation> = rows.iter().map(|r| r.to_domain()).collect();
+            let cap = capacity_pd(&cal, 0, rid, w);
+            let wl = workload_pd(&cal, &allocs, rid, w);
+            total_wl += wl; total_cap += cap;
+            let util = if cap > 0.0 { wl / cap } else { 0.0 };
+            if util > effective_overload(pool, rid).await? { overloaded.push(rid); }
+        }
+        let util = if total_cap > 0.0 { total_wl / total_cap } else { 0.0 };
+        Ok(TeamSummary { team_id, capacity_pd: total_cap, workload_pd: total_wl, utilization: util, overloaded_members: overloaded })
+    }
+
+    /// Project burn: allocated PD vs budget PD (design §8 R3).
+    ///
+    /// Allocated PD is computed dynamically with the Phase 0 pure `alloc_pd` over each
+    /// allocation's FULL span (capacity from the project's calendar), NOT read from the
+    /// `allocations.allocated_pd` cache column — that column defaults to 0 and is never
+    /// populated by the current write path, so SUM(allocated_pd) would always be 0.
+    /// A windowed burn (clipped to a reporting window) is a Phase 5 report concern.
+    pub async fn project_burn(pool: &SqlitePool, project_id: i64) -> Result<ProjectBurn, AppError> {
+        let project = ProjectsRepo::get(pool, project_id).await?;
+        let cal = hydrate(pool).await?;
+        // All active allocations on this project's tasks, with their full spans.
+        let rows: Vec<(i64, i64, NaiveDate, NaiveDate, f64)> = sqlx::query_as(
+            "SELECT a.resource_id, a.task_id, a.start_date, a.end_date, a.percent \
+             FROM allocations a JOIN tasks t ON t.id = a.task_id \
+             WHERE t.project_id = ? AND a.deleted_at IS NULL")
+            .bind(project_id).fetch_all(pool).await?;
+        let mut allocated = 0.0;
+        for (resource_id, _task_id, start, end, percent) in rows {
+            let a = domain::Allocation {
+                id: 0, resource_id, project_id, start, end, percent,
+            };
+            // Full-span window: overlap() with the same window is the whole span.
+            allocated += domain::alloc_pd(&cal, &a, Window { start, end });
+        }
+        let usage = if project.budget_pd > 0.0 { allocated / project.budget_pd } else { 0.0 };
+        Ok(ProjectBurn { project_id, budget_pd: project.budget_pd, allocated_pd: allocated, usage })
+    }
+}

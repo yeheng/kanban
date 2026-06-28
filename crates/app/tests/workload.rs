@@ -57,3 +57,43 @@ async fn bad_window_rejected() {
     let err = WorkloadService::resource_summary(&pool, 1, "2026-07-05", "2026-06-01").await.unwrap_err();
     assert_eq!(err.code, "VALIDATION");
 }
+
+use app::service::projects::ProjectsService;
+use app::service::teams::TeamsService;
+
+#[tokio::test]
+async fn team_summary_aggregates_members() {
+    let pool = fresh().await;
+    sqlx::query("INSERT INTO projects (id,name) VALUES (1,'P')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'A')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (2,'B')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO tasks (id,project_id,title,start_date,end_date) VALUES (10,1,'T','2026-06-01','2026-07-31')").execute(&pool).await.unwrap();
+    // A overloaded (100% on two tasks), B idle
+    sqlx::query("INSERT INTO tasks (id,project_id,title,start_date,end_date) VALUES (11,1,'U','2026-06-01','2026-07-31')").execute(&pool).await.unwrap();
+    AllocationsRepo::create(&pool, 1, 10, MON, FRI, 1.0).await.unwrap();
+    AllocationsRepo::create(&pool, 1, 11, MON, FRI, 1.0).await.unwrap();
+
+    let tid = TeamsService::create(&pool, "Eng", None).await.unwrap();
+    TeamsService::add_member(&pool, tid, 1, None).await.unwrap();
+    TeamsService::add_member(&pool, tid, 2, None).await.unwrap();
+
+    let s = WorkloadService::team_summary(&pool, tid, MON, FRI).await.unwrap();
+    // capacity = 5 (A) + 5 (B) = 10; workload = 10 (A) + 0 (B) = 10; util = 1.0
+    assert!((s.capacity_pd - 10.0).abs() < 1e-9);
+    assert!((s.workload_pd - 10.0).abs() < 1e-9);
+    assert!((s.utilization - 1.0).abs() < 1e-9);
+    assert_eq!(s.overloaded_members, vec![1]); // A util=2.0 > 1.10; B=0
+}
+
+#[tokio::test]
+async fn project_burn_ratio() {
+    let pool = fresh().await;
+    let pid = ProjectsService::create(&pool, "P", None, None, None, 5, 40.0).await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'A')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO tasks (id,project_id,title,start_date,end_date) VALUES (10,?,'T','2026-06-01','2026-07-31')").bind(pid).execute(&pool).await.unwrap();
+    // 100% for Mon..Fri -> allocated_pd = 5 * 1.0 = 5.0 (full-span, global Mon-Fri calendar)
+    AllocationsRepo::create(&pool, 1, 10, MON, FRI, 1.0).await.unwrap();
+    let b = WorkloadService::project_burn(&pool, pid).await.unwrap();
+    assert!((b.allocated_pd - 5.0).abs() < 1e-9);
+    assert!((b.usage - (5.0 / 40.0)).abs() < 1e-9);
+}
