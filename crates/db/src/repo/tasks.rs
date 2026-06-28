@@ -107,4 +107,13 @@ impl TaskDepsRepo {
             .bind(task_id).fetch_all(pool).await?;
         Ok(rows.into_iter().map(|r| r.0).collect())
     }
+
+    /// Dependency edges among tasks of one project (for Gantt arrows).
+    pub async fn for_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<crate::models::DepEdge>, DbError> {
+        Ok(sqlx::query_as::<_, crate::models::DepEdge>(
+            "SELECT d.task_id, d.predecessor_id, d.lag_days, d.dep_type \
+             FROM task_dependencies d JOIN tasks t ON t.id = d.task_id \
+             WHERE t.project_id = ?")
+            .bind(project_id).fetch_all(pool).await?)
+    }
 }
