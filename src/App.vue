@@ -1,4 +1,10 @@
-<script setup lang="ts"></script>
+<script setup lang="ts">
+import { NConfigProvider } from "naive-ui";
+import AppLayout from "./components/AppLayout.vue";
+</script>
+
 <template>
-  <div style="font-family: sans-serif; padding: 2rem">HR Kanban — scaffold OK</div>
+  <n-config-provider>
+    <AppLayout />
+  </n-config-provider>
 </template>

@@ -1,7 +1,14 @@
 import { createRouter, createWebHashHistory } from "vue-router";
+import KanbanView from "./views/KanbanView.vue";
+import ProjectsView from "./views/ProjectsView.vue";
+import ResourcesView from "./views/ResourcesView.vue";
 
-// Views imported once scaffolding is complete (Task 5).
 export const router = createRouter({
   history: createWebHashHistory(),
-  routes: [],
+  routes: [
+    { path: "/", redirect: "/kanban" },
+    { path: "/kanban", component: KanbanView },
+    { path: "/projects", component: ProjectsView },
+    { path: "/resources", component: ResourcesView },
+  ],
 });
