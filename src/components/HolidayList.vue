@@ -1,16 +1,50 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { NForm, NFormItem, NDatePicker, NSelect, NInput, NButton, NList, NListItem, NThing, NSpace } from "naive-ui";
 import { useCalendarStore } from "../stores/calendar";
 const cal = useCalendarStore();
-const day = ref(""); const frac = ref(1); const name = ref("");
-async function add() { if (!day.value) return; await cal.addHoliday(day.value, frac.value, name.value || null); day.value = ""; name.value = ""; }
+const day = ref<number | null>(null);
+const frac = ref(1);
+const name = ref("");
+
+const fracOptions = [
+  { label: "全天", value: 1 },
+  { label: "半天", value: 0.5 },
+];
+
+function fmtDate(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+async function add() {
+  if (day.value == null) return;
+  await cal.addHoliday(fmtDate(day.value), frac.value, name.value || null);
+  day.value = null;
+  name.value = "";
+}
 </script>
+
 <template>
   <div>
-    <input v-model="day" type="date" />
-    <select v-model.number="frac"><option :value="1">全天</option><option :value="0.5">半天</option></select>
-    <input v-model="name" placeholder="名称" />
-    <button @click="add">添加节假日</button>
-    <ul><li v-for="h in cal.holidays" :key="h.id">{{ h.day }} · {{ h.fraction === 1 ? "全天" : "半天" }} · {{ h.name }}</li></ul>
+    <n-form inline>
+      <n-form-item label="日期">
+        <n-date-picker v-model:value="day" type="date" clearable />
+      </n-form-item>
+      <n-form-item label="类型">
+        <n-select v-model:value="frac" :options="fracOptions" style="width: 100px" />
+      </n-form-item>
+      <n-form-item label="名称">
+        <n-input v-model:value="name" placeholder="节假日名称" />
+      </n-form-item>
+      <n-form-item>
+        <n-button type="primary" @click="add">添加节假日</n-button>
+      </n-form-item>
+    </n-form>
+    <n-list bordered>
+      <n-list-item v-for="h in cal.holidays" :key="h.id">
+        <n-thing :title="h.day" :description="`${h.fraction === 1 ? '全天' : '半天'} · ${h.name ?? ''}`" />
+      </n-list-item>
+    </n-list>
   </div>
 </template>

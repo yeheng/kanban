@@ -9,8 +9,6 @@ const gantt = useGanttStore();
 
 const startMs = computed(() => Date.parse(props.start));
 const totalDays = computed(() => Math.max(1, Math.round((Date.parse(props.end) - startMs.value) / 86400000) + 1));
-// DST-safe day list: advance via the Date object (wall-clock), not raw ms, so a
-// fall-back day doesn't duplicate a column.
 const days = computed(() => {
   const out: string[] = [];
   const d = new Date(startMs.value);
@@ -31,17 +29,16 @@ const rows = computed(() => {
   return [...m.values()];
 });
 
-// ---- drag (move bar body / resize right edge) ----
 type Drag = { id: number; mode: "move" | "resize"; startX: number; origStart: string; origEnd: string; percent: number };
 const drag = ref<Drag | null>(null);
-const previewDelta = ref(0); // days
+const previewDelta = ref(0);
 
 function toStr(ms: number) {
   const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function onDown(e: PointerEvent, b: GanttBar, mode: "move" | "resize") {
   const target = e.target as HTMLElement;
-  if (mode === "resize" && !target.classList.contains("resize-handle")) return;
+  if (mode === "resize" && !target.classList.contains("gantt-timeline__resize")) return;
   (e.target as HTMLElement).setPointerCapture(e.pointerId);
   drag.value = { id: b.allocation_id, mode, startX: e.clientX, origStart: b.start_date, origEnd: b.end_date, percent: b.percent };
   previewDelta.value = 0;
@@ -61,13 +58,8 @@ function onUp() {
   }
 }
 
-// ---- dependency arrows (SVG overlay) ----
 type Arrow = { x1: number; y1: number; x2: number; y2: number };
 const arrows = computed<Arrow[]>(() => {
-  // For each task, track the START-x and END-x of its earliest-starting bar
-  // (a task may have allocations across several resources). Arrows go from the
-  // predecessor's END (right edge) to the successor's START (left edge).
-  // Multi-resource tasks collapse to one endpoint — a known MVP simplification.
   const pos = new Map<number, { startX: number; endX: number; y: number; startMs: number }>();
   let rowIdx = 0;
   for (const r of rows.value) {
@@ -91,39 +83,110 @@ const arrows = computed<Arrow[]>(() => {
 </script>
 
 <template>
-  <div class="gantt" @pointermove="onMove" @pointerup="onUp">
-    <div class="axis">
-      <div v-for="d in days" :key="d" class="day" :style="{ width: DAY_W + 'px' }">{{ d.slice(8) }}</div>
+  <div class="gantt-timeline" @pointermove="onMove" @pointerup="onUp">
+    <div class="gantt-timeline__axis">
+      <div
+        v-for="d in days"
+        :key="d"
+        class="gantt-timeline__day"
+        :style="{ width: DAY_W + 'px' }"
+      >{{ d.slice(8) }}</div>
     </div>
-    <div class="rows" :style="{ width: totalDays * DAY_W + 'px' }">
-      <div v-for="r in rows" :key="r.resource_id" class="row">
-        <div class="res-label">{{ r.resource_name }}</div>
-        <div class="track">
-          <div v-for="b in r.bars" :key="b.allocation_id" class="bar"
+    <div class="gantt-timeline__rows" :style="{ width: totalDays * DAY_W + 'px' }">
+      <div v-for="r in rows" :key="r.resource_id" class="gantt-timeline__row">
+        <div class="gantt-timeline__res">{{ r.resource_name }}</div>
+        <div class="gantt-timeline__track">
+          <div
+            v-for="b in r.bars"
+            :key="b.allocation_id"
+            class="gantt-timeline__bar"
             :style="{ left: barLeft(b) + 'px', width: barWidth(b) + 'px', opacity: drag?.id === b.allocation_id ? 0.5 : 1 }"
-            @pointerdown.stop="(e) => onDown(e, b, 'move')">
+            @pointerdown.stop="(e) => onDown(e, b, 'move')"
+          >
             {{ b.task_title }} · {{ Math.round(b.percent * 100) }}%
-            <span class="resize-handle" @pointerdown.stop="(e) => onDown(e, b, 'resize')">⇔</span>
+            <span class="gantt-timeline__resize" @pointerdown.stop="(e) => onDown(e, b, 'resize')">⇔</span>
           </div>
         </div>
       </div>
-      <svg class="arrows" :width="totalDays * DAY_W" :height="rows.length * 32">
-        <line v-for="(a, i) in arrows" :key="i" :x1="a.x1" :y1="a.y1" :x2="a.x2" :y2="a.y2" stroke="#888" stroke-width="1" marker-end="url(#arrow)" />
-        <defs><marker id="arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#888" /></marker></defs>
+      <svg class="gantt-timeline__arrows" :width="totalDays * DAY_W" :height="rows.length * 32">
+        <line v-for="(a, i) in arrows" :key="i" :x1="a.x1" :y1="a.y1" :x2="a.x2" :y2="a.y2" stroke="#888" stroke-width="1" marker-end="url(#gantt-arrow)" />
+        <defs>
+          <marker id="gantt-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#888" />
+          </marker>
+        </defs>
       </svg>
     </div>
   </div>
 </template>
 
 <style scoped>
-.gantt { overflow-x: auto; }
-.axis { display: flex; position: sticky; top: 0; background: #fff; border-bottom: 1px solid #eee; }
-.day { font-size: 10px; color: #888; border-right: 1px solid #f0f0f0; text-align: center; }
-.rows { position: relative; }
-.row { height: 32px; border-bottom: 1px solid #f5f5f5; display: flex; align-items: center; }
-.res-label { width: 100px; min-width: 100px; font-size: 12px; padding-left: 4px; }
-.track { position: relative; height: 32px; flex: 1; }
-.bar { position: absolute; top: 4px; height: 24px; background: #2080f0; color: #fff; border-radius: 4px; font-size: 11px; line-height: 24px; padding: 0 6px; cursor: grab; user-select: none; white-space: nowrap; overflow: hidden; }
-.resize-handle { position: absolute; right: 0; top: 0; width: 12px; cursor: ew-resize; text-align: center; }
-.arrows { position: absolute; top: 28px; left: 100px; pointer-events: none; }
+.gantt-timeline {
+  overflow-x: auto;
+}
+.gantt-timeline__axis {
+  display: flex;
+  position: sticky;
+  top: 0;
+  background: #fff;
+  border-bottom: 1px solid #eee;
+  z-index: 1;
+}
+.gantt-timeline__day {
+  font-size: 10px;
+  color: #888;
+  border-right: 1px solid #f0f0f0;
+  text-align: center;
+}
+.gantt-timeline__rows {
+  position: relative;
+}
+.gantt-timeline__row {
+  height: 32px;
+  border-bottom: 1px solid #f5f5f5;
+  display: flex;
+  align-items: center;
+}
+.gantt-timeline__res {
+  width: 100px;
+  min-width: 100px;
+  font-size: 12px;
+  padding-left: 4px;
+  background: #fff;
+  z-index: 1;
+}
+.gantt-timeline__track {
+  position: relative;
+  height: 32px;
+  flex: 1;
+}
+.gantt-timeline__bar {
+  position: absolute;
+  top: 4px;
+  height: 24px;
+  background: #2080f0;
+  color: #fff;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 24px;
+  padding: 0 6px;
+  cursor: grab;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.gantt-timeline__resize {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 12px;
+  cursor: ew-resize;
+  text-align: center;
+}
+.gantt-timeline__arrows {
+  position: absolute;
+  top: 28px;
+  left: 100px;
+  pointer-events: none;
+}
 </style>

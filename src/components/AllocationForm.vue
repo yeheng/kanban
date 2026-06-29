@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { NForm, NFormItem, NSelect, NDatePicker, NInputNumber, NButton, NTag, NText } from "naive-ui";
 import { useAllocationsStore } from "../stores/allocations";
 import { useResourcesStore } from "../stores/resources";
 import { useProjectsStore } from "../stores/projects";
@@ -11,10 +12,23 @@ const resources = useResourcesStore();
 const projects = useProjectsStore();
 const resourceId = ref<number | null>(null);
 const taskId = ref<number | null>(null);
-const start = ref("2026-06-29"); const end = ref("2026-07-03"); const percent = ref(0.5);
+const dateRange = ref<[number, number]>([Date.parse("2026-06-29"), Date.parse("2026-07-03")]);
+const percent = ref(0.5);
 const tasks = ref<Task[]>([]);
 const impact = ref<{ utilization: number; overloaded: boolean } | null>(null);
 const error = ref<string | null>(null);
+
+const resourceOptions = computed(() =>
+  resources.items.map((r) => ({ label: r.name, value: r.id })),
+);
+const taskOptions = computed(() =>
+  tasks.value.map((t) => ({ label: t.title, value: t.id })),
+);
+
+function fmtDate(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 async function loadTasks() {
   if (projects.current == null) return;
@@ -23,28 +37,45 @@ async function loadTasks() {
 async function submit() {
   error.value = null;
   if (resourceId.value == null || taskId.value == null || projects.current == null) return;
+  const start = fmtDate(dateRange.value[0]);
+  const end = fmtDate(dateRange.value[1]);
   try {
-    await allocations.create(resourceId.value, taskId.value, start.value, end.value, percent.value);
+    await allocations.create(resourceId.value, taskId.value, start, end, percent.value);
     await allocations.load(projects.current);
-    const s = await api.resourceSummary(resourceId.value, start.value, end.value);
+    const s = await api.resourceSummary(resourceId.value, start, end);
     impact.value = { utilization: s.utilization, overloaded: s.overloaded };
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : String(e);
   }
 }
 resources.load();
-// Reload tasks whenever the selected project changes (sidebar switch) so the dropdown
-// never shows a stale project's tasks (review I1).
 watch(() => projects.current, () => { loadTasks(); }, { immediate: true });
 </script>
+
 <template>
-  <form @submit.prevent="submit">
-    <select v-model.number="resourceId"><option :value="null">资源</option><option v-for="r in resources.items" :key="r.id" :value="r.id">{{ r.name }}</option></select>
-    <select v-model.number="taskId"><option :value="null">任务</option><option v-for="t in tasks" :key="t.id" :value="t.id">{{ t.title }}</option></select>
-    <input v-model="start" type="date" /><input v-model="end" type="date" />
-    <input v-model.number="percent" type="number" min="0.01" max="1" step="0.05" />
-    <button>分配</button>
-    <span v-if="error" style="color:#d03050">{{ error }}</span>
-    <span v-if="impact" :style="{ color: impact.overloaded ? '#d03050' : '#18a058' }">→ 利用率 {{ Math.round(impact.utilization * 100) }}%{{ impact.overloaded ? ' ⚠过载' : '' }}</span>
-  </form>
+  <n-form inline @submit.prevent="submit">
+    <n-form-item label="资源">
+      <n-select v-model:value="resourceId" :options="resourceOptions" placeholder="选择资源" />
+    </n-form-item>
+    <n-form-item label="任务">
+      <n-select v-model:value="taskId" :options="taskOptions" placeholder="选择任务" />
+    </n-form-item>
+    <n-form-item label="区间">
+      <n-date-picker v-model:value="dateRange" type="daterange" clearable />
+    </n-form-item>
+    <n-form-item label="投入">
+      <n-input-number v-model:value="percent" :min="0.01" :max="1" :step="0.05" />
+    </n-form-item>
+    <n-form-item>
+      <n-button type="primary" attr-type="submit">分配</n-button>
+    </n-form-item>
+    <n-form-item v-if="error">
+      <n-tag type="error">{{ error }}</n-tag>
+    </n-form-item>
+    <n-form-item v-if="impact">
+      <n-text :type="impact.overloaded ? 'error' : 'success'">
+        → 利用率 {{ Math.round(impact.utilization * 100) }}%{{ impact.overloaded ? " ⚠过载" : "" }}
+      </n-text>
+    </n-form-item>
+  </n-form>
 </template>

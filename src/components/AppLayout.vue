@@ -1,12 +1,40 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { NLayout, NLayoutSider, NLayoutContent } from "naive-ui";
+import { computed, h, onMounted, ref } from "vue";
+import { NLayout, NLayoutSider, NLayoutContent, NMenu, NSelect, NSpin, NDivider, NText } from "naive-ui";
+import type { MenuOption } from "naive-ui";
+import { RouterLink, useRoute } from "vue-router";
 import { useProjectsStore } from "../stores/projects";
 import { useCatalogStore } from "../stores/catalog";
 
 const projects = useProjectsStore();
 const catalog = useCatalogStore();
 const ready = ref(false);
+const route = useRoute();
+
+const renderLink = (to: string) => () => h(RouterLink, { to });
+
+const menuOptions = computed<MenuOption[]>(() => [
+  { label: renderLink("/kanban"), key: "kanban" },
+  { label: renderLink("/projects"), key: "projects" },
+  { label: renderLink("/resources"), key: "resources" },
+  { label: renderLink("/dashboard"), key: "dashboard" },
+  { label: renderLink("/allocations"), key: "allocations" },
+  { label: renderLink("/calendar"), key: "calendar" },
+  { label: renderLink("/gantt"), key: "gantt" },
+  { label: renderLink("/calendar-grid"), key: "calendar-grid" },
+  { label: renderLink("/ai"), key: "ai" },
+  { label: renderLink("/reports"), key: "reports" },
+]);
+
+const activeKey = computed(() => route.path.replace(/^\//, ""));
+
+const projectOptions = computed(() =>
+  projects.items.map((p) => ({ label: p.name, value: p.id })),
+);
+
+function onProjectChange(id: number | null) {
+  if (id != null) projects.select(id);
+}
 
 onMounted(async () => {
   for (let i = 0; i < 40; i++) {
@@ -18,26 +46,23 @@ onMounted(async () => {
 
 <template>
   <n-layout has-sider style="height: 100vh">
-    <n-layout-sider bordered content-style="padding:16px" :width="200">
-      <h3 style="margin-top:0">HR Kanban</h3>
-      <router-link to="/kanban" style="display:block;padding:6px 0">看板 Kanban</router-link>
-      <router-link to="/projects" style="display:block;padding:6px 0">项目 Projects</router-link>
-      <router-link to="/resources" style="display:block;padding:6px 0">资源 Resources</router-link>
-      <router-link to="/dashboard" style="display:block;padding:6px 0">仪表盘 Dashboard</router-link>
-      <router-link to="/allocations" style="display:block;padding:6px 0">分配 Allocations</router-link>
-      <router-link to="/calendar" style="display:block;padding:6px 0">日历 Calendar</router-link>
-      <router-link to="/gantt" style="display:block;padding:6px 0">甘特图 Gantt</router-link>
-      <router-link to="/calendar-grid" style="display:block;padding:6px 0">占用网格 Calendar Grid</router-link>
-      <router-link to="/ai" style="display:block;padding:6px 0">AI 优化 Optimization</router-link>
-      <router-link to="/reports" style="display:block;padding:6px 0">报表 Reports</router-link>
-      <hr />
-      <small>项目：</small>
-      <select v-model.number="projects.current" @change="projects.select(projects.current!)">
-        <option v-for="p in projects.items" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
+    <n-layout-sider bordered content-style="padding: 16px" :width="200">
+      <n-text strong style="font-size: 16px">HR Kanban</n-text>
+      <n-menu :options="menuOptions" :value="activeKey" />
+      <n-divider />
+      <n-text depth="3" style="font-size: 12px">项目</n-text>
+      <n-select
+        :value="projects.current"
+        :options="projectOptions"
+        placeholder="选择项目"
+        size="small"
+        @update:value="onProjectChange"
+      />
     </n-layout-sider>
-    <n-layout-content content-style="padding:16px">
-      <div v-if="!ready">正在打开数据库…</div>
+    <n-layout-content content-style="padding: 16px">
+      <n-spin v-if="!ready" size="large">
+        <template #description>正在打开数据库…</template>
+      </n-spin>
       <router-view v-else />
     </n-layout-content>
   </n-layout>

@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, h, onMounted } from "vue";
+import { NH2, NH3, NSpace, NButton, NText, NDataTable } from "naive-ui";
+import type { DataTableColumns } from "naive-ui";
 import { useOptimizationStore } from "../stores/optimization";
 import { useProjectsStore } from "../stores/projects";
 import WeightsPanel from "../components/WeightsPanel.vue";
 import PlanReview from "../components/PlanReview.vue";
+import type { RunRow } from "../types";
 
 const opt = useOptimizationStore();
 const projects = useProjectsStore();
@@ -11,30 +14,37 @@ onMounted(() => opt.loadHistory());
 function runForCurrent() {
   if (projects.current != null) opt.run(projects.current);
 }
-</script>
-<template>
-  <h2 style="margin-top:0">AI 优化 / Optimization</h2>
-  <div style="display:flex;gap:24px;align-items:flex-start">
-    <div>
-      <h3>目标权重</h3>
-      <WeightsPanel />
-      <button :disabled="projects.current == null || opt.busy" @click="runForCurrent">
-        {{ opt.busy ? "求解中…" : "为当前项目运行优化" }}
-      </button>
-    </div>
-    <div style="flex:1">
-      <PlanReview v-if="opt.current" />
-      <p v-else style="color:#888">运行优化后在此查看建议方案。</p>
-    </div>
-  </div>
 
-  <h3>历史运行</h3>
-  <table border="1" cellpadding="4" style="border-collapse:collapse">
-    <tr><th>#</th><th>状态</th><th>评分</th><th>已采纳</th><th>时间</th></tr>
-    <tr v-for="r in opt.history" :key="r.id">
-      <td>{{ r.id }}</td><td>{{ r.status }}</td>
-      <td>{{ r.score_overall != null ? r.score_overall.toFixed(0) : "-" }}</td>
-      <td>{{ r.applied ? "是" : "否" }}</td><td>{{ r.created_at }}</td>
-    </tr>
-  </table>
+const historyColumns = computed<DataTableColumns<RunRow>>(() => [
+  { title: "#", key: "id", width: 60 },
+  { title: "状态", key: "status", width: 100 },
+  { title: "评分", key: "score", render: (r) => r.score_overall != null ? r.score_overall.toFixed(0) : "-", width: 80 },
+  { title: "已采纳", key: "applied", render: (r) => r.applied ? "是" : "否", width: 80 },
+  { title: "时间", key: "created_at" },
+]);
+</script>
+
+<template>
+  <n-h2>AI 优化 / Optimization</n-h2>
+  <n-space :size="24" align="start">
+    <div>
+      <n-h3>目标权重</n-h3>
+      <WeightsPanel />
+      <n-button
+        type="primary"
+        :disabled="projects.current == null || opt.busy"
+        :loading="opt.busy"
+        @click="runForCurrent"
+      >
+        {{ opt.busy ? "求解中…" : "为当前项目运行优化" }}
+      </n-button>
+    </div>
+    <div style="flex: 1">
+      <PlanReview v-if="opt.current" />
+      <n-text v-else depth="3">运行优化后在此查看建议方案。</n-text>
+    </div>
+  </n-space>
+
+  <n-h3>历史运行</n-h3>
+  <n-data-table :columns="historyColumns" :data="opt.history" :bordered="true" />
 </template>

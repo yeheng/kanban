@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watchEffect } from "vue";
+import { NH2, NSpace } from "naive-ui";
 import { useTasksStore } from "../stores/tasks";
 import { useProjectsStore } from "../stores/projects";
 import KanbanColumn from "../components/KanbanColumn.vue";
@@ -22,8 +23,8 @@ function onDrop(status: TaskStatus) {
 
 <template>
   <div>
-    <h2 style="margin-top:0">看板 / Kanban</h2>
-    <div style="display:flex; gap:12px; align-items:flex-start">
+    <n-h2 style="margin-top: 0">看板 / Kanban</n-h2>
+    <n-space :size="12" align="start">
       <KanbanColumn
         v-for="col in tasks.columns"
         :key="col"
@@ -32,6 +33,6 @@ function onDrop(status: TaskStatus) {
         @drop="onDrop"
         @dragstart-card="(id: number) => (draggingId = id)"
       />
-    </div>
+    </n-space>
   </div>
 </template>

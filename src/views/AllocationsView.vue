@@ -1,25 +1,30 @@
 <script setup lang="ts">
-import { onMounted, watchEffect } from "vue";
+import { computed, h, onMounted, watchEffect } from "vue";
+import { NDataTable, NH2 } from "naive-ui";
+import type { DataTableColumns } from "naive-ui";
 import { useAllocationsStore } from "../stores/allocations";
 import { useResourcesStore } from "../stores/resources";
 import { useProjectsStore } from "../stores/projects";
 import AllocationForm from "../components/AllocationForm.vue";
+import type { AllocationView } from "../types";
 
 const allocations = useAllocationsStore();
 const resources = useResourcesStore();
 const projects = useProjectsStore();
 onMounted(() => resources.load());
 watchEffect(async () => { if (projects.current != null) await allocations.load(projects.current); });
+
+const columns = computed<DataTableColumns<AllocationView>>(() => [
+  { title: "资源", key: "resource_name" },
+  { title: "任务", key: "task_title" },
+  { title: "区间", key: "range", render: (row) => `${row.start_date} → ${row.end_date}` },
+  { title: "投入", key: "percent", render: (row) => `${Math.round(row.percent * 100)}%` },
+  { title: "来源", key: "source" },
+]);
 </script>
+
 <template>
-  <h2 style="margin-top:0">分配 / Allocations</h2>
+  <n-h2>分配 / Allocations</n-h2>
   <AllocationForm />
-  <table border="1" cellpadding="4" style="border-collapse:collapse;margin-top:12px">
-    <tr><th>资源</th><th>任务</th><th>区间</th><th>投入</th><th>来源</th></tr>
-    <tr v-for="a in allocations.items" :key="a.id">
-      <td>{{ a.resource_name }}</td><td>{{ a.task_title }}</td>
-      <td>{{ a.start_date }} → {{ a.end_date }}</td>
-      <td>{{ Math.round(a.percent * 100) }}%</td><td>{{ a.source }}</td>
-    </tr>
-  </table>
+  <n-data-table :columns="columns" :data="allocations.items" :bordered="true" style="margin-top: 12px" />
 </template>
