@@ -10,7 +10,7 @@ use serde::Deserialize;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/allocations", post(create_allocation))
-        .route("/api/allocations/{id}", axum::routing::put(update_allocation))
+        .route("/api/allocations/{id}", axum::routing::put(update_allocation).delete(delete_allocation))
         .route("/api/projects/{id}/allocations", get(list_allocations))
 }
 
@@ -64,5 +64,13 @@ async fn update_allocation(
         return Err(domain::DomainError::InvalidDateWindow.into());
     }
     AllocationsRepo::update(&state.pool, id, &body.start, &body.end, body.percent).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn delete_allocation(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    AllocationsRepo::soft_delete(&state.pool, id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

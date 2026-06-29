@@ -1,13 +1,14 @@
 use crate::error::HttpError;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::get;
+use axum::routing::{delete, get};
 use axum::{Json, Router};
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/projects", get(list_projects).post(create_project))
+        .route("/api/projects/{id}", delete(delete_project))
         .route("/api/projects/{id}/kanban", get(kanban_tasks))
 }
 
@@ -47,4 +48,12 @@ async fn kanban_tasks(
     Path(id): Path<i64>,
 ) -> Result<Json<Vec<db::models::KanbanTask>>, HttpError> {
     Ok(Json(app::service::tasks::TasksService::kanban(&state.pool, id).await?))
+}
+
+async fn delete_project(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::projects::ProjectsService::soft_delete(&state.pool, id).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }

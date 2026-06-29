@@ -28,6 +28,8 @@ export const api = {
   listProjects: (): Promise<Project[]> => request("GET", "/api/projects"),
   createProject: (name: string, priority: number, budgetPd: number): Promise<number> =>
     request("POST", "/api/projects", { name, priority, budget_pd: budgetPd }),
+  deleteProject: (id: number): Promise<void> =>
+    request("DELETE", `/api/projects/${id}`),
 
   listSkills: (): Promise<Skill[]> => request("GET", "/api/skills"),
   ensureSkill: (name: string): Promise<number> => request("POST", "/api/skills", { name }),
@@ -52,6 +54,19 @@ export const api = {
       is_long_term: false,
       sort_order: 0,
     }),
+  updateTask: (id: number, args: {
+    title: string; estimatePd: number;
+    start: string | null; end: string | null;
+  }): Promise<void> =>
+    request("PATCH", `/api/tasks/${id}`, {
+      title: args.title,
+      description: null,
+      estimate_pd: args.estimatePd,
+      start: args.start,
+      end: args.end,
+    }),
+  deleteTask: (id: number): Promise<void> =>
+    request("DELETE", `/api/tasks/${id}`),
   setTaskStatus: (id: number, status: TaskStatus): Promise<void> =>
     request("PATCH", `/api/tasks/${id}/status`, { status }),
   kanbanTasks: (projectId: number): Promise<KanbanTask[]> =>
@@ -60,6 +75,8 @@ export const api = {
   listResources: (): Promise<Resource[]> => request("GET", "/api/resources"),
   createResource: (name: string, email: string | null): Promise<number> =>
     request("POST", "/api/resources", { name, email }),
+  deleteResource: (id: number): Promise<void> =>
+    request("DELETE", `/api/resources/${id}`),
 
   // ---- Phase 2: workload ----
   resourceSummary: (resourceId: number, start: string, end: string): Promise<ResourceSummary> =>
@@ -75,6 +92,8 @@ export const api = {
   // ---- Phase 2: allocations ----
   createAllocation: (resourceId: number, taskId: number, start: string, end: string, percent: number): Promise<number> =>
     request("POST", "/api/allocations", { resource_id: resourceId, task_id: taskId, start, end, percent }),
+  deleteAllocation: (id: number): Promise<void> =>
+    request("DELETE", `/api/allocations/${id}`),
   listAllocations: (projectId: number): Promise<AllocationView[]> =>
     request("GET", `/api/projects/${projectId}/allocations`),
   listTasks: (projectId: number): Promise<Task[]> =>
@@ -89,11 +108,21 @@ export const api = {
   listHolidays: (): Promise<Holiday[]> => request("GET", "/api/calendar/holidays"),
   addTimeOff: (resourceId: number, day: string, fraction: number | null, reason: string | null): Promise<number> =>
     request("POST", "/api/calendar/time-off", { resource_id: resourceId, day, fraction, reason }),
+  deleteHoliday: (id: number): Promise<void> =>
+    request("DELETE", `/api/calendar/holidays/${id}`),
+  deleteTimeOff: (id: number): Promise<void> =>
+    request("DELETE", `/api/calendar/time-off/${id}`),
 
   // ---- Phase 2: teams ----
   listTeams: (): Promise<Team[]> => request("GET", "/api/teams"),
+  createTeam: (name: string, description: string | null): Promise<number> =>
+    request("POST", "/api/teams", { name, description }),
+  deleteTeam: (id: number): Promise<void> =>
+    request("DELETE", `/api/teams/${id}`),
   listTeamMembers: (teamId: number): Promise<TeamMember[]> =>
     request("GET", `/api/teams/${teamId}/members`),
+  addTeamMember: (teamId: number, resourceId: number, role: string | null): Promise<void> =>
+    request("POST", `/api/teams/${teamId}/members`, { resource_id: resourceId, role }),
 
   // ---- Phase 3: Gantt + occupancy ----
   ganttProject: (projectId: number): Promise<GanttBar[]> =>

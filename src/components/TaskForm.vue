@@ -4,8 +4,8 @@ import { NForm, NFormItem, NInput, NInputNumber, NSelect, NButton } from "naive-
 import { useTasksStore } from "../stores/tasks";
 import { useProjectsStore } from "../stores/projects";
 import { useCatalogStore } from "../stores/catalog";
-import { api } from "../api";
 
+const tasks = useTasksStore();
 const projects = useProjectsStore();
 const catalog = useCatalogStore();
 const title = ref("");
@@ -23,15 +23,19 @@ const tagOptions = computed(() =>
 async function submit() {
   if (!title.value.trim() || !projects.current) return;
   const skillReqs = selectedSkills.value.map((id) => [id, 3, true, 1] as [number, number, boolean, number]);
-  await api.createTask({
-    projectId: projects.current, title: title.value, estimatePd: estimate.value,
-    start: null, end: null, skillReqs, tagIds: selectedTags.value,
+  await tasks.create({
+    projectId: projects.current,
+    title: title.value,
+    estimatePd: estimate.value,
+    start: null,
+    end: null,
+    skillReqs,
+    tagIds: selectedTags.value,
   });
   title.value = "";
   estimate.value = 1;
   selectedSkills.value = [];
   selectedTags.value = [];
-  await useTasksStore().load(projects.current);
 }
 </script>
 

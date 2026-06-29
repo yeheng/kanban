@@ -1,5 +1,7 @@
+pub mod allocations;
 pub mod catalog;
 pub mod calendar;
+pub mod dates;
 pub mod occupancy;
 pub mod optimization;
 pub mod projects;

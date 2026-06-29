@@ -43,6 +43,21 @@ impl TasksService {
         Ok(TasksRepo::set_status(pool, id, status).await?)
     }
 
+    pub async fn update(
+        pool: &SqlitePool, id: i64, title: &str, description: Option<&str>,
+        estimate_pd: f64, start: Option<&str>, end: Option<&str>,
+    ) -> Result<(), AppError> {
+        if estimate_pd < 0.0 { return Err(domain::DomainError::InvalidRatio(estimate_pd).into()); }
+        if let (Some(s), Some(e)) = (start, end) {
+            if e < s { return Err(domain::DomainError::InvalidDateWindow.into()); }
+        }
+        Ok(TasksRepo::update(pool, id, title, description, estimate_pd, start, end).await?)
+    }
+
+    pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+        Ok(TasksRepo::soft_delete(pool, id).await?)
+    }
+
     pub async fn skill_reqs(pool: &SqlitePool, task_id: i64) -> Result<Vec<TaskSkillRequirement>, AppError> {
         Ok(TasksRepo::list_skill_reqs(pool, task_id).await?)
     }

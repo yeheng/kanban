@@ -46,6 +46,10 @@ impl AllocationsService {
         let window = dates::required_window(start, end)?;
         Ok(AllocationsRepo::update(pool, id, &window.start, &window.end, percent).await?)
     }
+
+    pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+        Ok(AllocationsRepo::soft_delete(pool, id).await?)
+    }
 }
 
 fn validate_percent(percent: f64) -> Result<(), AppError> {

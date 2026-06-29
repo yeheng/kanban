@@ -9,5 +9,9 @@ export const useAllocationsStore = defineStore("allocations", () => {
   async function create(resourceId: number, taskId: number, start: string, end: string, percent: number) {
     await api.createAllocation(resourceId, taskId, start, end, percent);
   }
-  return { items, load, create };
+  async function remove(id: number, projectId: number) {
+    await api.deleteAllocation(id);
+    await load(projectId);
+  }
+  return { items, load, create, remove };
 });

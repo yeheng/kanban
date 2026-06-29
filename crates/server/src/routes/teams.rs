@@ -1,7 +1,7 @@
 use crate::error::HttpError;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::{get, put};
+use axum::routing::{delete, get, put};
 use axum::{Json, Router};
 use db::models::{Team, TeamMember, TeamOverride};
 use serde::Deserialize;
@@ -9,6 +9,7 @@ use serde::Deserialize;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/teams", get(list_teams).post(create_team))
+        .route("/api/teams/{id}", delete(delete_team))
         .route("/api/teams/{id}/members", get(list_team_members).post(add_member))
         .route("/api/teams/overrides", put(set_override))
 }
@@ -52,5 +53,13 @@ async fn set_override(
     Json(body): Json<TeamOverride>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::teams::TeamsService::set_override(&state.pool, body).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn delete_team(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::teams::TeamsService::soft_delete(&state.pool, id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

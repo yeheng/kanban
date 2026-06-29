@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, h, onMounted, watchEffect } from "vue";
-import { NDataTable, NH2 } from "naive-ui";
+import { NDataTable, NH2, NButton, NPopconfirm } from "naive-ui";
 import type { DataTableColumns } from "naive-ui";
 import { useAllocationsStore } from "../stores/allocations";
 import { useResourcesStore } from "../stores/resources";
@@ -20,6 +20,16 @@ const columns = computed<DataTableColumns<AllocationView>>(() => [
   { title: "区间", key: "range", render: (row) => `${row.start_date} → ${row.end_date}` },
   { title: "投入", key: "percent", render: (row) => `${Math.round(row.percent * 100)}%` },
   { title: "来源", key: "source" },
+  {
+    title: "操作",
+    key: "actions",
+    width: 80,
+    render: (row) =>
+      h(NPopconfirm, { onPositiveClick: () => allocations.remove(row.id, projects.current!) }, {
+        trigger: () => h(NButton, { size: "small", type: "error", quaternary: true }, { default: () => "删除" }),
+        default: () => "确定删除此分配吗？",
+      }),
+  },
 ]);
 </script>
 

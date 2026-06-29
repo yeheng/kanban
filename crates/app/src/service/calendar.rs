@@ -56,6 +56,14 @@ impl CalendarService {
         ResourcesRepo::get(pool, resource_id).await?;
         Ok(TimeOffRepo::add(pool, resource_id, day, fraction, reason).await?)
     }
+
+    pub async fn delete_holiday(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+        Ok(HolidayRepo::delete(pool, id).await?)
+    }
+
+    pub async fn delete_time_off(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+        Ok(TimeOffRepo::delete(pool, id).await?)
+    }
 }
 
 fn validate_week(week: &[f64]) -> Result<(), AppError> {

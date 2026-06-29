@@ -62,6 +62,29 @@ impl TasksRepo {
         Ok(())
     }
 
+    pub async fn update(
+        pool: &SqlitePool, id: i64, title: &str, description: Option<&str>,
+        estimate_pd: f64, start: Option<&str>, end: Option<&str>,
+    ) -> Result<(), DbError> {
+        let n = sqlx::query(
+            "UPDATE tasks SET title=?, description=?, estimate_pd=?, start_date=?, end_date=?, \
+                    updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+             WHERE id=? AND deleted_at IS NULL")
+            .bind(title).bind(description).bind(estimate_pd).bind(start).bind(end).bind(id)
+            .execute(pool).await?.rows_affected();
+        if n == 0 { return Err(DbError::NotFound); }
+        Ok(())
+    }
+
+    pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
+        let n = sqlx::query(
+            "UPDATE tasks SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+             WHERE id = ? AND deleted_at IS NULL")
+            .bind(id).execute(pool).await?.rows_affected();
+        if n == 0 { return Err(DbError::NotFound); }
+        Ok(())
+    }
+
     pub async fn list_skill_reqs(pool: &SqlitePool, task_id: i64) -> Result<Vec<TaskSkillRequirement>, DbError> {
         Ok(sqlx::query_as::<_, TaskSkillRequirement>(
             "SELECT task_id, skill_id, min_proficiency, is_mandatory, weight \

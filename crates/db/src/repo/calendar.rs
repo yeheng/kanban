@@ -68,6 +68,12 @@ impl HolidayRepo {
             "SELECT id, project_id, day, fraction, name FROM holiday ORDER BY day")
             .fetch_all(pool).await?)
     }
+    pub async fn delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
+        let n = sqlx::query("DELETE FROM holiday WHERE id = ?")
+            .bind(id).execute(pool).await?.rows_affected();
+        if n == 0 { return Err(DbError::NotFound); }
+        Ok(())
+    }
 }
 
 // ---- Time off ----
@@ -85,6 +91,12 @@ impl TimeOffRepo {
         Ok(sqlx::query_as::<_, TimeOff>(
             "SELECT id, resource_id, day, fraction, reason FROM time_off WHERE resource_id = ? ORDER BY day")
             .bind(resource_id).fetch_all(pool).await?)
+    }
+    pub async fn delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
+        let n = sqlx::query("DELETE FROM time_off WHERE id = ?")
+            .bind(id).execute(pool).await?.rows_affected();
+        if n == 0 { return Err(DbError::NotFound); }
+        Ok(())
     }
 }
 

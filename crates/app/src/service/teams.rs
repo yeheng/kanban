@@ -12,6 +12,9 @@ impl TeamsService {
     pub async fn list(pool: &SqlitePool) -> Result<Vec<Team>, AppError> {
         Ok(TeamsRepo::list_active(pool).await?)
     }
+    pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+        Ok(TeamsRepo::soft_delete(pool, id).await?)
+    }
     pub async fn add_member(pool: &SqlitePool, team_id: i64, resource_id: i64, role: Option<&str>) -> Result<(), AppError> {
         Ok(TeamMembersRepo::add(pool, team_id, resource_id, role).await?)
     }

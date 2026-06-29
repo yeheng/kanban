@@ -15,6 +15,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   { label: () => h(RouterLink, { to: "/kanban" }, { default: () => "看板 Kanban" }), key: "kanban" },
   { label: () => h(RouterLink, { to: "/projects" }, { default: () => "项目 Projects" }), key: "projects" },
   { label: () => h(RouterLink, { to: "/resources" }, { default: () => "资源 Resources" }), key: "resources" },
+  { label: () => h(RouterLink, { to: "/teams" }, { default: () => "团队 Teams" }), key: "teams" },
   { label: () => h(RouterLink, { to: "/dashboard" }, { default: () => "仪表盘 Dashboard" }), key: "dashboard" },
   { label: () => h(RouterLink, { to: "/allocations" }, { default: () => "分配 Allocations" }), key: "allocations" },
   { label: () => h(RouterLink, { to: "/calendar" }, { default: () => "日历 Calendar" }), key: "calendar" },

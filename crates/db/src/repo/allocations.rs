@@ -89,4 +89,13 @@ impl AllocationsRepo {
         if n == 0 { return Err(DbError::NotFound); }
         Ok(())
     }
+
+    pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
+        let n = sqlx::query(
+            "UPDATE allocations SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+             WHERE id = ? AND deleted_at IS NULL")
+            .bind(id).execute(pool).await?.rows_affected();
+        if n == 0 { return Err(DbError::NotFound); }
+        Ok(())
+    }
 }

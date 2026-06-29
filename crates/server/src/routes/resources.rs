@@ -1,12 +1,14 @@
 use crate::error::HttpError;
 use crate::state::AppState;
-use axum::extract::State;
-use axum::routing::get;
+use axum::extract::{Path, State};
+use axum::routing::{delete, get};
 use axum::{Json, Router};
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/api/resources", get(list_resources).post(create_resource))
+    Router::new()
+        .route("/api/resources", get(list_resources).post(create_resource))
+        .route("/api/resources/{id}", delete(delete_resource))
 }
 
 async fn list_resources(State(state): State<AppState>) -> Result<Json<Vec<db::models::Resource>>, HttpError> {
@@ -22,4 +24,12 @@ async fn create_resource(
 ) -> Result<(axum::http::StatusCode, Json<i64>), HttpError> {
     let id = app::service::resources::ResourcesService::create(&state.pool, &body.name, body.email.as_deref()).await?;
     Ok((axum::http::StatusCode::CREATED, Json(id)))
+}
+
+async fn delete_resource(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::resources::ResourcesService::soft_delete(&state.pool, id).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
 }

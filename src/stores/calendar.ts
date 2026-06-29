@@ -25,6 +25,8 @@ export const useCalendarStore = defineStore("calendar", () => {
   async function setWeek(w: number[]) { week.value = w; await api.setGlobalWorkWeek(w); }
   async function loadHolidays() { holidays.value = await api.listHolidays(); }
   async function addHoliday(day: string, fraction: number, name: string | null) { await api.addHoliday(null, day, fraction, name); await loadHolidays(); }
+  async function removeHoliday(id: number) { await api.deleteHoliday(id); await loadHolidays(); }
   async function addTimeOff(resourceId: number, day: string, fraction: number, reason: string | null) { await api.addTimeOff(resourceId, day, fraction, reason); }
-  return { week, holidays, loadWeek, setWeek, loadHolidays, addHoliday, addTimeOff };
+  async function removeTimeOff(id: number) { await api.deleteTimeOff(id); }
+  return { week, holidays, loadWeek, setWeek, loadHolidays, addHoliday, removeHoliday, addTimeOff, removeTimeOff };
 });

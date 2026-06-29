@@ -1,8 +1,12 @@
 <script setup lang="ts">
-import { NText, NTag } from "naive-ui";
+import { NText, NTag, NButton, NPopconfirm } from "naive-ui";
 import type { KanbanTask } from "../types";
 defineProps<{ task: KanbanTask }>();
-const emit = defineEmits<{ (e: "dragstart", id: number): void }>();
+const emit = defineEmits<{
+  (e: "dragstart", id: number): void;
+  (e: "delete", id: number): void;
+  (e: "edit", task: KanbanTask): void;
+}>();
 </script>
 
 <template>
@@ -10,8 +14,24 @@ const emit = defineEmits<{ (e: "dragstart", id: number): void }>();
     class="task-card"
     draggable="true"
     @dragstart="emit('dragstart', task.id)"
+    @click="emit('edit', task)"
   >
-    <n-text strong class="task-card__title">{{ task.title }}</n-text>
+    <div class="task-card__header">
+      <n-text strong class="task-card__title">{{ task.title }}</n-text>
+      <n-popconfirm @positive-click="emit('delete', task.id)">
+        <template #trigger>
+          <n-button
+            size="tiny"
+            type="error"
+            quaternary
+            circle
+            class="task-card__delete"
+            @click.stop
+          >×</n-button>
+        </template>
+        确定删除此任务吗？
+      </n-popconfirm>
+    </div>
     <div class="task-card__meta">
       <n-tag size="tiny" :bordered="false">{{ task.estimate_pd }} PD</n-tag>
       <n-tag v-if="task.skill_count" size="tiny" :bordered="false" type="info">
@@ -38,8 +58,17 @@ const emit = defineEmits<{ (e: "dragstart", id: number): void }>();
 .task-card:hover {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
+.task-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
 .task-card__title {
-  display: block;
+  flex: 1;
+}
+.task-card__delete {
+  flex-shrink: 0;
+  margin-left: 4px;
 }
 .task-card__meta {
   display: flex;

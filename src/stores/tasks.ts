@@ -9,6 +9,24 @@ export const useTasksStore = defineStore("tasks", () => {
   const tasks = ref<KanbanTask[]>([]);
 
   async function load(projectId: number) { tasks.value = await api.kanbanTasks(projectId); }
+  async function create(args: {
+    projectId: number; title: string; estimatePd: number;
+    start: string | null; end: string | null;
+    skillReqs: [number, number, boolean, number][]; tagIds: number[];
+  }) {
+    await api.createTask(args);
+    await load(args.projectId);
+  }
+  async function update(id: number, args: {
+    title: string; estimatePd: number; start: string | null; end: string | null;
+  }, projectId: number) {
+    await api.updateTask(id, args);
+    await load(projectId);
+  }
+  async function remove(id: number, projectId: number) {
+    await api.deleteTask(id);
+    await load(projectId);
+  }
   async function moveStatus(taskId: number, status: TaskStatus) {
     const t = tasks.value.find((x) => x.id === taskId);
     if (!t) return;
@@ -22,5 +40,5 @@ export const useTasksStore = defineStore("tasks", () => {
   }
   const columns = computed(() => COLUMNS);
 
-  return { tasks, columns, load, moveStatus, byStatus };
+  return { tasks, columns, load, create, update, remove, moveStatus, byStatus };
 });

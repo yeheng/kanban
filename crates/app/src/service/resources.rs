@@ -13,4 +13,8 @@ impl ResourcesService {
     pub async fn list(pool: &SqlitePool) -> Result<Vec<Resource>, AppError> {
         Ok(ResourcesRepo::list_active(pool).await?)
     }
+
+    pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+        Ok(ResourcesRepo::soft_delete(pool, id).await?)
+    }
 }

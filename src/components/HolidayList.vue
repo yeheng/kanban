@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { NForm, NFormItem, NDatePicker, NSelect, NInput, NButton, NList, NListItem, NThing, NSpace } from "naive-ui";
+import { NForm, NFormItem, NDatePicker, NSelect, NInput, NButton, NList, NListItem, NThing, NSpace, NPopconfirm } from "naive-ui";
 import { useCalendarStore } from "../stores/calendar";
 const cal = useCalendarStore();
 const day = ref<number | null>(null);
@@ -44,6 +44,14 @@ async function add() {
     <n-list bordered>
       <n-list-item v-for="h in cal.holidays" :key="h.id">
         <n-thing :title="h.day" :description="`${h.fraction === 1 ? '全天' : '半天'} · ${h.name ?? ''}`" />
+        <template #suffix>
+          <n-popconfirm @positive-click="cal.removeHoliday(h.id)">
+            <template #trigger>
+              <n-button size="small" type="error" quaternary>删除</n-button>
+            </template>
+            确定删除此节假日吗？
+          </n-popconfirm>
+        </template>
       </n-list-item>
     </n-list>
   </div>

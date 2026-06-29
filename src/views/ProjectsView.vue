@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { NH2, NH3, NList, NListItem, NThing, NTag, NDivider, NText } from "naive-ui";
+import { NH2, NH3, NList, NListItem, NThing, NTag, NDivider, NText, NPopconfirm, NButton, NSpace } from "naive-ui";
 import ProjectForm from "../components/ProjectForm.vue";
 import TaskForm from "../components/TaskForm.vue";
 import { useProjectsStore } from "../stores/projects";
@@ -18,8 +18,18 @@ const projects = useProjectsStore();
           </n-text>
         </template>
         <template #description>
-          <n-tag size="small" :bordered="false">优先级 {{ p.priority }}</n-tag>
-          <n-tag size="small" :bordered="false" type="info">预算 {{ p.budget_pd }} PD</n-tag>
+          <n-space :size="4">
+            <n-tag size="small" :bordered="false">优先级 {{ p.priority }}</n-tag>
+            <n-tag size="small" :bordered="false" type="info">预算 {{ p.budget_pd }} PD</n-tag>
+          </n-space>
+        </template>
+        <template #suffix>
+          <n-popconfirm @positive-click="projects.remove(p.id)">
+            <template #trigger>
+              <n-button size="small" type="error" quaternary>删除</n-button>
+            </template>
+            确定删除项目 "{{ p.name }}" 吗？
+          </n-popconfirm>
         </template>
       </n-thing>
     </n-list-item>

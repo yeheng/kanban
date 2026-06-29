@@ -24,6 +24,10 @@ impl ProjectsService {
     pub async fn get(pool: &SqlitePool, id: i64) -> Result<Project, AppError> {
         Ok(ProjectsRepo::get(pool, id).await?)
     }
+
+    pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
+        Ok(ProjectsRepo::soft_delete(pool, id).await?)
+    }
 }
 
 fn validate_priority(p: i64) -> Result<(), AppError> {

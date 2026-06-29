@@ -8,6 +8,8 @@ const props = defineProps<{ status: TaskStatus; tasks: KanbanTask[] }>();
 const emit = defineEmits<{
   (e: "drop", status: TaskStatus): void;
   (e: "dragstart-card", id: number): void;
+  (e: "delete-card", id: number): void;
+  (e: "edit-card", task: KanbanTask): void;
 }>();
 const dragging = ref(false);
 
@@ -30,6 +32,8 @@ function onDrop() { dragging.value = false; emit("drop", props.status); }
       :key="t.id"
       :task="t"
       @dragstart="(id: number) => emit('dragstart-card', id)"
+      @delete="(id: number) => emit('delete-card', id)"
+      @edit="(task: KanbanTask) => emit('edit-card', task)"
     />
   </div>
 </template>

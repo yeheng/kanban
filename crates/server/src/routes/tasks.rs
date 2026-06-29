@@ -1,7 +1,7 @@
 use crate::error::HttpError;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::{get, patch, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use db::models::Task;
 use serde::Deserialize;
@@ -9,6 +9,7 @@ use serde::Deserialize;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/tasks", post(create_task))
+        .route("/api/tasks/{id}", delete(delete_task).patch(update_task))
         .route("/api/tasks/{id}/status", patch(set_status))
         .route("/api/projects/{id}/tasks", get(list_tasks))
 }
@@ -64,5 +65,34 @@ async fn set_status(
     Json(body): Json<SetStatus>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::tasks::TasksService::set_status(&state.pool, id, &body.status).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateTask {
+    title: String,
+    description: Option<String>,
+    estimate_pd: f64,
+    start: Option<String>,
+    end: Option<String>,
+}
+
+async fn update_task(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateTask>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::tasks::TasksService::update(
+        &state.pool, id, &body.title, body.description.as_deref(),
+        body.estimate_pd, body.start.as_deref(), body.end.as_deref(),
+    ).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn delete_task(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::tasks::TasksService::soft_delete(&state.pool, id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
