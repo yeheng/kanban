@@ -4,7 +4,7 @@ use app::service::calendar::CalendarService;
 use axum::extract::{Path, State};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
-use db::models::{Holiday, WeekTemplate};
+use db::models::{Holiday, TimeOff, WeekTemplate};
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
@@ -21,7 +21,10 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/calendar/holidays/{id}", delete(delete_holiday))
         // time off
-        .route("/api/calendar/time-off", post(add_time_off))
+        .route(
+            "/api/calendar/time-off",
+            get(list_time_off).post(add_time_off),
+        )
         .route("/api/calendar/time-off/{id}", delete(delete_time_off))
 }
 
@@ -108,4 +111,8 @@ async fn delete_time_off(
 ) -> Result<axum::http::StatusCode, HttpError> {
     CalendarService::delete_time_off(&state.pool, id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn list_time_off(State(state): State<AppState>) -> Result<Json<Vec<TimeOff>>, HttpError> {
+    Ok(Json(CalendarService::time_off_all(&state.pool).await?))
 }

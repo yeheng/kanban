@@ -6,8 +6,9 @@ import type { AllocationView } from "../types";
 export const useAllocationsStore = defineStore("allocations", () => {
   const items = ref<AllocationView[]>([]);
   async function load(projectId: number) { items.value = await api.listAllocations(projectId); }
-  async function create(resourceId: number, taskId: number, start: string, end: string, percent: number) {
+  async function create(resourceId: number, taskId: number, start: string, end: string, percent: number, projectId?: number) {
     await api.createAllocation(resourceId, taskId, start, end, percent);
+    if (projectId != null) await load(projectId);
   }
   async function remove(id: number, projectId: number) {
     await api.deleteAllocation(id);

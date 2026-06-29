@@ -38,6 +38,16 @@ export interface AllocationView {
 }
 export interface Team { id: number; name: string; description: string | null; }
 export interface TeamMember { team_id: number; resource_id: number; role: string | null; }
+export interface TeamOverride {
+  team_id: number;
+  pd_hours: number | null;
+  pm_workdays: number | null;
+  overload_threshold: number | null;
+  underload_threshold: number | null;
+  utilization_green: number | null;
+  utilization_yellow: number | null;
+}
+export interface TimeOff { id: number; resource_id: number; day: string; fraction: number; reason: string | null; }
 export interface Holiday { id: number; project_id: number | null; day: string; fraction: number; name: string | null; }
 export interface WeekTemplate {
   id: number; scope: string; project_id: number | null;

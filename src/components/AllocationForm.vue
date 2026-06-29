@@ -40,8 +40,7 @@ async function submit() {
   const start = fmtDate(dateRange.value[0]);
   const end = fmtDate(dateRange.value[1]);
   try {
-    await allocations.create(resourceId.value, taskId.value, start, end, percent.value);
-    await allocations.load(projects.current);
+    await allocations.create(resourceId.value, taskId.value, start, end, percent.value, projects.current);
     const s = await api.resourceSummary(resourceId.value, start, end);
     impact.value = { utilization: s.utilization, overloaded: s.overloaded };
   } catch (e: unknown) {

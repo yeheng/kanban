@@ -7,8 +7,9 @@ const COLUMNS: TaskStatus[] = ["todo", "in_progress", "blocked", "review", "done
 
 export const useTasksStore = defineStore("tasks", () => {
   const tasks = ref<KanbanTask[]>([]);
+  const projectId = ref<number | null>(null);
 
-  async function load(projectId: number) { tasks.value = await api.kanbanTasks(projectId); }
+  async function load(pid: number) { projectId.value = pid; tasks.value = await api.kanbanTasks(pid); }
   async function create(args: {
     projectId: number; title: string; estimatePd: number;
     start: string | null; end: string | null;
@@ -19,13 +20,13 @@ export const useTasksStore = defineStore("tasks", () => {
   }
   async function update(id: number, args: {
     title: string; estimatePd: number; start: string | null; end: string | null;
-  }, projectId: number) {
+  }, pid: number) {
     await api.updateTask(id, args);
-    await load(projectId);
+    await load(pid);
   }
-  async function remove(id: number, projectId: number) {
+  async function remove(id: number, pid: number) {
     await api.deleteTask(id);
-    await load(projectId);
+    await load(pid);
   }
   async function moveStatus(taskId: number, status: TaskStatus) {
     const t = tasks.value.find((x) => x.id === taskId);
@@ -34,6 +35,8 @@ export const useTasksStore = defineStore("tasks", () => {
     t.status = status;
     try { await api.setTaskStatus(taskId, status); }
     catch (e) { t.status = prev; throw e; }
+    // Reload to sync sort_order and any server-side recomputation
+    if (projectId.value != null) await api.kanbanTasks(projectId.value).then((rows) => { tasks.value = rows; });
   }
   function byStatus(status: TaskStatus): KanbanTask[] {
     return tasks.value.filter((t) => t.status === status).sort((a, b) => a.sort_order - b.sort_order);

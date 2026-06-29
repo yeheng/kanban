@@ -108,6 +108,7 @@ export const api = {
   listHolidays: (): Promise<Holiday[]> => request("GET", "/api/calendar/holidays"),
   addTimeOff: (resourceId: number, day: string, fraction: number | null, reason: string | null): Promise<number> =>
     request("POST", "/api/calendar/time-off", { resource_id: resourceId, day, fraction, reason }),
+  listTimeOff: (): Promise<TimeOff[]> => request("GET", "/api/calendar/time-off"),
   deleteHoliday: (id: number): Promise<void> =>
     request("DELETE", `/api/calendar/holidays/${id}`),
   deleteTimeOff: (id: number): Promise<void> =>
@@ -123,6 +124,8 @@ export const api = {
     request("GET", `/api/teams/${teamId}/members`),
   addTeamMember: (teamId: number, resourceId: number, role: string | null): Promise<void> =>
     request("POST", `/api/teams/${teamId}/members`, { resource_id: resourceId, role }),
+  setTeamOverride: (override: TeamOverride): Promise<void> =>
+    request("PUT", "/api/teams/overrides", override),
 
   // ---- Phase 3: Gantt + occupancy ----
   ganttProject: (projectId: number): Promise<GanttBar[]> =>

@@ -1,6 +1,6 @@
 use crate::error::AppError;
 use chrono::NaiveDate;
-use db::models::{Holiday, WeekTemplate};
+use db::models::{Holiday, TimeOff, WeekTemplate};
 use db::{HolidayRepo, ProjectsRepo, ResourcesRepo, TimeOffRepo, WeekTemplateRepo};
 use sqlx::SqlitePool;
 
@@ -63,6 +63,10 @@ impl CalendarService {
 
     pub async fn delete_time_off(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
         Ok(TimeOffRepo::delete(pool, id).await?)
+    }
+
+    pub async fn time_off_all(pool: &SqlitePool) -> Result<Vec<TimeOff>, AppError> {
+        Ok(TimeOffRepo::list_all(pool).await?)
     }
 }
 

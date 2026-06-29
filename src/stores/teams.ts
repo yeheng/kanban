@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { api } from "../api";
-import type { Team, TeamMember } from "../types";
+import type { Team, TeamMember, TeamOverride } from "../types";
 
 export const useTeamsStore = defineStore("teams", () => {
   const items = ref<Team[]>([]);
@@ -14,5 +14,8 @@ export const useTeamsStore = defineStore("teams", () => {
     await api.addTeamMember(teamId, resourceId, role);
     await loadMembers(teamId);
   }
-  return { items, members, load, create, remove, loadMembers, addMember };
+  async function setOverride(override: TeamOverride) {
+    await api.setTeamOverride(override);
+  }
+  return { items, members, load, create, remove, loadMembers, addMember, setOverride };
 });

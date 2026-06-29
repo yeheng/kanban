@@ -2,6 +2,8 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { api } from "../api";
 import type { RunResult, RunRow, ObjectiveWeights } from "../types";
+import { useAllocationsStore } from "./allocations";
+import { useGanttStore } from "./gantt";
 
 export const useOptimizationStore = defineStore("optimization", () => {
   const current = ref<RunResult | null>(null);
@@ -15,7 +17,17 @@ export const useOptimizationStore = defineStore("optimization", () => {
     finally { busy.value = false; }
   }
   async function loadHistory() { history.value = await api.listOptimizationRuns(20); }
-  async function accept(runId: number) { await api.applySolution(runId); current.value = null; await loadHistory(); }
+  async function accept(runId: number) {
+    await api.applySolution(runId);
+    current.value = null;
+    await loadHistory();
+    // Clear dependent stores so stale allocation/gantt data gets reloaded on next visit
+    const alloc = useAllocationsStore();
+    const gantt = useGanttStore();
+    alloc.items = [];
+    gantt.bars = [];
+    gantt.deps = [];
+  }
   async function reject(runId: number) { await api.rejectSolution(runId); current.value = null; await loadHistory(); }
   /** Normalize the three weights to sum to 1 (called on slider change). */
   function normalize() {
