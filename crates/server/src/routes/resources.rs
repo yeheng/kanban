@@ -1,14 +1,14 @@
 use crate::error::HttpError;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::{delete, get};
+use axum::routing::{delete, get, patch};
 use axum::{Json, Router};
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/resources", get(list_resources).post(create_resource))
-        .route("/api/resources/{id}", delete(delete_resource))
+        .route("/api/resources/{id}", delete(delete_resource).patch(update_resource))
 }
 
 async fn list_resources(State(state): State<AppState>) -> Result<Json<Vec<db::models::Resource>>, HttpError> {
@@ -31,5 +31,22 @@ async fn delete_resource(
     Path(id): Path<i64>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::resources::ResourcesService::soft_delete(&state.pool, id).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateResource {
+    name: String,
+    email: Option<String>,
+}
+
+async fn update_resource(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateResource>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::resources::ResourcesService::update(
+        &state.pool, id, &body.name, body.email.as_deref(),
+    ).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

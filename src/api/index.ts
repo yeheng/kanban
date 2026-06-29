@@ -28,6 +28,13 @@ export const api = {
   listProjects: (): Promise<Project[]> => request("GET", "/api/projects"),
   createProject: (name: string, priority: number, budgetPd: number): Promise<number> =>
     request("POST", "/api/projects", { name, priority, budget_pd: budgetPd }),
+  updateProject: (id: number, args: {
+    name: string; priority: number; budgetPd: number;
+  }): Promise<void> =>
+    request("PATCH", `/api/projects/${id}`, {
+      name: args.name, description: null, start: null, end: null,
+      priority: args.priority, budget_pd: args.budgetPd,
+    }),
   deleteProject: (id: number): Promise<void> =>
     request("DELETE", `/api/projects/${id}`),
 
@@ -75,6 +82,8 @@ export const api = {
   listResources: (): Promise<Resource[]> => request("GET", "/api/resources"),
   createResource: (name: string, email: string | null): Promise<number> =>
     request("POST", "/api/resources", { name, email }),
+  updateResource: (id: number, name: string, email: string | null): Promise<void> =>
+    request("PATCH", `/api/resources/${id}`, { name, email }),
   deleteResource: (id: number): Promise<void> =>
     request("DELETE", `/api/resources/${id}`),
 

@@ -17,4 +17,8 @@ impl ResourcesService {
     pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
         Ok(ResourcesRepo::soft_delete(pool, id).await?)
     }
+
+    pub async fn update(pool: &SqlitePool, id: i64, name: &str, email: Option<&str>) -> Result<(), AppError> {
+        Ok(ResourcesRepo::update(pool, id, name, email).await?)
+    }
 }

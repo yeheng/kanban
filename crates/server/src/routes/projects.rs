@@ -1,14 +1,14 @@
 use crate::error::HttpError;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::{delete, get};
+use axum::routing::{delete, get, patch};
 use axum::{Json, Router};
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/projects", get(list_projects).post(create_project))
-        .route("/api/projects/{id}", delete(delete_project))
+        .route("/api/projects/{id}", delete(delete_project).patch(update_project))
         .route("/api/projects/{id}/kanban", get(kanban_tasks))
 }
 
@@ -55,5 +55,27 @@ async fn delete_project(
     Path(id): Path<i64>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::projects::ProjectsService::soft_delete(&state.pool, id).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateProject {
+    name: String,
+    description: Option<String>,
+    start: Option<String>,
+    end: Option<String>,
+    priority: i64,
+    budget_pd: f64,
+}
+
+async fn update_project(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<UpdateProject>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::projects::ProjectsService::update(
+        &state.pool, id, &body.name, body.description.as_deref(),
+        body.start.as_deref(), body.end.as_deref(), body.priority, body.budget_pd,
+    ).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

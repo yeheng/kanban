@@ -50,4 +50,17 @@ impl ResourcesRepo {
         if n == 0 { return Err(DbError::NotFound); }
         Ok(())
     }
+
+    pub async fn update(
+        pool: &SqlitePool, id: i64, name: &str, email: Option<&str>,
+    ) -> Result<(), DbError> {
+        let n = sqlx::query(
+            "UPDATE resources SET name=?, email=?, \
+                    updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') \
+             WHERE id=? AND deleted_at IS NULL")
+            .bind(name).bind(email).bind(id)
+            .execute(pool).await?.rows_affected();
+        if n == 0 { return Err(DbError::NotFound); }
+        Ok(())
+    }
 }

@@ -9,8 +9,9 @@ export const useProjectsStore = defineStore("projects", () => {
 
   async function load() { items.value = await api.listProjects(); if (!current.value && items.value.length) current.value = items.value[0].id; }
   async function create(name: string, priority: number, budgetPd: number) { await api.createProject(name, priority, budgetPd); await load(); }
+  async function update(id: number, name: string, priority: number, budgetPd: number) { await api.updateProject(id, { name, priority, budgetPd }); await load(); }
   async function remove(id: number) { await api.deleteProject(id); if (current.value === id) current.value = null; await load(); }
   function select(id: number) { current.value = id; }
 
-  return { items, current, load, create, remove, select };
+  return { items, current, load, create, update, remove, select };
 });
