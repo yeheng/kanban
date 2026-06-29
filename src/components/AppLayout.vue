@@ -11,19 +11,17 @@ const catalog = useCatalogStore();
 const ready = ref(false);
 const route = useRoute();
 
-const renderLink = (to: string) => () => h(RouterLink, { to });
-
 const menuOptions = computed<MenuOption[]>(() => [
-  { label: renderLink("/kanban"), key: "kanban" },
-  { label: renderLink("/projects"), key: "projects" },
-  { label: renderLink("/resources"), key: "resources" },
-  { label: renderLink("/dashboard"), key: "dashboard" },
-  { label: renderLink("/allocations"), key: "allocations" },
-  { label: renderLink("/calendar"), key: "calendar" },
-  { label: renderLink("/gantt"), key: "gantt" },
-  { label: renderLink("/calendar-grid"), key: "calendar-grid" },
-  { label: renderLink("/ai"), key: "ai" },
-  { label: renderLink("/reports"), key: "reports" },
+  { label: () => h(RouterLink, { to: "/kanban" }, { default: () => "看板 Kanban" }), key: "kanban" },
+  { label: () => h(RouterLink, { to: "/projects" }, { default: () => "项目 Projects" }), key: "projects" },
+  { label: () => h(RouterLink, { to: "/resources" }, { default: () => "资源 Resources" }), key: "resources" },
+  { label: () => h(RouterLink, { to: "/dashboard" }, { default: () => "仪表盘 Dashboard" }), key: "dashboard" },
+  { label: () => h(RouterLink, { to: "/allocations" }, { default: () => "分配 Allocations" }), key: "allocations" },
+  { label: () => h(RouterLink, { to: "/calendar" }, { default: () => "日历 Calendar" }), key: "calendar" },
+  { label: () => h(RouterLink, { to: "/gantt" }, { default: () => "甘特图 Gantt" }), key: "gantt" },
+  { label: () => h(RouterLink, { to: "/calendar-grid" }, { default: () => "占用网格 Calendar Grid" }), key: "calendar-grid" },
+  { label: () => h(RouterLink, { to: "/ai" }, { default: () => "AI 优化 Optimization" }), key: "ai" },
+  { label: () => h(RouterLink, { to: "/reports" }, { default: () => "报表 Reports" }), key: "reports" },
 ]);
 
 const activeKey = computed(() => route.path.replace(/^\//, ""));

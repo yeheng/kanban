@@ -14,9 +14,9 @@ async function submit() {
 </script>
 
 <template>
-  <n-form inline @submit.prevent="submit">
+  <n-form inline>
     <n-form-item label="项目名">
-      <n-input v-model:value="name" placeholder="项目名" />
+      <n-input v-model:value="name" placeholder="项目名" @keyup.enter="submit" />
     </n-form-item>
     <n-form-item label="优先级">
       <n-input-number v-model:value="priority" :min="1" :max="9" />
@@ -25,7 +25,7 @@ async function submit() {
       <n-input-number v-model:value="budget" :min="0" />
     </n-form-item>
     <n-form-item>
-      <n-button type="primary" attr-type="submit">新建项目</n-button>
+      <n-button type="primary" @click="submit">新建项目</n-button>
     </n-form-item>
   </n-form>
 </template>

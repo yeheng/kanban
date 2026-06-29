@@ -53,7 +53,7 @@ watch(() => projects.current, () => { loadTasks(); }, { immediate: true });
 </script>
 
 <template>
-  <n-form inline @submit.prevent="submit">
+  <n-form inline>
     <n-form-item label="资源">
       <n-select v-model:value="resourceId" :options="resourceOptions" placeholder="选择资源" />
     </n-form-item>
@@ -67,7 +67,7 @@ watch(() => projects.current, () => { loadTasks(); }, { immediate: true });
       <n-input-number v-model:value="percent" :min="0.01" :max="1" :step="0.05" />
     </n-form-item>
     <n-form-item>
-      <n-button type="primary" attr-type="submit">分配</n-button>
+      <n-button type="primary" @click="submit">分配</n-button>
     </n-form-item>
     <n-form-item v-if="error">
       <n-tag type="error">{{ error }}</n-tag>

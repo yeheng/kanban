@@ -36,9 +36,9 @@ async function submit() {
 </script>
 
 <template>
-  <n-form inline @submit.prevent="submit">
+  <n-form inline>
     <n-form-item label="标题">
-      <n-input v-model:value="title" placeholder="任务标题" />
+      <n-input v-model:value="title" placeholder="任务标题" @keyup.enter="submit" />
     </n-form-item>
     <n-form-item label="PD">
       <n-input-number v-model:value="estimate" :min="0" />
@@ -50,7 +50,7 @@ async function submit() {
       <n-select v-model:value="selectedTags" multiple :options="tagOptions" placeholder="选择标签" />
     </n-form-item>
     <n-form-item>
-      <n-button type="primary" attr-type="submit">新建任务</n-button>
+      <n-button type="primary" @click="submit">新建任务</n-button>
     </n-form-item>
   </n-form>
 </template>
