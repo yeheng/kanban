@@ -45,6 +45,14 @@ pub struct ExistingAlloc {
     pub percent: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyCapacity {
+    pub resource_id: i64,
+    pub day: NaiveDate,
+    /// Ratio-space capacity for that resource/day. 1.0 = full day, 0.0 = unavailable.
+    pub factor: f64,
+}
+
 /// Multi-objective weights (design §1; default balanced 0.4/0.4/0.2; UI-tunable, confirmed #6).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectiveWeights {
@@ -97,6 +105,8 @@ pub struct AllocationProblem {
     pub resources: Vec<CandidateResource>,
     pub tasks: Vec<CandidateTask>,
     pub existing: Vec<ExistingAlloc>,
+    pub daily_capacity: Vec<DailyCapacity>,
+    pub budget_pd: Option<f64>,
     pub weights: ObjectiveWeights,
     pub flags: ConstraintFlags,
     pub config: SolverConfig,

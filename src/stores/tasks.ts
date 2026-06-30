@@ -14,15 +14,20 @@ export const useTasksStore = defineStore("tasks", () => {
     projectId: number; title: string; estimatePd: number;
     start: string | null; end: string | null;
     skillReqs: [number, number, boolean, number][]; tagIds: number[];
+    description?: string | null;
   }) {
     await api.createTask(args);
     await load(args.projectId);
   }
   async function update(id: number, args: {
     title: string; estimatePd: number; start: string | null; end: string | null;
+    description?: string | null;
   }, pid: number) {
     await api.updateTask(id, args);
     await load(pid);
+  }
+  async function addDependency(taskId: number, predecessorId: number, lagDays?: number) {
+    await api.addDependency(taskId, predecessorId, lagDays);
   }
   async function remove(id: number, pid: number) {
     await api.deleteTask(id);
@@ -35,7 +40,6 @@ export const useTasksStore = defineStore("tasks", () => {
     t.status = status;
     try { await api.setTaskStatus(taskId, status); }
     catch (e) { t.status = prev; throw e; }
-    // Reload to sync sort_order and any server-side recomputation
     if (projectId.value != null) await api.kanbanTasks(projectId.value).then((rows) => { tasks.value = rows; });
   }
   function byStatus(status: TaskStatus): KanbanTask[] {
@@ -43,5 +47,5 @@ export const useTasksStore = defineStore("tasks", () => {
   }
   const columns = computed(() => COLUMNS);
 
-  return { tasks, columns, load, create, update, remove, moveStatus, byStatus };
+  return { tasks, columns, load, create, update, addDependency, remove, moveStatus, byStatus };
 });

@@ -5,9 +5,11 @@ import type { MenuOption } from "naive-ui";
 import { RouterLink, useRoute } from "vue-router";
 import { useProjectsStore } from "../stores/projects";
 import { useCatalogStore } from "../stores/catalog";
+import { useUnitStore } from "../stores/unit";
 
 const projects = useProjectsStore();
 const catalog = useCatalogStore();
+const unit = useUnitStore();
 const ready = ref(false);
 const route = useRoute();
 
@@ -15,6 +17,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   { label: () => h(RouterLink, { to: "/kanban" }, { default: () => "看板 Kanban" }), key: "kanban" },
   { label: () => h(RouterLink, { to: "/projects" }, { default: () => "项目 Projects" }), key: "projects" },
   { label: () => h(RouterLink, { to: "/resources" }, { default: () => "资源 Resources" }), key: "resources" },
+  { label: () => h(RouterLink, { to: "/catalog" }, { default: () => "技能标签 Catalog" }), key: "catalog" },
   { label: () => h(RouterLink, { to: "/teams" }, { default: () => "团队 Teams" }), key: "teams" },
   { label: () => h(RouterLink, { to: "/dashboard" }, { default: () => "仪表盘 Dashboard" }), key: "dashboard" },
   { label: () => h(RouterLink, { to: "/allocations" }, { default: () => "分配 Allocations" }), key: "allocations" },
@@ -57,6 +60,9 @@ onMounted(async () => {
         size="small"
         @update:value="onProjectChange"
       />
+      <n-divider />
+      <n-text depth="3" style="font-size: 12px">单位</n-text>
+      <n-select v-model:value="unit.unit" :options="unit.options" size="small" />
     </n-layout-sider>
     <n-layout-content content-style="padding: 16px">
       <n-spin v-if="!ready" size="large">

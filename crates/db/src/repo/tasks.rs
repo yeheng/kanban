@@ -95,7 +95,8 @@ impl TasksRepo {
     /// Kanban-shaped read: task + first assignee name + skill count (design §7 Kanban card).
     pub async fn list_kanban(pool: &SqlitePool, project_id: i64) -> Result<Vec<KanbanTask>, DbError> {
         Ok(sqlx::query_as::<_, KanbanTask>(
-            "SELECT t.id, t.project_id, t.title, t.status, t.sort_order, t.estimate_pd, \
+            "SELECT t.id, t.project_id, t.title, t.description, t.status, t.sort_order, \
+                    t.estimate_pd, t.start_date, t.end_date, \
                     (SELECT r.name FROM allocations a JOIN resources r ON r.id = a.resource_id \
                      WHERE a.task_id = t.id AND a.deleted_at IS NULL AND r.deleted_at IS NULL LIMIT 1) AS assignee, \
                     (SELECT count(*) FROM task_skill_requirements sr WHERE sr.task_id = t.id) AS skill_count \

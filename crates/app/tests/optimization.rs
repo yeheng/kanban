@@ -12,7 +12,7 @@ async fn run_then_apply_creates_ai_allocations() {
     let rust = CatalogService::ensure_skill(&pool, "Rust").await.unwrap();
     sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
     sqlx::query("INSERT INTO resource_skills (resource_id,skill_id,proficiency) VALUES (1,?,4)").bind(rust).execute(&pool).await.unwrap();
-    TasksService::create(&pool, pid, "T1", None, 5.0, Some("2026-07-01"), Some("2026-07-05"), false, 0, &[(rust, 3, true, 1.0)], &[]).await.unwrap();
+    TasksService::create(&pool, pid, "T1", None, 5.0, Some("2026-07-01"), Some("2026-07-07"), false, 0, &[(rust, 3, true, 1.0)], &[]).await.unwrap();
 
     let res = OptimizationService::run_for_project(&pool, pid, None).await.unwrap();
     assert!(!res.plan.solution.assignments.is_empty());

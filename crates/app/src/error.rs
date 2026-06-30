@@ -30,7 +30,11 @@ impl From<domain::DomainError> for AppError {
         match e {
             InvalidRatio(_) | InvalidDateWindow => AppError::validation(e.to_string()),
             NotFound(s) => AppError::not_found(s),
-            DependencyCycle(_) | InsufficientCapacity { .. } | SkillMismatch { .. } | Solver(_) => {
+            DependencyCycle(_)
+            | DependencyViolation { .. }
+            | InsufficientCapacity { .. }
+            | SkillMismatch { .. }
+            | Solver(_) => {
                 AppError::domain(e.to_string())
             }
         }

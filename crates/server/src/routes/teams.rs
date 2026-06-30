@@ -11,6 +11,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/teams", get(list_teams).post(create_team))
         .route("/api/teams/{id}", delete(delete_team))
         .route("/api/teams/{id}/members", get(list_team_members).post(add_member))
+        .route("/api/teams/{id}/override", get(get_override))
         .route("/api/teams/overrides", put(set_override))
 }
 
@@ -54,6 +55,13 @@ async fn set_override(
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::teams::TeamsService::set_override(&state.pool, body).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn get_override(
+    State(state): State<AppState>,
+    Path(team_id): Path<i64>,
+) -> Result<Json<Option<TeamOverride>>, HttpError> {
+    Ok(Json(app::service::teams::TeamsService::get_override(&state.pool, team_id).await?))
 }
 
 async fn delete_team(

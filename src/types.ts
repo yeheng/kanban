@@ -6,12 +6,19 @@ export interface Project {
 }
 export interface KanbanTask {
   id: number; project_id: number; title: string; status: string;
-  sort_order: number; estimate_pd: number;
+  description: string | null; sort_order: number; estimate_pd: number;
+  start_date: string | null; end_date: string | null;
   assignee: string | null; skill_count: number;
 }
 export interface Skill { id: number; name: string; }
 export interface Tag { id: number; name: string; color: string | null; }
-export interface Resource { id: number; name: string; email: string | null; status: string; }
+export interface Resource {
+  id: number; name: string; email: string | null;
+  available_from: string | null; available_to: string | null;
+  status: string; daily_capacity_pd: number | null;
+  daily_rate_pd: number | null; max_parallel_tasks_per_day: number | null;
+  metadata: string | null;
+}
 export type TaskStatus = "todo" | "in_progress" | "blocked" | "review" | "done" | "cancelled";
 
 // Phase 2: workload / allocations / calendar / teams

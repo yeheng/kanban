@@ -38,6 +38,10 @@ async fn delete_resource(
 struct UpdateResource {
     name: String,
     email: Option<String>,
+    available_from: Option<String>,
+    available_to: Option<String>,
+    daily_capacity_pd: Option<f64>,
+    daily_rate_pd: Option<f64>,
 }
 
 async fn update_resource(
@@ -47,6 +51,8 @@ async fn update_resource(
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::resources::ResourcesService::update(
         &state.pool, id, &body.name, body.email.as_deref(),
+        body.available_from.as_deref(), body.available_to.as_deref(),
+        body.daily_capacity_pd, body.daily_rate_pd,
     ).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

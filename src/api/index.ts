@@ -1,4 +1,4 @@
-import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunRow } from "../types";
+import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunRow } from "../types";
 
 export type SkillReq = [number, number, boolean, number];
 
@@ -30,11 +30,15 @@ export const api = {
     request("POST", "/api/projects", { name, priority, budget_pd: budgetPd }),
   updateProject: (id: number, args: {
     name: string; priority: number; budgetPd: number;
+    description?: string | null; start?: string | null; end?: string | null;
   }): Promise<void> =>
     request("PATCH", `/api/projects/${id}`, {
-      name: args.name, description: null, start: null, end: null,
+      name: args.name, description: args.description ?? null,
+      start: args.start ?? null, end: args.end ?? null,
       priority: args.priority, budget_pd: args.budgetPd,
     }),
+  setProjectStatus: (id: number, status: string): Promise<void> =>
+    request("PATCH", `/api/projects/${id}/status`, { status }),
   deleteProject: (id: number): Promise<void> =>
     request("DELETE", `/api/projects/${id}`),
 
@@ -48,6 +52,7 @@ export const api = {
     projectId: number; title: string; estimatePd: number;
     start: string | null; end: string | null;
     skillReqs: SkillReq[]; tagIds: number[];
+    description?: string | null;
   }): Promise<number> =>
     request("POST", "/api/tasks", {
       project_id: args.projectId,
@@ -57,17 +62,18 @@ export const api = {
       end: args.end,
       skill_reqs: args.skillReqs,
       tag_ids: args.tagIds,
-      description: null,
+      description: args.description ?? null,
       is_long_term: false,
       sort_order: 0,
     }),
   updateTask: (id: number, args: {
     title: string; estimatePd: number;
     start: string | null; end: string | null;
+    description?: string | null;
   }): Promise<void> =>
     request("PATCH", `/api/tasks/${id}`, {
       title: args.title,
-      description: null,
+      description: args.description ?? null,
       estimate_pd: args.estimatePd,
       start: args.start,
       end: args.end,
@@ -76,14 +82,24 @@ export const api = {
     request("DELETE", `/api/tasks/${id}`),
   setTaskStatus: (id: number, status: TaskStatus): Promise<void> =>
     request("PATCH", `/api/tasks/${id}/status`, { status }),
+  addDependency: (taskId: number, predecessorId: number, lagDays?: number): Promise<void> =>
+    request("POST", `/api/tasks/${taskId}/dependencies`, { predecessor_id: predecessorId, lag_days: lagDays ?? 0, dep_type: "finish_to_start" }),
   kanbanTasks: (projectId: number): Promise<KanbanTask[]> =>
     request("GET", `/api/projects/${projectId}/kanban`),
 
   listResources: (): Promise<Resource[]> => request("GET", "/api/resources"),
   createResource: (name: string, email: string | null): Promise<number> =>
     request("POST", "/api/resources", { name, email }),
-  updateResource: (id: number, name: string, email: string | null): Promise<void> =>
-    request("PATCH", `/api/resources/${id}`, { name, email }),
+  updateResource: (id: number, args: {
+    name: string; email: string | null;
+    availableFrom?: string | null; availableTo?: string | null;
+    dailyCapacityPd?: number | null; dailyRatePd?: number | null;
+  }): Promise<void> =>
+    request("PATCH", `/api/resources/${id}`, {
+      name: args.name, email: args.email,
+      available_from: args.availableFrom ?? null, available_to: args.availableTo ?? null,
+      daily_capacity_pd: args.dailyCapacityPd ?? null, daily_rate_pd: args.dailyRatePd ?? null,
+    }),
   deleteResource: (id: number): Promise<void> =>
     request("DELETE", `/api/resources/${id}`),
 
@@ -135,6 +151,8 @@ export const api = {
     request("POST", `/api/teams/${teamId}/members`, { resource_id: resourceId, role }),
   setTeamOverride: (override: TeamOverride): Promise<void> =>
     request("PUT", "/api/teams/overrides", override),
+  getTeamOverride: (teamId: number): Promise<TeamOverride | null> =>
+    request("GET", `/api/teams/${teamId}/override`),
 
   // ---- Phase 3: Gantt + occupancy ----
   ganttProject: (projectId: number): Promise<GanttBar[]> =>

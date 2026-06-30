@@ -39,6 +39,14 @@ impl ProjectsService {
         }
         Ok(ProjectsRepo::update(pool, id, name, description, start, end, priority, budget_pd).await?)
     }
+
+    pub async fn set_status(pool: &SqlitePool, id: i64, status: &str) -> Result<(), AppError> {
+        match status {
+            "planning" | "active" | "on_hold" | "done" | "cancelled" => {}
+            _ => return Err(domain::DomainError::InvalidRatio(0.0).into()),
+        }
+        Ok(ProjectsRepo::set_status(pool, id, status).await?)
+    }
 }
 
 fn validate_priority(p: i64) -> Result<(), AppError> {

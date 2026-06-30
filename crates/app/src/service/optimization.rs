@@ -4,7 +4,7 @@ use ai_engine::scorer::FallbackScorer;
 use ai_engine::solver::GreedySolver;
 use ai_engine::types::*;
 use ai_engine::OptimizationEngine;
-use chrono::NaiveDate;
+use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::sync::Arc;
@@ -142,6 +142,12 @@ pub struct RunRow {
 
 async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationProblem, AppError> {
     use std::collections::HashMap;
+    let (budget_pd,): (f64,) =
+        sqlx::query_as("SELECT budget_pd FROM projects WHERE id=? AND deleted_at IS NULL")
+            .bind(project_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or_else(|| domain::DomainError::NotFound(format!("project {}", project_id)))?;
     // resources + skills + availability window (gated in the solver to mirror the trigger).
     type ResRow = (i64, String, f64, Option<NaiveDate>, Option<NaiveDate>);
     let resources: Vec<ResRow> = sqlx::query_as(
@@ -166,13 +172,17 @@ async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationP
             available_from: avail_from, available_to: avail_to,
         });
     }
-    // tasks + skill reqs for the project (todo/in_progress only). Priority lives on the
-    // project (design §3.3.3), not per-task, so join projects.priority.
+    // tasks + skill reqs for the project (todo/in_progress and not already allocated).
+    // Priority lives on the project (design §3.3.3), not per-task, so join projects.priority.
     type TaskRow = (i64, String, f64, Option<NaiveDate>, Option<NaiveDate>, i64);
     let tasks: Vec<TaskRow> = sqlx::query_as(
         "SELECT t.id, t.title, t.estimate_pd, t.start_date, t.end_date, p.priority \
          FROM tasks t JOIN projects p ON p.id = t.project_id \
-         WHERE t.project_id=? AND t.deleted_at IS NULL AND t.status IN ('todo','in_progress')")
+         WHERE t.project_id=? AND t.deleted_at IS NULL AND t.status IN ('todo','in_progress') \
+           AND NOT EXISTS ( \
+             SELECT 1 FROM allocations a \
+             WHERE a.task_id=t.id AND a.deleted_at IS NULL AND a.status <> 'cancelled' \
+           )")
         .bind(project_id).fetch_all(pool).await?;
 
     // Batch-load all task skill requirements for this project's tasks (1 query instead of M).
@@ -211,11 +221,61 @@ async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationP
         });
     }
 
+    let (existing, daily_capacity) =
+        if let (Some(h_start), Some(h_end)) = (horizon_start(&cand_tasks), horizon_end(&cand_tasks)) {
+            let rows: Vec<(i64, NaiveDate, NaiveDate, f64)> = sqlx::query_as(
+                "SELECT a.resource_id, a.start_date, a.end_date, a.percent \
+                 FROM allocations a \
+                 JOIN tasks t ON t.id=a.task_id AND t.deleted_at IS NULL \
+                 WHERE a.deleted_at IS NULL AND a.status <> 'cancelled' \
+                   AND a.start_date <= ? AND a.end_date >= ?",
+            )
+            .bind(h_end)
+            .bind(h_start)
+            .fetch_all(pool)
+            .await?;
+            let existing = rows
+                .into_iter()
+                .map(|(resource_id, start, end, percent)| ExistingAlloc {
+                    resource_id,
+                    start,
+                    end,
+                    percent,
+                })
+                .collect();
+
+            let cal = db::repo::calendar::hydrate(pool).await?;
+            let mut caps = Vec::new();
+            for r in &cand {
+                let mut day = h_start;
+                while day <= h_end {
+                    caps.push(DailyCapacity {
+                        resource_id: r.id,
+                        day,
+                        factor: cal.day_factor(project_id, r.id, day),
+                    });
+                    day = day.checked_add_days(Days::new(1)).unwrap();
+                }
+            }
+            (existing, caps)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+
     // Placeholder run_id (0) — the real run_id is assigned by INSERT RETURNING id in
     // run_for_project and stamped back into the problem struct before snapshot serialization.
     Ok(AllocationProblem {
-        run_id: 0, resources: cand, tasks: cand_tasks, existing: vec![],
+        run_id: 0, resources: cand, tasks: cand_tasks, existing, daily_capacity,
+        budget_pd: Some(budget_pd),
         weights: ObjectiveWeights::default(), flags: ConstraintFlags::default(),
         config: SolverConfig::default(),
     })
+}
+
+fn horizon_start(tasks: &[CandidateTask]) -> Option<NaiveDate> {
+    tasks.iter().map(|t| t.start).min()
+}
+
+fn horizon_end(tasks: &[CandidateTask]) -> Option<NaiveDate> {
+    tasks.iter().map(|t| t.end).max()
 }

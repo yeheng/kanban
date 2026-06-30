@@ -9,6 +9,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/projects", get(list_projects).post(create_project))
         .route("/api/projects/{id}", delete(delete_project).patch(update_project))
+        .route("/api/projects/{id}/status", patch(set_project_status))
         .route("/api/projects/{id}/kanban", get(kanban_tasks))
 }
 
@@ -77,5 +78,19 @@ async fn update_project(
         &state.pool, id, &body.name, body.description.as_deref(),
         body.start.as_deref(), body.end.as_deref(), body.priority, body.budget_pd,
     ).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+#[derive(Debug, Deserialize)]
+struct SetProjectStatus {
+    status: String,
+}
+
+async fn set_project_status(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Json(body): Json<SetProjectStatus>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::projects::ProjectsService::set_status(&state.pool, id, &body.status).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

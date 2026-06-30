@@ -4,7 +4,6 @@ use axum::extract::{Path, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use db::models::AllocationView;
-use db::AllocationsRepo;
 use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
@@ -27,10 +26,15 @@ async fn create_allocation(
     State(state): State<AppState>,
     Json(body): Json<CreateAllocation>,
 ) -> Result<(axum::http::StatusCode, Json<i64>), HttpError> {
-    if !(body.percent > 0.0 && body.percent <= 1.0) {
-        return Err(domain::DomainError::InvalidRatio(body.percent).into());
-    }
-    let id = AllocationsRepo::create(&state.pool, body.resource_id, body.task_id, &body.start, &body.end, body.percent).await?;
+    let id = app::service::allocations::AllocationsService::create(
+        &state.pool,
+        body.resource_id,
+        body.task_id,
+        &body.start,
+        &body.end,
+        body.percent,
+    )
+    .await?;
     Ok((axum::http::StatusCode::CREATED, Json(id)))
 }
 
@@ -38,7 +42,7 @@ async fn list_allocations(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
 ) -> Result<Json<Vec<AllocationView>>, HttpError> {
-    Ok(Json(AllocationsRepo::list_by_project(&state.pool, project_id).await?))
+    Ok(Json(db::AllocationsRepo::list_by_project(&state.pool, project_id).await?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,13 +61,14 @@ async fn update_allocation(
     Path(id): Path<i64>,
     Json(body): Json<UpdateAllocation>,
 ) -> Result<axum::http::StatusCode, HttpError> {
-    if !(body.percent > 0.0 && body.percent <= 1.0) {
-        return Err(domain::DomainError::InvalidRatio(body.percent).into());
-    }
-    if body.end.as_str() < body.start.as_str() {
-        return Err(domain::DomainError::InvalidDateWindow.into());
-    }
-    AllocationsRepo::update(&state.pool, id, &body.start, &body.end, body.percent).await?;
+    app::service::allocations::AllocationsService::update(
+        &state.pool,
+        id,
+        &body.start,
+        &body.end,
+        body.percent,
+    )
+    .await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
@@ -71,6 +76,6 @@ async fn delete_allocation(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<axum::http::StatusCode, HttpError> {
-    AllocationsRepo::soft_delete(&state.pool, id).await?;
+    app::service::allocations::AllocationsService::soft_delete(&state.pool, id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

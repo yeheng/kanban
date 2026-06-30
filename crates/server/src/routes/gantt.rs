@@ -1,16 +1,18 @@
 use crate::error::HttpError;
 use crate::state::AppState;
 use axum::extract::{Path, State};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use db::models::{DepEdge, GanttBar};
 use db::{GanttRepo, TaskDepsRepo};
+use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/gantt/projects/{id}", get(gantt_by_project))
         .route("/api/gantt/resources/{id}", get(gantt_by_resource))
         .route("/api/projects/{id}/dependencies", get(dependencies))
+        .route("/api/tasks/{id}/dependencies", post(add_dependency))
 }
 
 async fn gantt_by_project(
@@ -32,4 +34,22 @@ async fn dependencies(
     Path(project_id): Path<i64>,
 ) -> Result<Json<Vec<DepEdge>>, HttpError> {
     Ok(Json(TaskDepsRepo::for_project(&state.pool, project_id).await?))
+}
+
+#[derive(Debug, Deserialize)]
+struct AddDependency {
+    predecessor_id: i64,
+    lag_days: Option<i64>,
+    dep_type: Option<String>,
+}
+
+async fn add_dependency(
+    State(state): State<AppState>,
+    Path(task_id): Path<i64>,
+    Json(body): Json<AddDependency>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::tasks::TasksService::add_dependency(
+        &state.pool, task_id, body.predecessor_id, body.lag_days.unwrap_or(0),
+    ).await?;
+    Ok(axum::http::StatusCode::CREATED)
 }

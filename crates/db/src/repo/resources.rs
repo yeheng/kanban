@@ -53,12 +53,17 @@ impl ResourcesRepo {
 
     pub async fn update(
         pool: &SqlitePool, id: i64, name: &str, email: Option<&str>,
+        available_from: Option<&str>, available_to: Option<&str>,
+        daily_capacity_pd: Option<f64>, daily_rate_pd: Option<f64>,
     ) -> Result<(), DbError> {
+        let daily_capacity_pd = daily_capacity_pd.unwrap_or(1.0);
         let n = sqlx::query(
-            "UPDATE resources SET name=?, email=?, \
+            "UPDATE resources SET name=?, email=?, available_from=?, available_to=?, \
+                    daily_capacity_pd=?, daily_rate_pd=?, \
                     updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') \
-             WHERE id=? AND deleted_at IS NULL")
-            .bind(name).bind(email).bind(id)
+            WHERE id=? AND deleted_at IS NULL")
+            .bind(name).bind(email).bind(available_from).bind(available_to)
+            .bind(daily_capacity_pd).bind(daily_rate_pd).bind(id)
             .execute(pool).await?.rows_affected();
         if n == 0 { return Err(DbError::NotFound); }
         Ok(())

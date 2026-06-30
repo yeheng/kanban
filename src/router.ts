@@ -10,6 +10,7 @@ export const router = createRouter({
     { path: "/kanban", component: KanbanView },
     { path: "/projects", component: ProjectsView },
     { path: "/resources", component: ResourcesView },
+    { path: "/catalog", component: () => import("./views/CatalogView.vue") },
     { path: "/dashboard", component: () => import("./views/DashboardView.vue") },
     { path: "/allocations", component: () => import("./views/AllocationsView.vue") },
     { path: "/calendar", component: () => import("./views/CalendarView.vue") },

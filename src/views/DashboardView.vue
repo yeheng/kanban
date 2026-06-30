@@ -5,12 +5,14 @@ import { useWorkloadStore } from "../stores/workload";
 import { useResourcesStore } from "../stores/resources";
 import { useProjectsStore } from "../stores/projects";
 import { useTeamsStore } from "../stores/teams";
+import { useUnitStore } from "../stores/unit";
 import UtilBar from "../components/UtilBar.vue";
 
 const wl = useWorkloadStore();
 const resources = useResourcesStore();
 const projects = useProjectsStore();
 const teams = useTeamsStore();
+const unit = useUnitStore();
 const dateRange = ref<[number, number]>([Date.parse("2026-06-29"), Date.parse("2026-07-03")]);
 const selectedTeam = ref<number | null>(null);
 
@@ -57,7 +59,7 @@ onMounted(async () => { await wl.loadThresholds(); await teams.load(); await ref
     <tr v-for="s in wl.resourceSummaries" :key="s.resource_id">
       <td style="width: 120px">资源 #{{ s.resource_id }}</td>
       <td><UtilBar :utilization="s.utilization" /></td>
-      <td>{{ s.workload_pd.toFixed(1) }} / {{ s.capacity_pd.toFixed(1) }} PD</td>
+      <td>{{ unit.formatPd(s.workload_pd) }} / {{ unit.formatPd(s.capacity_pd) }}</td>
     </tr>
   </n-table>
 
@@ -65,7 +67,7 @@ onMounted(async () => { await wl.loadThresholds(); await teams.load(); await ref
   <n-statistic
     v-if="wl.projectBurn"
     label="预算消耗"
-    :value="`${wl.projectBurn.allocated_pd.toFixed(1)} / ${wl.projectBurn.budget_pd.toFixed(1)} PD (${Math.round(wl.projectBurn.usage * 100)}%)`"
+    :value="`${unit.formatPd(wl.projectBurn.allocated_pd)} / ${unit.formatPd(wl.projectBurn.budget_pd)} (${Math.round(wl.projectBurn.usage * 100)}%)`"
   />
 
   <n-h3>团队利用率</n-h3>

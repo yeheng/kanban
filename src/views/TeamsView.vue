@@ -17,6 +17,8 @@ const overrideOverload = ref<number | null>(null);
 const overrideUnderload = ref<number | null>(null);
 const overrideGreen = ref<number | null>(null);
 const overrideYellow = ref<number | null>(null);
+const overridePdHours = ref<number | null>(null);
+const overridePmWorkdays = ref<number | null>(null);
 
 const resourceOptions = computed(() =>
   resources.items.map((r) => ({ label: r.name, value: r.id })),
@@ -33,11 +35,23 @@ onMounted(async () => {
 
 watch(selectedTeam, async (id) => {
   if (id != null) await teams.loadMembers(id);
-  // Reset override form when switching teams
   overrideOverload.value = null;
   overrideUnderload.value = null;
   overrideGreen.value = null;
   overrideYellow.value = null;
+  overridePdHours.value = null;
+  overridePmWorkdays.value = null;
+  if (id != null) {
+    const existing = await teams.getOverride(id);
+    if (existing) {
+      overrideOverload.value = existing.overload_threshold;
+      overrideUnderload.value = existing.underload_threshold;
+      overrideGreen.value = existing.utilization_green;
+      overrideYellow.value = existing.utilization_yellow;
+      overridePdHours.value = existing.pd_hours;
+      overridePmWorkdays.value = existing.pm_workdays;
+    }
+  }
 });
 
 async function createTeam() {
@@ -57,8 +71,8 @@ async function saveOverride() {
   if (selectedTeam.value == null) return;
   const override: TeamOverride = {
     team_id: selectedTeam.value,
-    pd_hours: null,
-    pm_workdays: null,
+    pd_hours: overridePdHours.value,
+    pm_workdays: overridePmWorkdays.value,
     overload_threshold: overrideOverload.value,
     underload_threshold: overrideUnderload.value,
     utilization_green: overrideGreen.value,
@@ -148,6 +162,12 @@ function resourceName(id: number): string {
       设置后该团队使用自己的阈值，覆盖全局设置。留空则不覆盖（使用全局值）。
     </n-text>
     <n-form inline>
+      <n-form-item label="每 PD 小时">
+        <n-input-number v-model:value="overridePdHours" :step="0.5" :min="0.5" placeholder="如 8" />
+      </n-form-item>
+      <n-form-item label="每 PM 人日">
+        <n-input-number v-model:value="overridePmWorkdays" :step="1" :min="1" placeholder="如 20" />
+      </n-form-item>
       <n-form-item label="过载阈值">
         <n-input-number v-model:value="overrideOverload" :step="0.05" :min="0" placeholder="如 1.10" />
       </n-form-item>

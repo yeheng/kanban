@@ -27,7 +27,7 @@ async fn hydrate_reflects_db_calendar() {
 
     let cal = hydrate(&pool).await.unwrap();
     // capacity Mon..Fri with Wed holiday + Thu half: 1+1+0+0.5+1 = 3.5
-    let cap = capacity_pd(&cal, 1, 1, win("2026-06-29", "2026-07-03"));
+    let cap = capacity_pd(&cal, 1, 1, 1.0, win("2026-06-29", "2026-07-03"));
     assert!((cap - 3.5).abs() < 1e-9);
 }
 
@@ -36,6 +36,6 @@ async fn hydrate_empty_returns_default_calendar() {
     let pool = fresh().await;
     let cal = hydrate(&pool).await.unwrap();
     // seed gives Mon-Fri -> capacity 5.0 PD for a Mon–Fri week
-    let cap = capacity_pd(&cal, 1, 1, win("2026-06-29", "2026-07-03"));
+    let cap = capacity_pd(&cal, 1, 1, 1.0, win("2026-06-29", "2026-07-03"));
     assert!((cap - 5.0).abs() < 1e-9);
 }

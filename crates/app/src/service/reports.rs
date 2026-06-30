@@ -85,15 +85,15 @@ impl ReportService {
     /// resource_project_rates (latest valid_from) → resources.daily_rate_pd → 0.
     async fn cost(pool: &SqlitePool, project_id: Option<i64>) -> Result<ReportTable, AppError> {
         let cal = db::repo::calendar::hydrate(pool).await?;
-        // rows: resource_id, resource_name, project_id, project_name, start, end, percent
+        // rows: resource_id, resource_name, daily_capacity_pd, project_id, project_name, start, end, percent
         let q = match project_id {
-            Some(pid) => sqlx::query_as::<_, (i64, String, i64, String, chrono::NaiveDate, chrono::NaiveDate, f64)>(
-                "SELECT r.id, r.name, p.id, p.name, a.start_date, a.end_date, a.percent \
+            Some(pid) => sqlx::query_as::<_, (i64, String, f64, i64, String, chrono::NaiveDate, chrono::NaiveDate, f64)>(
+                "SELECT r.id, r.name, r.daily_capacity_pd, p.id, p.name, a.start_date, a.end_date, a.percent \
                  FROM allocations a JOIN resources r ON r.id=a.resource_id \
                  JOIN tasks t ON t.id=a.task_id JOIN projects p ON p.id=t.project_id \
                  WHERE p.id=? AND a.deleted_at IS NULL AND r.deleted_at IS NULL AND t.deleted_at IS NULL AND p.deleted_at IS NULL").bind(pid),
-            None => sqlx::query_as::<_, (i64, String, i64, String, chrono::NaiveDate, chrono::NaiveDate, f64)>(
-                "SELECT r.id, r.name, p.id, p.name, a.start_date, a.end_date, a.percent \
+            None => sqlx::query_as::<_, (i64, String, f64, i64, String, chrono::NaiveDate, chrono::NaiveDate, f64)>(
+                "SELECT r.id, r.name, r.daily_capacity_pd, p.id, p.name, a.start_date, a.end_date, a.percent \
                  FROM allocations a JOIN resources r ON r.id=a.resource_id \
                  JOIN tasks t ON t.id=a.task_id JOIN projects p ON p.id=t.project_id \
                  WHERE a.deleted_at IS NULL AND r.deleted_at IS NULL AND t.deleted_at IS NULL AND p.deleted_at IS NULL"),
@@ -105,8 +105,16 @@ impl ReportService {
         use std::collections::BTreeMap;
         let mut pd: BTreeMap<(i64, i64), f64> = BTreeMap::new();
         let mut names: BTreeMap<(i64, i64), (String, String)> = BTreeMap::new();
-        for (rid, rname, pid, pname, start, end, percent) in &allocs {
-            let a = domain::Allocation { id: 0, resource_id: *rid, project_id: *pid, start: *start, end: *end, percent: *percent };
+        for (rid, rname, daily_capacity_pd, pid, pname, start, end, percent) in &allocs {
+            let a = domain::Allocation {
+                id: 0,
+                resource_id: *rid,
+                project_id: *pid,
+                daily_capacity_pd: *daily_capacity_pd,
+                start: *start,
+                end: *end,
+                percent: *percent,
+            };
             let span = domain::Window { start: *start, end: *end };
             *pd.entry((*rid, *pid)).or_insert(0.0) += domain::alloc_pd(&cal, &a, span);
             names.entry((*rid, *pid)).or_insert((rname.clone(), pname.clone()));

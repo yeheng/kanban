@@ -30,6 +30,7 @@ pub struct Allocation {
     pub id: i64,
     pub resource_id: i64,
     pub project_id: i64,
+    pub daily_capacity_pd: f64,
     pub start: NaiveDate,
     pub end: NaiveDate,
     pub percent: f64, // (0.0, 1.0]

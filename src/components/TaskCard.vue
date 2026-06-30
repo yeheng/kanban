@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { NText, NTag, NButton, NPopconfirm } from "naive-ui";
 import type { KanbanTask } from "../types";
+import { useUnitStore } from "../stores/unit";
 defineProps<{ task: KanbanTask }>();
 const emit = defineEmits<{
   (e: "dragstart", id: number): void;
   (e: "delete", id: number): void;
   (e: "edit", task: KanbanTask): void;
 }>();
+const unit = useUnitStore();
 </script>
 
 <template>
@@ -33,7 +35,7 @@ const emit = defineEmits<{
       </n-popconfirm>
     </div>
     <div class="task-card__meta">
-      <n-tag size="tiny" :bordered="false">{{ task.estimate_pd }} PD</n-tag>
+      <n-tag size="tiny" :bordered="false">{{ unit.formatPd(task.estimate_pd) }}</n-tag>
       <n-tag v-if="task.skill_count" size="tiny" :bordered="false" type="info">
         {{ task.skill_count }} skill(s)
       </n-tag>

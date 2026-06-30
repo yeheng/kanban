@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, watchEffect } from "vue";
-import { NH2, NSpace, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, NButton } from "naive-ui";
+import { computed, ref, watchEffect } from "vue";
+import { NH2, NSpace, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, NButton, NSelect, NEmpty, NText } from "naive-ui";
 import { useTasksStore } from "../stores/tasks";
 import { useProjectsStore } from "../stores/projects";
 import KanbanColumn from "../components/KanbanColumn.vue";
@@ -16,6 +16,9 @@ const editing = ref<KanbanTask | null>(null);
 const editTitle = ref("");
 const editEstimate = ref(0);
 const editDateRange = ref<[number, number] | null>(null);
+const editDescription = ref("");
+const depPredecessor = ref<number | null>(null);
+const depLag = ref(0);
 
 function fmtDate(ms: number): string {
   const d = new Date(ms);
@@ -25,6 +28,13 @@ function parseDate(s: string | null): number | null {
   if (!s) return null;
   return Date.parse(s);
 }
+
+const otherTasks = computed(() =>
+  tasks.tasks.filter((t) => t.id !== editing.value?.id),
+);
+const predecessorOptions = computed(() =>
+  otherTasks.value.map((t) => ({ label: t.title, value: t.id })),
+);
 
 watchEffect(async () => {
   if (projects.current) await tasks.load(projects.current);
@@ -40,9 +50,12 @@ function onEdit(task: KanbanTask) {
   editing.value = task;
   editTitle.value = task.title;
   editEstimate.value = task.estimate_pd;
-  const start = parseDate((task as unknown as { start_date?: string }).start_date ?? null);
-  const end = parseDate((task as unknown as { end_date?: string }).end_date ?? null);
+  const start = parseDate(task.start_date);
+  const end = parseDate(task.end_date);
   editDateRange.value = start != null && end != null ? [start, end] : null;
+  editDescription.value = task.description ?? "";
+  depPredecessor.value = null;
+  depLag.value = 0;
   editVisible.value = true;
 }
 
@@ -53,7 +66,11 @@ async function saveEdit() {
     estimatePd: editEstimate.value,
     start: editDateRange.value ? fmtDate(editDateRange.value[0]) : null,
     end: editDateRange.value ? fmtDate(editDateRange.value[1]) : null,
+    description: editDescription.value || null,
   }, projects.current);
+  if (depPredecessor.value != null) {
+    await tasks.addDependency(editing.value.id, depPredecessor.value, depLag.value);
+  }
   editVisible.value = false;
 }
 
@@ -66,7 +83,7 @@ async function onDelete(id: number) {
 <template>
   <div>
     <n-h2 style="margin-top: 0">看板 / Kanban</n-h2>
-    <n-space :size="12" align="start">
+    <n-space v-if="tasks.tasks.length" :size="12" align="start">
       <KanbanColumn
         v-for="col in tasks.columns"
         :key="col"
@@ -78,22 +95,44 @@ async function onDelete(id: number) {
         @edit-card="onEdit"
       />
     </n-space>
+    <n-empty v-else description="暂无任务，请到项目页面创建任务">
+      <template #extra>
+        <n-button @click="$router.push('/projects')">去创建任务</n-button>
+      </template>
+    </n-empty>
 
     <n-modal
       v-model:show="editVisible"
       preset="card"
       title="编辑任务"
-      style="width: 480px"
+      style="width: 520px"
     >
       <n-form v-if="editing">
         <n-form-item label="标题">
           <n-input v-model:value="editTitle" />
+        </n-form-item>
+        <n-form-item label="描述">
+          <n-input v-model:value="editDescription" type="textarea" :rows="2" placeholder="任务描述 (可选)" />
         </n-form-item>
         <n-form-item label="估时 (PD)">
           <n-input-number v-model:value="editEstimate" :min="0" />
         </n-form-item>
         <n-form-item label="区间">
           <n-date-picker v-model:value="editDateRange" type="daterange" clearable />
+        </n-form-item>
+        <n-form-item label="前置任务">
+          <n-space align="center">
+            <n-select
+              v-model:value="depPredecessor"
+              :options="predecessorOptions"
+              placeholder="选择前置任务 (可选)"
+              style="width: 240px"
+              clearable
+            />
+            <n-text>延迟</n-text>
+            <n-input-number v-model:value="depLag" :step="1" style="width: 100px" />
+            <n-text>天</n-text>
+          </n-space>
         </n-form-item>
         <n-space justify="end">
           <n-button @click="editVisible = false">取消</n-button>

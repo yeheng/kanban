@@ -39,9 +39,11 @@ impl AllocationsRepo {
     ) -> Result<Vec<AllocationRow>, DbError> {
         // Column order matches AllocationRow field order (project_id joined in).
         let rows: Vec<AllocationRow> = sqlx::query_as(
-            "SELECT a.id, a.resource_id, a.task_id, t.project_id, \
+            "SELECT a.id, a.resource_id, a.task_id, t.project_id, r.daily_capacity_pd, \
                     a.start_date, a.end_date, a.percent, a.status, a.source, a.run_id \
-             FROM allocations a JOIN tasks t ON t.id = a.task_id \
+             FROM allocations a \
+             JOIN tasks t ON t.id = a.task_id \
+             JOIN resources r ON r.id = a.resource_id \
              WHERE a.resource_id = ? AND a.deleted_at IS NULL AND t.deleted_at IS NULL \
                AND a.start_date <= ? AND a.end_date >= ? \
              ORDER BY a.start_date"

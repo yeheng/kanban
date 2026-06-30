@@ -27,7 +27,7 @@ impl CalendarOccupancyService {
             let mut d = s;
             while d <= e {
                 let w = Window { start: d, end: d };
-                let cap = capacity_pd(&cal, 0, r.id, w); // 0 ⇒ global calendar
+                let cap = capacity_pd(&cal, 0, r.id, r.daily_capacity_pd, w); // 0 ⇒ global calendar
                 if cap > 0.0 {
                     let wl = workload_pd(&cal, &allocs, r.id, w);
                     out.push(DayOccupancy {

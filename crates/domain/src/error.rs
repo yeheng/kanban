@@ -13,6 +13,8 @@ pub enum DomainError {
     NotFound(String),
     #[error("dependency cycle detected involving task {0}")]
     DependencyCycle(i64),
+    #[error("dependency violation: task {task_id} conflicts with task {related_task_id}")]
+    DependencyViolation { task_id: i64, related_task_id: i64 },
     #[error("insufficient capacity for resource {resource_id}: shortfall {shortfall_pd} PD")]
     InsufficientCapacity { resource_id: i64, shortfall_pd: f64 },
     #[error("skill mismatch on task {task_id}: missing skill {skill_id}")]

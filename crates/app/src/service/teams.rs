@@ -34,5 +34,8 @@ fn validate_override(o: &TeamOverride) -> Result<(), AppError> {
     if let Some(g) = o.utilization_green { if !(0.0..=1.0).contains(&g) { return Err(domain::DomainError::InvalidRatio(g).into()); } }
     if let Some(y) = o.utilization_yellow { if !(0.0..=1.0).contains(&y) { return Err(domain::DomainError::InvalidRatio(y).into()); } }
     if let Some(p) = o.pd_hours { if p <= 0.0 { return Err(domain::DomainError::InvalidRatio(p).into()); } }
+    if let Some(p) = o.pm_workdays { if p <= 0.0 { return Err(domain::DomainError::InvalidRatio(p).into()); } }
+    if let Some(t) = o.overload_threshold { if t <= 0.0 { return Err(domain::DomainError::InvalidRatio(t).into()); } }
+    if let Some(t) = o.underload_threshold { if t < 0.0 { return Err(domain::DomainError::InvalidRatio(t).into()); } }
     Ok(())
 }

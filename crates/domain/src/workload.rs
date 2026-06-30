@@ -26,16 +26,27 @@ fn sum_day_factors(cal: &Calendar, project_id: i64, resource_id: i64,
     sum
 }
 
-/// Raw capacity (no percent) in PD for a window (design §4.3). 1 working day = 1 PD.
-pub fn capacity_pd(cal: &Calendar, project_id: i64, resource_id: i64, w: Window) -> f64 {
-    sum_day_factors(cal, project_id, resource_id, w.start, w.end)
+/// Raw capacity (no percent) in PD for a window (design §4.3).
+/// `daily_capacity_pd` expresses how many PD this resource produces on a full workday.
+pub fn capacity_pd(
+    cal: &Calendar,
+    project_id: i64,
+    resource_id: i64,
+    daily_capacity_pd: f64,
+    w: Window,
+) -> f64 {
+    sum_day_factors(cal, project_id, resource_id, w.start, w.end) * daily_capacity_pd
 }
 
 /// Single allocation's PD within a query window (design §4.4).
 pub fn alloc_pd(cal: &Calendar, a: &Allocation, w: Window) -> f64 {
     match overlap(Window { start: a.start, end: a.end }, w) {
         None => 0.0,
-        Some((os, oe)) => sum_day_factors(cal, a.project_id, a.resource_id, os, oe) * a.percent,
+        Some((os, oe)) => {
+            sum_day_factors(cal, a.project_id, a.resource_id, os, oe)
+                * a.daily_capacity_pd
+                * a.percent
+        }
     }
 }
 
@@ -51,17 +62,20 @@ pub fn workload_pd(cal: &Calendar, allocs: &[Allocation], resource_id: i64, w: W
 /// Capacity uses that project's calendar; workload sums the resource's allocations
 /// regardless of project (cross-project load). 0 capacity -> 0 utilization.
 pub fn utilization(cal: &Calendar, allocs: &[Allocation],
-                   project_id: i64, resource_id: i64, w: Window) -> f64 {
-    let cap = capacity_pd(cal, project_id, resource_id, w);
+                   project_id: i64, resource_id: i64, daily_capacity_pd: f64, w: Window) -> f64 {
+    let cap = capacity_pd(cal, project_id, resource_id, daily_capacity_pd, w);
     if cap <= 0.0 { return 0.0; }
     workload_pd(cal, allocs, resource_id, w) / cap
 }
 
 /// Team utilization = Σ workload / Σ capacity over members (design §4.9).
 pub fn team_utilization(cal: &Calendar, allocs: &[Allocation],
-                        members: &[i64], project_id: i64, w: Window) -> f64 {
-    let (wl, cap) = members.iter().fold((0.0_f64, 0.0_f64), |(wl, cap), &r| {
-        (wl + workload_pd(cal, allocs, r, w), cap + capacity_pd(cal, project_id, r, w))
+                        members: &[(i64, f64)], project_id: i64, w: Window) -> f64 {
+    let (wl, cap) = members.iter().fold((0.0_f64, 0.0_f64), |(wl, cap), &(r, daily_capacity_pd)| {
+        (
+            wl + workload_pd(cal, allocs, r, w),
+            cap + capacity_pd(cal, project_id, r, daily_capacity_pd, w),
+        )
     });
     if cap <= 0.0 { 0.0 } else { wl / cap }
 }
@@ -81,29 +95,42 @@ mod tests {
     #[test]
     fn capacity_five_workdays_is_5_pd() {
         let c = cal();
-        assert!((capacity_pd(&c, 1, 1, win(MON, FRI)) - 5.0).abs() < 1e-9);
+        assert!((capacity_pd(&c, 1, 1, 1.0, win(MON, FRI)) - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn capacity_respects_daily_capacity_pd() {
+        let c = cal();
+        assert!((capacity_pd(&c, 1, 1, 0.5, win(MON, FRI)) - 2.5).abs() < 1e-9);
     }
 
     #[test]
     fn capacity_skips_holiday() {
         let mut c = cal();
         c.holidays_global.insert(d(WED), 1.0); // full holiday Wed
-        assert!((capacity_pd(&c, 1, 1, win(MON, FRI)) - 4.0).abs() < 1e-9);
+        assert!((capacity_pd(&c, 1, 1, 1.0, win(MON, FRI)) - 4.0).abs() < 1e-9);
     }
 
     #[test]
     fn alloc_pd_half_over_full_week() {
         let c = cal();
-        let a = Allocation { id: 1, resource_id: 1, project_id: 1, start: d(MON), end: d(FRI), percent: 0.5 };
+        let a = Allocation { id: 1, resource_id: 1, project_id: 1, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 0.5 };
         // 5 days * 0.5 * avg_day_factor(1.0) = 2.5
         assert!((alloc_pd(&c, &a, win(MON, FRI)) - 2.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn alloc_pd_respects_daily_capacity_pd() {
+        let c = cal();
+        let a = Allocation { id: 1, resource_id: 1, project_id: 1, daily_capacity_pd: 0.5, start: d(MON), end: d(FRI), percent: 0.5 };
+        assert!((alloc_pd(&c, &a, win(MON, FRI)) - 1.25).abs() < 1e-9);
     }
 
     #[test]
     fn alloc_pd_with_half_holiday() {
         let mut c = cal();
         c.holidays_global.insert(d(WED), 0.5); // half holiday Wed -> day_factor 0.5
-        let a = Allocation { id: 1, resource_id: 1, project_id: 1, start: d(MON), end: d(FRI), percent: 0.5 };
+        let a = Allocation { id: 1, resource_id: 1, project_id: 1, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 0.5 };
         // capacity = 4.5; alloc = 4.5 * 0.5 = 2.25
         assert!((alloc_pd(&c, &a, win(MON, FRI)) - 2.25).abs() < 1e-9);
     }
@@ -111,7 +138,7 @@ mod tests {
     #[test]
     fn alloc_pd_disjoint_window_zero() {
         let c = cal();
-        let a = Allocation { id: 1, resource_id: 1, project_id: 1, start: d(MON), end: d(FRI), percent: 1.0 };
+        let a = Allocation { id: 1, resource_id: 1, project_id: 1, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 1.0 };
         assert!((alloc_pd(&c, &a, win("2026-08-01", "2026-08-05"))).abs() < 1e-9);
     }
 
@@ -119,8 +146,8 @@ mod tests {
     fn workload_sums_across_projects() {
         let c = cal();
         // Alice 50% on project 1, 30% on project 2, both over the full Mon–Fri week.
-        let a1 = Allocation { id: 1, resource_id: 1, project_id: 1, start: d(MON), end: d(FRI), percent: 0.5 };
-        let a2 = Allocation { id: 2, resource_id: 1, project_id: 2, start: d(MON), end: d(FRI), percent: 0.3 };
+        let a1 = Allocation { id: 1, resource_id: 1, project_id: 1, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 0.5 };
+        let a2 = Allocation { id: 2, resource_id: 1, project_id: 2, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 0.3 };
         let allocs = [a1, a2];
         // 5*0.5*1.0 + 5*0.3*1.0 = 2.5 + 1.5 = 4.0 PD
         assert!((workload_pd(&c, &allocs, 1, win(MON, FRI)) - 4.0).abs() < 1e-9);
@@ -129,26 +156,26 @@ mod tests {
     #[test]
     fn utilization_half_loaded() {
         let c = cal();
-        let a = Allocation { id: 1, resource_id: 1, project_id: 1, start: d(MON), end: d(FRI), percent: 0.5 };
+        let a = Allocation { id: 1, resource_id: 1, project_id: 1, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 0.5 };
         // workload 2.5 / capacity 5.0 = 0.5
-        assert!((utilization(&c, &[a], 1, 1, win(MON, FRI)) - 0.5).abs() < 1e-9);
+        assert!((utilization(&c, &[a], 1, 1, 1.0, win(MON, FRI)) - 0.5).abs() < 1e-9);
     }
 
     #[test]
     fn utilization_detects_overload() {
         let c = cal();
         // Two full-time allocations on the same resource, same week -> 200% load.
-        let a1 = Allocation { id: 1, resource_id: 1, project_id: 1, start: d(MON), end: d(FRI), percent: 1.0 };
-        let a2 = Allocation { id: 2, resource_id: 1, project_id: 2, start: d(MON), end: d(FRI), percent: 1.0 };
-        assert!(utilization(&c, &[a1, a2], 1, 1, win(MON, FRI)) > 1.0);
+        let a1 = Allocation { id: 1, resource_id: 1, project_id: 1, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 1.0 };
+        let a2 = Allocation { id: 2, resource_id: 1, project_id: 2, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 1.0 };
+        assert!(utilization(&c, &[a1, a2], 1, 1, 1.0, win(MON, FRI)) > 1.0);
     }
 
     #[test]
     fn team_utilization_aggregates_members() {
         let c = cal();
-        let a = Allocation { id: 1, resource_id: 1, project_id: 1, start: d(MON), end: d(FRI), percent: 0.5 };
+        let a = Allocation { id: 1, resource_id: 1, project_id: 1, daily_capacity_pd: 1.0, start: d(MON), end: d(FRI), percent: 0.5 };
         // 2 members, only one loaded at 50% -> team = 2.5 / 10.0 = 0.25
-        assert!((team_utilization(&c, &[a], &[1, 2], 1, win(MON, FRI)) - 0.25).abs() < 1e-9);
+        assert!((team_utilization(&c, &[a], &[(1, 1.0), (2, 1.0)], 1, win(MON, FRI)) - 0.25).abs() < 1e-9);
     }
 
     /// Design §4.10 flagship scenario: Alice split across two projects in one week,
@@ -166,15 +193,17 @@ mod tests {
 
         // Project A: 50% Mon–Fri. Project B: 60% Tue–Fri.
         let a = Allocation { id: 1, resource_id: 1, project_id: 1,
+            daily_capacity_pd: 1.0,
             start: d(MON), end: d(FRI), percent: 0.5 };
         let b = Allocation { id: 2, resource_id: 1, project_id: 2,
+            daily_capacity_pd: 1.0,
             start: d("2026-06-30"), end: d(FRI), percent: 0.6 }; // Tue–Fri
         let allocs = [a, b];
 
         // Capacity (project 1's calendar; same global week): day_factor sum
         // = 1.0(Mon)+1.0(Tue)+0(Wed)+0.5(Thu)+1.0(Fri) = 3.5 PD.
         let week = win(MON, "2026-07-05"); // Mon..Sun
-        assert!((capacity_pd(&c, 1, 1, week) - 3.5).abs() < 1e-9,
+        assert!((capacity_pd(&c, 1, 1, 1.0, week) - 3.5).abs() < 1e-9,
             "§4.10 capacity: 3.5 PD");
 
         // Workload across both allocations:
@@ -184,7 +213,7 @@ mod tests {
             "§4.10 workload: 3.25 PD");
 
         // Utilization = 3.25 / 3.5 = 0.9286 (92.9%, green — under 100%).
-        assert!((utilization(&c, &allocs, 1, 1, week) - 0.9286).abs() < 1e-3,
+        assert!((utilization(&c, &allocs, 1, 1, 1.0, week) - 0.9286).abs() < 1e-3,
             "§4.10 utilization: 0.9286");
 
         // Clipped-window sub-case (§4.10 Step 7): shrink to Mon..Thu.

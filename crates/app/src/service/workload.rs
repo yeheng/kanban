@@ -28,7 +28,6 @@ impl WorkloadService {
         start: &str,
         end: &str,
     ) -> Result<ResourceSummary, AppError> {
-        ResourcesRepo::get(pool, resource_id).await?;
         let cal = hydrate(pool).await?;
         Self::resource_summary_with_cal(pool, &cal, resource_id, start, end).await
     }
@@ -42,11 +41,19 @@ impl WorkloadService {
         start: &str,
         end: &str,
     ) -> Result<ResourceSummary, AppError> {
+        let resource = ResourcesRepo::get(pool, resource_id).await?;
         let w = parse_window(start, end)?;
         let rows = AllocationsRepo::list_for_resource(pool, resource_id, start, end).await?;
         let allocs: Vec<domain::Allocation> = rows.iter().map(|r| r.to_domain()).collect();
         let threshold = effective_overload(pool, resource_id).await?;
-        Ok(Self::summarize(cal, &allocs, resource_id, w, threshold))
+        Ok(Self::summarize(
+            cal,
+            &allocs,
+            resource_id,
+            resource.daily_capacity_pd,
+            w,
+            threshold,
+        ))
     }
 
     /// All resources whose utilization exceeds their effective threshold (Dashboard alert list).
@@ -65,7 +72,7 @@ impl WorkloadService {
             let rows = AllocationsRepo::list_for_resource(pool, r.id, start, end).await?;
             let allocs: Vec<domain::Allocation> = rows.iter().map(|row| row.to_domain()).collect();
             let threshold = effective_overload_cached(pool, r.id, global_threshold).await?;
-            let s = Self::summarize(&cal, &allocs, r.id, w, threshold);
+            let s = Self::summarize(&cal, &allocs, r.id, r.daily_capacity_pd, w, threshold);
             if s.overloaded {
                 out.push(s);
             }
@@ -79,10 +86,11 @@ impl WorkloadService {
         cal: &domain::Calendar,
         allocs: &[domain::Allocation],
         resource_id: i64,
+        daily_capacity_pd: f64,
         w: Window,
         threshold: f64,
     ) -> ResourceSummary {
-        let cap = capacity_pd(cal, 0, resource_id, w); // 0 ⇒ global calendar
+        let cap = capacity_pd(cal, 0, resource_id, daily_capacity_pd, w); // 0 ⇒ global calendar
         let wl = workload_pd(cal, allocs, resource_id, w);
         let util = if cap > 0.0 { wl / cap } else { 0.0 };
         ResourceSummary {
@@ -145,9 +153,10 @@ impl WorkloadService {
         let mut total_cap = 0.0;
         let mut overloaded = Vec::new();
         for &rid in &ids {
+            let resource = ResourcesRepo::get(pool, rid).await?;
             let rows = AllocationsRepo::list_for_resource(pool, rid, start, end).await?;
             let allocs: Vec<domain::Allocation> = rows.iter().map(|r| r.to_domain()).collect();
-            let cap = capacity_pd(&cal, 0, rid, w);
+            let cap = capacity_pd(&cal, 0, rid, resource.daily_capacity_pd, w);
             let wl = workload_pd(&cal, &allocs, rid, w);
             total_wl += wl;
             total_cap += cap;
@@ -181,20 +190,23 @@ impl WorkloadService {
         let project = ProjectsRepo::get(pool, project_id).await?;
         let cal = hydrate(pool).await?;
         // All active allocations on this project's tasks, with their full spans.
-        let rows: Vec<(i64, i64, NaiveDate, NaiveDate, f64)> = sqlx::query_as(
-            "SELECT a.resource_id, a.task_id, a.start_date, a.end_date, a.percent \
-             FROM allocations a JOIN tasks t ON t.id = a.task_id \
+        let rows: Vec<(i64, i64, f64, NaiveDate, NaiveDate, f64)> = sqlx::query_as(
+            "SELECT a.resource_id, a.task_id, r.daily_capacity_pd, a.start_date, a.end_date, a.percent \
+             FROM allocations a \
+             JOIN tasks t ON t.id = a.task_id \
+             JOIN resources r ON r.id = a.resource_id \
              WHERE t.project_id = ? AND a.deleted_at IS NULL AND t.deleted_at IS NULL",
         )
         .bind(project_id)
         .fetch_all(pool)
         .await?;
         let mut allocated = 0.0;
-        for (resource_id, _task_id, start, end, percent) in rows {
+        for (resource_id, _task_id, daily_capacity_pd, start, end, percent) in rows {
             let a = domain::Allocation {
                 id: 0,
                 resource_id,
                 project_id,
+                daily_capacity_pd,
                 start,
                 end,
                 percent,

@@ -15,6 +15,15 @@ pub struct Resource {
     pub metadata: Option<String>,
 }
 
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct ResourceSkill {
+    pub resource_id: i64,
+    pub skill_id: i64,
+    pub skill_name: String,
+    pub proficiency: i64,
+    pub evidence: Option<String>,
+}
+
 /// Allocation row with its task's `project_id` already joined in. The project_id
 /// lives on the row (not passed to `to_domain`) so the bridge is zero-argument.
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
@@ -23,6 +32,7 @@ pub struct AllocationRow {
     pub resource_id: i64,
     pub task_id: i64,
     pub project_id: i64,
+    pub daily_capacity_pd: f64,
     pub start_date: NaiveDate,
     pub end_date: NaiveDate,
     pub percent: f64,
@@ -38,6 +48,7 @@ impl AllocationRow {
             id: self.id,
             resource_id: self.resource_id,
             project_id: self.project_id,
+            daily_capacity_pd: self.daily_capacity_pd,
             start: self.start_date,
             end: self.end_date,
             percent: self.percent,
@@ -133,9 +144,12 @@ pub struct KanbanTask {
     pub id: i64,
     pub project_id: i64,
     pub title: String,
+    pub description: Option<String>,
     pub status: String,
     pub sort_order: i64,
     pub estimate_pd: f64,
+    pub start_date: Option<NaiveDate>,
+    pub end_date: Option<NaiveDate>,
     pub assignee: Option<String>,
     pub skill_count: i64,
 }
