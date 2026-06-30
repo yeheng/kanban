@@ -28,12 +28,12 @@ impl ResourcesService {
         }
         if let Some(capacity) = daily_capacity_pd {
             if !capacity.is_finite() || capacity <= 0.0 {
-                return Err(domain::DomainError::InvalidRatio(capacity).into());
+                return Err(domain::DomainError::InvalidValue { field: "daily_capacity_pd", value: capacity }.into());
             }
         }
         if let Some(rate) = daily_rate_pd {
             if !rate.is_finite() || rate < 0.0 {
-                return Err(domain::DomainError::InvalidRatio(rate).into());
+                return Err(domain::DomainError::InvalidValue { field: "daily_rate_pd", value: rate }.into());
             }
         }
         Ok(ResourcesRepo::update(pool, id, name, email, available_from, available_to,
@@ -52,7 +52,7 @@ impl ResourcesService {
     ) -> Result<(), AppError> {
         for &(sid, prof) in skills {
             if !(1..=5).contains(&prof) {
-                return Err(domain::DomainError::InvalidRatio(prof as f64).into());
+                return Err(domain::DomainError::InvalidValue { field: "proficiency", value: prof as f64 }.into());
             }
             let exists: Option<(i64,)> = sqlx::query_as("SELECT 1 FROM skills WHERE id=?")
                 .bind(sid).fetch_optional(pool).await?;

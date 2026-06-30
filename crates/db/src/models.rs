@@ -116,6 +116,11 @@ pub struct DayOccupancy {
     pub workload_pd: f64,
     pub capacity_pd: f64,
     pub utilization: f64,
+    /// Utilization color band against the resource's EFFECTIVE (per-team) thresholds. Computed
+    /// in the app layer (not from a DB column); `#[sqlx(default)]` so any `FromRow` mapping
+    /// leaves it empty rather than failing on a missing column (design §3.3.8a, §4.9).
+    #[sqlx(default)]
+    pub status: String,
 }
 
 #[derive(Debug, Clone, FromRow, serde::Serialize)]

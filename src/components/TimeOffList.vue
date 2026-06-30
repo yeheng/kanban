@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { NForm, NFormItem, NSelect, NDatePicker, NInput, NButton, NList, NListItem, NThing, NTag, NPopconfirm, NText } from "naive-ui";
 import { useCalendarStore } from "../stores/calendar";
 import { useResourcesStore } from "../stores/resources";
+import { fmtDate } from "../utils/date";
 const cal = useCalendarStore();
 const resources = useResourcesStore();
 const rid = ref<number | null>(null);
@@ -17,11 +18,6 @@ const fracOptions = [
   { label: "全天", value: 1 },
   { label: "半天", value: 0.5 },
 ];
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function resourceName(id: number): string {
   return resources.items.find((r) => r.id === id)?.name ?? `#${id}`;

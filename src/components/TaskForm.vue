@@ -4,6 +4,7 @@ import { NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NSwitch, NDat
 import { useTasksStore } from "../stores/tasks";
 import { useProjectsStore } from "../stores/projects";
 import { useCatalogStore } from "../stores/catalog";
+import { fmtDateOrNull } from "../utils/date";
 
 const tasks = useTasksStore();
 const projects = useProjectsStore();
@@ -36,12 +37,6 @@ const segmentKindOptions = [
   { label: "分段 segment", value: "segment" },
 ];
 
-function fmtDate(ms: number | null): string | null {
-  if (ms == null) return null;
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 async function submit() {
   if (!title.value.trim() || !projects.current) return;
   const skillReqs = selectedSkills.value.map((id) => [id, 3, true, 1] as [number, number, boolean, number]);
@@ -49,8 +44,8 @@ async function submit() {
     projectId: projects.current,
     title: title.value,
     estimatePd: estimate.value,
-    start: fmtDate(startMs.value),
-    end: fmtDate(endMs.value),
+    start: fmtDateOrNull(startMs.value),
+    end: fmtDateOrNull(endMs.value),
     skillReqs,
     tagIds: selectedTags.value,
     isLongTerm: isLongTerm.value,

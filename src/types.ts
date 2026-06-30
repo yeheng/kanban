@@ -38,13 +38,15 @@ export interface Task {
   end_date: string | null; is_long_term: number; segment_kind: string | null;
   status: string; sort_order: number;
 }
+/** Server-computed utilization band (per-team effective thresholds, design §3.3.8a). */
+export type UtilBand = "under" | "green" | "yellow" | "red";
 export interface ResourceSummary {
   resource_id: number; capacity_pd: number; workload_pd: number;
-  utilization: number; overloaded: boolean;
+  utilization: number; overloaded: boolean; status: UtilBand;
 }
 export interface TeamSummary {
   team_id: number; capacity_pd: number; workload_pd: number;
-  utilization: number; overloaded_members: number[];
+  utilization: number; overloaded_members: number[]; status: UtilBand;
 }
 export interface ProjectBurn { project_id: number; budget_pd: number; allocated_pd: number; usage: number; }
 export interface Thresholds { overload: number; underload: number; green: number; yellow: number; }
@@ -82,7 +84,7 @@ export interface GanttBar {
 export interface DepEdge { task_id: number; predecessor_id: number; lag_days: number; dep_type: string; }
 export interface DayOccupancy {
   date: string; resource_id: number; resource_name: string;
-  workload_pd: number; capacity_pd: number; utilization: number;
+  workload_pd: number; capacity_pd: number; utilization: number; status: UtilBand;
 }
 
 // Phase 4: AI optimization
@@ -91,7 +93,7 @@ export interface ScoredAssignment {
   resource_id: number; task_id: number; start: string; end: string;
   percent: number; score: number; rationale: string;
 }
-export interface SolutionMetrics { overall: number; skill_fit: number; utilization: number; fairness: number; }
+export interface SolutionMetrics { overall: number; skill_fit: number; scheduled_ratio: number; fairness: number; }
 export interface Solution { run_id: number; assignments: ScoredAssignment[]; unscheduled: number[]; metrics: SolutionMetrics; }
 export interface RunResult { run_id: number; plan: { solution: Solution; explanation_md: string; }; }
 export interface RunRow { id: number; objective: string; status: string; applied: number; score_overall: number | null; created_at: string; }

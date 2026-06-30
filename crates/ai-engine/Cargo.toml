@@ -14,7 +14,6 @@ tokio = { workspace = true }
 [features]
 default = []
 llm = ["rig"]
-milp = ["good_lp"]
 
 # Production impls (behind features). The package is `rig-core` but its lib is `rig`
 # (verified against the locked 0.36 source: package name "rig-core", lib name "rig").
@@ -24,9 +23,3 @@ milp = ["good_lp"]
 version = "0.36"
 optional = true
 package = "rig-core"
-
-[dependencies.good_lp]
-version = "1"
-optional = true
-default-features = false
-features = ["highs"]

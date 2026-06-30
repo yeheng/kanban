@@ -72,6 +72,20 @@ impl TeamMembersRepo {
         .fetch_all(pool)
         .await?)
     }
+    /// Remove a resource from a team. `NotFound` if the membership doesn't exist (so the
+    /// caller can surface a 404 rather than silently succeeding).
+    pub async fn remove(pool: &SqlitePool, team_id: i64, resource_id: i64) -> Result<(), DbError> {
+        let n = sqlx::query("DELETE FROM team_members WHERE team_id = ? AND resource_id = ?")
+            .bind(team_id)
+            .bind(resource_id)
+            .execute(pool)
+            .await?
+            .rows_affected();
+        if n == 0 {
+            return Err(DbError::NotFound);
+        }
+        Ok(())
+    }
     /// The (first) team a resource belongs to, for effective-constant resolution (design §3.3.8a).
     pub async fn team_of_resource(
         pool: &SqlitePool,

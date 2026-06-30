@@ -66,13 +66,13 @@ pub mod llm {
             let prompt = format!(
                 "你是一个项目排期助手。请用中文总结以下分配方案，指出风险与改进建议：\n\
                  - 已分配 {} 个任务，未排期 {} 个\n\
-                 - 综合评分 {:.0}/100，技能匹配 {:.0}/100，排期率 {:.0}%\n\
+                 - 综合评分 {:.0}/100，技能匹配 {:.0}/100，排期覆盖率 {:.0}%\n\
                  请给出 3-5 条要点。",
                 sol.assignments.len(),
                 sol.unscheduled.len(),
                 sol.metrics.overall,
                 sol.metrics.skill_fit,
-                sol.metrics.utilization
+                sol.metrics.scheduled_ratio
             );
             let agent = AgentBuilder::new(client.completion_model(&self.model))
                 .preamble("你是资深项目经理，擅长资源分配与风险识别。")

@@ -34,6 +34,18 @@ async fn seeded() -> (sqlx::SqlitePool, i64) {
 }
 
 #[tokio::test]
+async fn out_of_task_window_allocation_maps_to_domain_not_db() {
+    // The task window is 2026-06-01..2026-06-10; an allocation starting before it is rejected
+    // by the DB trigger (RAISE ABORT). That is a user-correctable business-rule violation, so
+    // it must surface as a 4xx DOMAIN error, not a DB 500.
+    let (pool, task_id) = seeded().await;
+    let err = AllocationsService::create(&pool, 1, task_id, "2026-05-20", "2026-06-05", 0.5)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "DOMAIN", "trigger rejection should map to DOMAIN, got {:?}", err);
+}
+
+#[tokio::test]
 async fn create_rejects_malformed_dates() {
     let (pool, task_id) = seeded().await;
     let err = AllocationsService::create(&pool, 1, task_id, "2026-06-99", "2026-06-10", 0.5)
@@ -139,7 +151,7 @@ async fn dependency_order_is_blocked_for_allocations() {
     AllocationsService::create(&pool, 1, predecessor, "2026-06-01", "2026-06-05", 0.5)
         .await
         .unwrap();
-    TasksService::add_dependency(&pool, successor, predecessor, 0)
+    TasksService::add_dependency(&pool, successor, predecessor, 0, "FS")
         .await
         .unwrap();
     let err = AllocationsService::create(&pool, 1, successor, "2026-06-04", "2026-06-10", 0.5)

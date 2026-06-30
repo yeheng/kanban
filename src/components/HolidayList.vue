@@ -2,6 +2,7 @@
 import { ref } from "vue";
 import { NForm, NFormItem, NDatePicker, NSelect, NInput, NButton, NList, NListItem, NThing, NSpace, NPopconfirm } from "naive-ui";
 import { useCalendarStore } from "../stores/calendar";
+import { fmtDate } from "../utils/date";
 const cal = useCalendarStore();
 const day = ref<number | null>(null);
 const frac = ref(1);
@@ -11,11 +12,6 @@ const fracOptions = [
   { label: "全天", value: 1 },
   { label: "半天", value: 0.5 },
 ];
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 async function add() {
   if (day.value == null) return;

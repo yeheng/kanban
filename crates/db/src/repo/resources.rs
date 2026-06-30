@@ -57,10 +57,12 @@ impl ResourcesRepo {
         available_from: Option<&str>, available_to: Option<&str>,
         daily_capacity_pd: Option<f64>, daily_rate_pd: Option<f64>,
     ) -> Result<(), DbError> {
-        let daily_capacity_pd = daily_capacity_pd.unwrap_or(1.0);
+        // `daily_capacity_pd` is NOT NULL in the schema, so a `None` here means "field left
+        // untouched in the edit form" — keep the existing value via COALESCE rather than
+        // clobbering it to a magic 1.0 (which silently corrupts every utilization calc).
         let n = sqlx::query(
             "UPDATE resources SET name=?, email=?, available_from=?, available_to=?, \
-                    daily_capacity_pd=?, daily_rate_pd=?, \
+                    daily_capacity_pd=COALESCE(?, daily_capacity_pd), daily_rate_pd=?, \
                     updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') \
             WHERE id=? AND deleted_at IS NULL")
             .bind(name).bind(email).bind(available_from).bind(available_to)

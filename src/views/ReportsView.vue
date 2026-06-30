@@ -3,10 +3,11 @@ import { computed, onMounted, ref, watch } from "vue";
 import { NH2, NSpace, NSelect, NDatePicker, NButton, NText } from "naive-ui";
 import { api, reportKinds, type ReportKind, type ReportCatalogEntry } from "../api";
 import { useProjectsStore } from "../stores/projects";
+import { fmtDate, parseDateStrict } from "../utils/date";
 
 const projects = useProjectsStore();
 const kind = ref<ReportKind>("ResourceUtilization");
-const dateRange = ref<[number, number]>([Date.parse("2026-06-29"), Date.parse("2026-07-12")]);
+const dateRange = ref<[number, number]>([parseDateStrict("2026-06-29"), parseDateStrict("2026-07-12")]);
 const fmt = ref<string>("csv");
 const projectId = ref<number | null>(null);
 const msg = ref("");
@@ -52,11 +53,6 @@ watch(kind, () => {
   const formats = fmtOptions.value.map((o) => o.value);
   if (!formats.includes(fmt.value)) fmt.value = formats[0] ?? "csv";
 });
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 async function doExport() {
   busy.value = true;

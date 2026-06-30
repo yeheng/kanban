@@ -29,10 +29,9 @@ impl OptimizationService {
         let ai = db::SettingsRepo::ai_settings(pool).await?;
 
         // Objective weights drive the scorer coefficient split (jaccard↔skill_fit,
-        // proficiency↔balance) and the greedy objective. The greedy solver's candidate
-        // sort uses the per-(resource,task) score, so changing weights changes candidate
-        // ordering and the budget-cap gate (fires only when weights.budget dominates) —
-        // i.e. weights ARE effective end-to-end (design §5 multi-objective, G3).
+        // proficiency↔balance) and the greedy objective's metric blend. Budget is an
+        // unconditional hard gate when budget_pd > 0 (not weight-gated); weights only
+        // tune how the budget *score* feeds into `overall` (design §5 multi-objective, G3).
         let total = (problem.weights.skill_fit + problem.weights.balance).max(0.001);
         let scorer: Arc<dyn ai_engine::scorer::Scorer> = select_scorer(&ai, problem.weights.skill_fit / total, problem.weights.balance / total);
         let engine = OptimizationEngine {
@@ -46,7 +45,9 @@ impl OptimizationService {
         let duration_ms = (finished - started).num_milliseconds();
 
         let cfg = serde_json::to_string(&problem.config).unwrap_or_default();
-        let cons = serde_json::to_string(&problem.flags).unwrap_or_default();
+        // `constraints_json` and the `seed` column are vestigial (ConstraintFlags was removed;
+        // greedy is deterministic, so seed carries no information) — bind empty/0 to satisfy
+        // the NOT NULL columns without inventing meaning.
         let wts = serde_json::to_string(&problem.weights).unwrap_or_default();
 
         // Insert with empty JSON snapshots to get the autoincrement id first (avoids the
@@ -56,13 +57,13 @@ impl OptimizationService {
         let (run_id,): (i64,) = sqlx::query_as(
             "INSERT INTO ai_optimization_runs (seed, scope, scope_project_ids, config_json, constraints_json, \
                 weights_json, input_snapshot_json, output_plan_json, score_overall, score_skill_fit, \
-                score_utilization, score_fairness, explanation_md, provider, chat_model, embed_model, \
+                score_scheduled_ratio, score_fairness, explanation_md, provider, chat_model, embed_model, \
                 solver_backend, solver_status, status, started_at, finished_at, duration_ms) \
-             VALUES (?,?,?,?,?,?, '','',?,?,?,?,?,?,?,?,?,'feasible','proposed', ?,?,?) RETURNING id")
-            .bind(problem.config.seed as i64).bind("full").bind(format!("[{}]", project_id))
-            .bind(cfg).bind(cons).bind(wts)
+             VALUES (?,?,?,?,'',?,?, '',?,?,?,?,?,?,?,?,?,'feasible','proposed', ?,?,?) RETURNING id")
+            .bind(0i64).bind("full").bind(format!("[{}]", project_id))
+            .bind(cfg).bind(wts)
             .bind(plan.solution.metrics.overall).bind(plan.solution.metrics.skill_fit)
-            .bind(plan.solution.metrics.utilization).bind(plan.solution.metrics.fairness)
+            .bind(plan.solution.metrics.scheduled_ratio).bind(plan.solution.metrics.fairness)
             .bind(&plan.explanation_md)
             .bind(&ai.provider).bind(&ai.chat_model).bind(&ai.embed_model).bind(&ai.solver_backend)
             .bind(started.to_rfc3339()).bind(finished.to_rfc3339()).bind(duration_ms)
@@ -82,26 +83,28 @@ impl OptimizationService {
     }
 
     /// Accept a proposed run: write its assignments as allocations (source='ai', run_id) and
-    /// mark applied. The trg_allocation_validate_insert trigger enforces task/resource windows;
+    /// mark applied. Idempotent: re-applying an already-applied run returns 0 and writes
+    /// nothing. The trg_allocation_validate_insert trigger enforces task/resource windows;
     /// an out-of-window proposal ABORTs the tx (surfaced as AppError).
     pub async fn apply(pool: &SqlitePool, run_id: i64) -> Result<i64, AppError> {
-        // Fetch the plan JSON up front to confirm the run exists + is unapplied; carry only the
-        // (cheap, Clone) String + count into the tx closure so the FnMut retry is move-safe.
-        let (plan_json,): (Option<String>,) = sqlx::query_as(
-            "SELECT output_plan_json FROM ai_optimization_runs WHERE id=? AND applied=0")
-            .bind(run_id).fetch_optional(pool).await?
-            .ok_or_else(|| domain::DomainError::NotFound(format!("run {}", run_id)))?;
-        let plan_json = plan_json.unwrap_or_default();
-        let plan_json: &str = &plan_json; // shared borrow, cheap to capture across retries
-        let count = serde_json::from_str::<Vec<ai_engine::ScoredAssignment>>(plan_json)
-            .map(|v| v.len() as i64).unwrap_or(0);
-
-        db::tx::with_write_tx(pool, |mut tx| {
+        let count = db::tx::with_write_tx(pool, |mut tx| {
             Box::pin(async move {
-                // plan_json is a shared borrow captured by reference; re-deserialize each retry
-                // so no owned Vec is moved across FnMut invocations.
+                let row: Option<(Option<String>, i64)> = sqlx::query_as(
+                    "SELECT output_plan_json, applied FROM ai_optimization_runs WHERE id=?",
+                )
+                .bind(run_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+                let Some((plan_json, applied)) = row else {
+                    return Err(db::DbError::NotFound);
+                };
+                if applied != 0 {
+                    return Ok((tx, 0));
+                }
                 let assignments: Vec<ai_engine::ScoredAssignment> =
-                    serde_json::from_str(plan_json).unwrap_or_default();
+                    serde_json::from_str(plan_json.as_deref().unwrap_or("[]"))
+                        .map_err(|e| db::DbError::Other(format!("invalid optimization plan json: {e}")))?;
+                let count = assignments.len() as i64;
                 for a in &assignments {
                     sqlx::query(
                         "INSERT INTO allocations (resource_id, task_id, start_date, end_date, percent, source, run_id) \
@@ -112,7 +115,7 @@ impl OptimizationService {
                 }
                 sqlx::query("UPDATE ai_optimization_runs SET applied=1, status='accepted' WHERE id=?")
                     .bind(run_id).execute(&mut *tx).await?;
-                Ok((tx, ()))
+                Ok((tx, count))
             })
         }).await?;
         Ok(count)
@@ -281,7 +284,7 @@ async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationP
     Ok(AllocationProblem {
         run_id: 0, resources: cand, tasks: cand_tasks, existing, daily_capacity,
         budget_pd: Some(budget_pd),
-        weights: ObjectiveWeights::default(), flags: ConstraintFlags::default(),
+        weights: ObjectiveWeights::default(),
         config: SolverConfig::default(),
     })
 }

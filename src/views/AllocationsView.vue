@@ -7,6 +7,7 @@ import { useResourcesStore } from "../stores/resources";
 import { useProjectsStore } from "../stores/projects";
 import { useRefreshStore } from "../stores/refresh";
 import AllocationForm from "../components/AllocationForm.vue";
+import { fmtDate, parseDateStrict } from "../utils/date";
 import type { AllocationView } from "../types";
 
 const allocations = useAllocationsStore();
@@ -27,16 +28,9 @@ const editingId = ref<number | null>(null);
 const editDateRange = ref<[number, number]>([0, 0]);
 const editPercent = ref(0.5);
 
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
 function openEdit(row: AllocationView) {
   editingId.value = row.id;
-  const start = Date.parse(row.start_date);
-  const end = Date.parse(row.end_date);
-  editDateRange.value = [start, end];
+  editDateRange.value = [parseDateStrict(row.start_date), parseDateStrict(row.end_date)];
   editPercent.value = row.percent;
   editVisible.value = true;
 }

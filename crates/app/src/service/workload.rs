@@ -1,8 +1,11 @@
 use crate::error::AppError;
-use crate::service::thresholds::{effective_overload, effective_overload_cached};
+use crate::service::thresholds::{
+    band, effective_thresholds, effective_thresholds_map, resolve_thresholds,
+};
 use chrono::NaiveDate;
 use db::repo::calendar::hydrate;
-use db::{AllocationsRepo, ResourcesRepo, SettingsRepo};
+use db::repo::settings::Thresholds;
+use db::{AllocationsRepo, ResourcesRepo, SettingsRepo, TeamOverridesRepo};
 use domain::{capacity_pd, workload_pd, Window};
 use serde::Serialize;
 use sqlx::SqlitePool;
@@ -14,6 +17,10 @@ pub struct ResourceSummary {
     pub workload_pd: f64,
     pub utilization: f64,
     pub overloaded: bool,
+    /// Utilization color band (`under` | `green` | `yellow` | `red`) computed server-side
+    /// against this resource's EFFECTIVE (per-team) thresholds — the single source of truth
+    /// the frontend renders directly (design §3.3.8a, §4.9).
+    pub status: String,
 }
 
 pub struct WorkloadService;
@@ -53,34 +60,37 @@ impl WorkloadService {
         let w = parse_window(start, end)?;
         let rows = AllocationsRepo::list_for_resource(pool, resource_id, start, end).await?;
         let allocs: Vec<domain::Allocation> = rows.iter().map(|r| r.to_domain()).collect();
-        let threshold = effective_overload(pool, resource_id).await?;
+        let thr = effective_thresholds(pool, resource_id).await?;
         Ok(Self::summarize(
             cal,
             &allocs,
             resource_id,
             resource.daily_capacity_pd,
             w,
-            threshold,
+            &thr,
         ))
     }
 
     /// All resources whose utilization exceeds their effective threshold (Dashboard alert list).
-    /// The calendar and global thresholds are hydrated ONCE (not per resource) to avoid
-    /// redundant DB queries at scale (design §4.9 <5ms target).
+    /// The calendar and per-team thresholds are loaded ONCE (not per resource) to avoid the
+    /// N+1 `team_of_resource`/override lookups at scale (design §4.9 <5ms target).
     pub async fn overloads(
         pool: &SqlitePool,
         start: &str,
         end: &str,
     ) -> Result<Vec<ResourceSummary>, AppError> {
         let cal = hydrate(pool).await?;
-        let global_threshold = SettingsRepo::thresholds(pool).await?.overload;
         let w = parse_window(start, end)?;
+        let resources = db::ResourcesRepo::list_active(pool).await?;
+        let ids: Vec<i64> = resources.iter().map(|r| r.id).collect();
+        let thr_map = effective_thresholds_map(pool, &ids).await?;
+        let global = SettingsRepo::thresholds(pool).await?;
         let mut out = Vec::new();
-        for r in db::ResourcesRepo::list_active(pool).await? {
+        for r in resources {
             let rows = AllocationsRepo::list_for_resource(pool, r.id, start, end).await?;
             let allocs: Vec<domain::Allocation> = rows.iter().map(|row| row.to_domain()).collect();
-            let threshold = effective_overload_cached(pool, r.id, global_threshold).await?;
-            let s = Self::summarize(&cal, &allocs, r.id, r.daily_capacity_pd, w, threshold);
+            let thr = thr_map.get(&r.id).unwrap_or(&global);
+            let s = Self::summarize(&cal, &allocs, r.id, r.daily_capacity_pd, w, thr);
             if s.overloaded {
                 out.push(s);
             }
@@ -89,14 +99,15 @@ impl WorkloadService {
     }
 
     /// Pure aggregation shared by `resource_summary` and `overloads`: no DB access, so it
-    /// can be called in a loop without re-hydrating the calendar.
+    /// can be called in a loop without re-hydrating the calendar. Bands the utilization
+    /// against the supplied EFFECTIVE thresholds (per-team resolved by the caller).
     fn summarize(
         cal: &domain::Calendar,
         allocs: &[domain::Allocation],
         resource_id: i64,
         daily_capacity_pd: f64,
         w: Window,
-        threshold: f64,
+        thr: &Thresholds,
     ) -> ResourceSummary {
         let cap = capacity_pd(cal, 0, resource_id, daily_capacity_pd, w); // 0 ⇒ global calendar
         let wl = workload_pd(cal, allocs, resource_id, w);
@@ -106,7 +117,8 @@ impl WorkloadService {
             capacity_pd: cap,
             workload_pd: wl,
             utilization: util,
-            overloaded: util > threshold,
+            overloaded: util > thr.overload,
+            status: band(util, thr).to_string(),
         }
     }
 }
@@ -131,6 +143,8 @@ pub struct TeamSummary {
     pub workload_pd: f64,
     pub utilization: f64,
     pub overloaded_members: Vec<i64>,
+    /// Aggregate utilization band against the TEAM's own effective thresholds (design §3.3.8a).
+    pub status: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -152,10 +166,12 @@ impl WorkloadService {
     ) -> Result<TeamSummary, AppError> {
         TeamsRepo::get(pool, team_id).await?;
         let cal = hydrate(pool).await?;
-        let global_threshold = SettingsRepo::thresholds(pool).await?.overload;
+        let global = SettingsRepo::thresholds(pool).await?;
         let w = parse_window(start, end)?;
         let members = TeamMembersRepo::list_members(pool, team_id).await?;
         let ids: Vec<i64> = members.iter().map(|m| m.resource_id).collect();
+        // Per-member effective thresholds, batched (no N+1).
+        let thr_map = effective_thresholds_map(pool, &ids).await?;
 
         let mut total_wl = 0.0;
         let mut total_cap = 0.0;
@@ -169,7 +185,8 @@ impl WorkloadService {
             total_wl += wl;
             total_cap += cap;
             let util = if cap > 0.0 { wl / cap } else { 0.0 };
-            if util > effective_overload_cached(pool, rid, global_threshold).await? {
+            let thr = thr_map.get(&rid).unwrap_or(&global);
+            if util > thr.overload {
                 overloaded.push(rid);
             }
         }
@@ -178,12 +195,16 @@ impl WorkloadService {
         } else {
             0.0
         };
+        // Band the team aggregate against the TEAM's own override (→ global fallback).
+        let team_thr =
+            resolve_thresholds(global, TeamOverridesRepo::get(pool, team_id).await?.as_ref());
         Ok(TeamSummary {
             team_id,
             capacity_pd: total_cap,
             workload_pd: total_wl,
             utilization: util,
             overloaded_members: overloaded,
+            status: band(util, &team_thr).to_string(),
         })
     }
 

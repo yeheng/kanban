@@ -1,67 +1,137 @@
 use crate::types::*;
 use chrono::{Days, NaiveDate};
+use std::collections::HashMap;
+
 pub trait Solver: Send + Sync {
     fn solve(&self, problem: &AllocationProblem, scores: &ScoreMatrix) -> Solution;
 }
 
-/// Deterministic greedy solver. For each task (priority asc, then estimate desc),
-/// assign to the highest-scoring resource that meets mandatory skills and keeps
-/// per-day load ≤ 1.0 over the window (treating each calendar day in [start,end]
-/// as a capacity-1.0 day — a conservative uniform proxy; the workload engine
-/// remains authoritative for display). `percent` = min(1.0, estimate/window_days).
+/// Deterministic greedy solver. Tasks are taken in (priority asc, estimate desc)
+/// order. For each task, candidate resources (mandatory skills + availability
+/// window, mirroring `trg_allocation_validate_insert`) are sorted by
+/// **score desc, then window-committed-load asc** — the tiebreaker is the load
+/// balancer: among equally-good fits, the less-loaded resource wins. A candidate
+/// is feasible iff the uniform daily percent needed to deliver the estimate keeps
+/// per-day load ≤ the day's capacity factor over the window. `percent` is that
+/// uniform daily ratio (estimate_pd / (Σ day-factors × daily_capacity_pd)).
+///
+/// Budget is an unconditional hard gate when `budget_pd > 0` (it is *not* gated
+/// on objective-weight comparison). `fairness` is the Jain index over per-resource
+/// total committed ratio-days. The workload engine remains authoritative for display.
 pub struct GreedySolver;
 
-fn capacity_map(problem: &AllocationProblem) -> std::collections::HashMap<(i64, NaiveDate), f64> {
-    problem
-        .daily_capacity
-        .iter()
-        .map(|c| ((c.resource_id, c.day), c.factor.clamp(0.0, 1.0)))
-        .collect()
+/// Walk every calendar day in [start, end] inclusive. Panics on a pathological
+/// range (chrono's checked_add_days returning None); real task windows never hit it.
+fn each_day<F: FnMut(NaiveDate)>(start: NaiveDate, end: NaiveDate, mut f: F) {
+    let mut d = start;
+    while d <= end {
+        f(d);
+        d = d.checked_add_days(Days::new(1)).unwrap();
+    }
 }
 
-fn day_capacity(
-    caps: &std::collections::HashMap<(i64, NaiveDate), f64>,
-    resource_id: i64,
-    day: NaiveDate,
-) -> f64 {
-    caps.get(&(resource_id, day)).copied().unwrap_or(1.0).clamp(0.0, 1.0)
+/// Per-day capacity factor for (resource, day). Missing ⇒ full day (1.0).
+fn day_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, day: NaiveDate) -> f64 {
+    caps.get(&(r, day)).copied().unwrap_or(1.0)
 }
 
-fn sum_capacity(
-    caps: &std::collections::HashMap<(i64, NaiveDate), f64>,
-    resource_id: i64,
+/// Σ capacity factor over [start, end] for resource r.
+fn sum_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, start: NaiveDate, end: NaiveDate) -> f64 {
+    let mut s = 0.0;
+    each_day(start, end, |d| s += day_capacity(caps, r, d));
+    s
+}
+
+/// Σ committed load over [start, end] for resource r — the balance signal.
+fn window_load(
+    load: &HashMap<(i64, NaiveDate), f64>,
+    caps: &HashMap<(i64, NaiveDate), f64>,
+    r: i64,
     start: NaiveDate,
     end: NaiveDate,
 ) -> f64 {
-    let mut sum = 0.0;
+    let mut s = 0.0;
+    each_day(start, end, |d| {
+        if day_capacity(caps, r, d) > 0.0 {
+            s += load.get(&(r, d)).copied().unwrap_or(0.0);
+        }
+    });
+    s
+}
+
+/// Uniform daily percent needed to deliver `estimate_pd` over a window whose
+/// capacity sum is `capacity_sum`. `None` if even an empty schedule can't fit it
+/// (would need >100%/day) or the window has no capacity.
+fn needed_percent(estimate_pd: f64, capacity_sum: f64, daily_capacity_pd: f64) -> Option<f64> {
+    if capacity_sum <= 0.0 {
+        return None;
+    }
+    if estimate_pd <= 0.0 {
+        return Some(0.01);
+    }
+    let raw = estimate_pd / (capacity_sum * daily_capacity_pd.max(1e-9));
+    if !raw.is_finite() || raw > 1.0 + 1e-9 {
+        return None;
+    }
+    Some(raw.clamp(0.01, 1.0))
+}
+
+/// True iff assigning `needed` daily keeps every in-window day within its capacity.
+fn fits(
+    load: &HashMap<(i64, NaiveDate), f64>,
+    caps: &HashMap<(i64, NaiveDate), f64>,
+    r: i64,
+    start: NaiveDate,
+    end: NaiveDate,
+    needed: f64,
+) -> bool {
     let mut d = start;
     while d <= end {
-        sum += day_capacity(caps, resource_id, d);
+        let limit = day_capacity(caps, r, d);
+        if limit > 0.0 {
+            let cur = load.get(&(r, d)).copied().unwrap_or(0.0);
+            if cur + needed > limit + 1e-9 {
+                return false;
+            }
+        }
         d = d.checked_add_days(Days::new(1)).unwrap();
     }
-    sum
+    true
+}
+
+/// Jain fairness index on a slice of per-resource loads: (Σx)² / (n·Σx²). Returns
+/// 1.0 for the all-zero case (no imbalance exists) and for n == 0.
+fn jain(xs: &[f64]) -> f64 {
+    let n = xs.len() as f64;
+    if n == 0.0 {
+        return 0.0;
+    }
+    let sum: f64 = xs.iter().sum();
+    let sq: f64 = xs.iter().map(|x| x * x).sum();
+    if sq == 0.0 {
+        return 1.0;
+    }
+    (sum * sum) / (n * sq)
 }
 
 impl Solver for GreedySolver {
     fn solve(&self, problem: &AllocationProblem, scores: &ScoreMatrix) -> Solution {
-        let caps = capacity_map(problem);
-        // per-resource per-day committed percent (existing + assigned)
-        let mut load: std::collections::HashMap<
-            i64,
-            std::collections::HashMap<NaiveDate, f64>,
-        > = std::collections::HashMap::new();
+        let caps: HashMap<(i64, NaiveDate), f64> = problem
+            .daily_capacity
+            .iter()
+            .map(|c| ((c.resource_id, c.day), c.factor.clamp(0.0, 1.0)))
+            .collect();
+
+        // load[(r, day)] = committed daily ratio (existing + new); total_load[r] = its row sum.
+        let mut load: HashMap<(i64, NaiveDate), f64> = HashMap::new();
+        let mut total_load: HashMap<i64, f64> = HashMap::new();
         for e in &problem.existing {
-            let mut d = e.start;
-            while d <= e.end {
+            each_day(e.start, e.end, |d| {
                 if day_capacity(&caps, e.resource_id, d) > 0.0 {
-                    *load
-                        .entry(e.resource_id)
-                        .or_default()
-                        .entry(d)
-                        .or_insert(0.0) += e.percent;
+                    *load.entry((e.resource_id, d)).or_insert(0.0) += e.percent;
+                    *total_load.entry(e.resource_id).or_insert(0.0) += e.percent;
                 }
-                d = d.succ_opt().unwrap();
-            }
+            });
         }
 
         let mut order: Vec<&CandidateTask> = problem.tasks.iter().collect();
@@ -76,21 +146,19 @@ impl Solver for GreedySolver {
         let mut unscheduled = Vec::new();
         let mut score_sum = 0.0;
         let mut planned_pd = 0.0;
-        let budget_cap = problem
-            .budget_pd
-            .filter(|b| *b > 0.0 && problem.weights.budget > problem.weights.skill_fit.max(problem.weights.balance));
+        let budget_cap = problem.budget_pd.filter(|b| *b > 0.0);
 
         for t in order {
-            if let Some(budget_pd) = budget_cap {
-                if planned_pd + t.estimate_pd > budget_pd + 1e-9 {
+            // Hard budget gate (unconditional — not weight-gated).
+            if let Some(budget) = budget_cap {
+                if planned_pd + t.estimate_pd > budget + 1e-9 {
                     unscheduled.push(t.id);
                     continue;
                 }
             }
-            // candidate resources: mandatory skills met AND within the resource's
-            // availability window (mirrors trg_allocation_validate_insert, so anything
-            // the solver accepts the DB trigger will accept on apply()). Sorted by score desc.
-            let mut cands: Vec<&CandidateResource> = problem
+
+            // Eligible resources: mandatory skills met AND within availability window.
+            let eligible: Vec<&CandidateResource> = problem
                 .resources
                 .iter()
                 .filter(|r| {
@@ -101,75 +169,45 @@ impl Solver for GreedySolver {
                     });
                     let avail_ok = match (r.available_from, r.available_to) {
                         (Some(from), Some(to)) => t.start >= from && t.end <= to,
-                        _ => true, // no window set ⇒ unconstrained (matches the trigger)
+                        _ => true,
                     };
                     skills_ok && avail_ok
                 })
                 .collect();
-            cands.sort_by(|a, b| {
-                scores
-                    .get(&(b.id, t.id))
-                    .unwrap_or(&0.0)
-                    .total_cmp(scores.get(&(a.id, t.id)).unwrap_or(&0.0))
-            });
 
-            let mut chosen = None;
-            for r in cands {
-                let capacity_sum = sum_capacity(&caps, r.id, t.start, t.end);
-                if capacity_sum <= 0.0 {
+            // Score each candidate once: (score, window-committed-load) for the sort.
+            // Sort by score desc, then committed-load asc — the balance tiebreaker.
+            let mut ranked: Vec<(&CandidateResource, f64, f64)> = eligible
+                .into_iter()
+                .map(|r| {
+                    let sc = scores.get(&(r.id, t.id)).copied().unwrap_or(0.0);
+                    let wl = window_load(&load, &caps, r.id, t.start, t.end);
+                    (r, sc, wl)
+                })
+                .collect();
+            ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.2.total_cmp(&b.2)));
+
+            let mut chosen: Option<(&CandidateResource, f64, f64)> = None;
+            for (r, sc, _wl) in ranked {
+                let cap_sum = sum_capacity(&caps, r.id, t.start, t.end);
+                let Some(needed) = needed_percent(t.estimate_pd, cap_sum, r.daily_capacity_pd)
+                else {
                     continue;
-                }
-                let raw_needed = if t.estimate_pd <= 0.0 {
-                    0.01
-                } else {
-                    t.estimate_pd / (capacity_sum * r.daily_capacity_pd.max(0.000_001))
                 };
-                if !raw_needed.is_finite() || raw_needed > 1.0 + 1e-9 {
-                    continue;
-                }
-                let needed = raw_needed.clamp(0.01, 1.0);
-                // per-day load across the task window must stay within the capacity limit
-                let ok = {
-                    let mut d = t.start;
-                    let mut ok = true;
-                    while d <= t.end {
-                        let limit = day_capacity(&caps, r.id, d);
-                        if limit <= 0.0 {
-                            d = d.succ_opt().unwrap();
-                            continue;
-                        }
-                        let cur = *load.entry(r.id).or_default().entry(d).or_insert(0.0);
-                        if cur + needed > limit + 1e-9 {
-                            ok = false;
-                            break;
-                        }
-                        d = d.succ_opt().unwrap();
-                    }
-                    ok
-                };
-                if ok {
-                    chosen = Some(r);
+                if fits(&load, &caps, r.id, t.start, t.end, needed) {
+                    chosen = Some((r, needed, sc));
                     break;
                 }
             }
 
             match chosen {
-                Some(r) => {
-                    let capacity_sum = sum_capacity(&caps, r.id, t.start, t.end);
-                    let raw_needed = if t.estimate_pd <= 0.0 {
-                        0.01
-                    } else {
-                        t.estimate_pd / (capacity_sum * r.daily_capacity_pd.max(0.000_001))
-                    };
-                    let needed = raw_needed.clamp(0.01, 1.0);
-                    let mut d = t.start;
-                    while d <= t.end {
+                Some((r, needed, sc)) => {
+                    each_day(t.start, t.end, |d| {
                         if day_capacity(&caps, r.id, d) > 0.0 {
-                            *load.entry(r.id).or_default().entry(d).or_insert(0.0) += needed;
+                            *load.entry((r.id, d)).or_insert(0.0) += needed;
+                            *total_load.entry(r.id).or_insert(0.0) += needed;
                         }
-                        d = d.succ_opt().unwrap();
-                    }
-                    let sc = *scores.get(&(r.id, t.id)).unwrap_or(&0.0);
+                    });
                     score_sum += sc;
                     planned_pd += t.estimate_pd;
                     assignments.push(ScoredAssignment {
@@ -187,23 +225,26 @@ impl Solver for GreedySolver {
         }
 
         let n = assignments.len() as f64;
-        let skill_fit = if n > 0.0 {
-            (score_sum / n) * 100.0
-        } else {
-            0.0
-        };
+        let skill_fit = if n > 0.0 { (score_sum / n) * 100.0 } else { 0.0 };
         let scheduled_ratio = if problem.tasks.is_empty() {
             100.0
         } else {
             n / problem.tasks.len() as f64 * 100.0
         };
-        let budget_score = match problem.budget_pd {
-            Some(budget_pd) if budget_pd > 0.0 && planned_pd > budget_pd => {
-                ((budget_pd / planned_pd) * 100.0).clamp(0.0, 100.0)
+        let budget_score = match budget_cap {
+            Some(budget) if planned_pd > budget => {
+                ((budget / planned_pd) * 100.0).clamp(0.0, 100.0)
             }
             Some(_) => 100.0,
             None => 100.0,
         };
+        let loads: Vec<f64> = problem
+            .resources
+            .iter()
+            .map(|r| total_load.get(&r.id).copied().unwrap_or(0.0))
+            .collect();
+        let fairness = jain(&loads) * 100.0;
+
         Solution {
             run_id: problem.run_id,
             assignments,
@@ -213,32 +254,9 @@ impl Solver for GreedySolver {
                     + scheduled_ratio * problem.weights.balance
                     + budget_score * problem.weights.budget,
                 skill_fit,
-                utilization: scheduled_ratio,
-                fairness: 0.0,
+                scheduled_ratio,
+                fairness,
             },
-        }
-    }
-}
-
-/// MILP formulation (design §5.5.1): x[r,t] ∈ {0,1} + continuous percent, capacity
-/// Σ_t percent ≤ 1.0 in ratio space (design §3.8). The full good_lp encoding is a
-/// substantial impl-time task; for now `MilpSolver` delegates to `GreedySolver` so the
-/// `milp` feature compiles and the seam is in place. Replace the body with the real
-/// `good_lp::variable_problem` (HiGHS solver) when wiring production — the formulation:
-///   max  Σ w_skill·score[r,t]·x[r,t]  -  w_bal·spread
-///   s.t. Σ_t percent[r,t]·x[r,t] ≤ 1.0           ∀ r, day   (capacity)
-///        mandatory skill gate (prefiltered via scores==0)
-///        x[r,t] ∈ {0,1}, percent ∈ [0,1]
-#[cfg(feature = "milp")]
-pub mod milp {
-    use crate::solver::Solver;
-    use crate::types::*;
-
-    pub struct MilpSolver;
-    impl Solver for MilpSolver {
-        fn solve(&self, problem: &AllocationProblem, scores: &ScoreMatrix) -> Solution {
-            // Delegate to the deterministic greedy until the full MILP body is wired.
-            super::GreedySolver.solve(problem, scores)
         }
     }
 }

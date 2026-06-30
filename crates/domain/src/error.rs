@@ -7,6 +7,16 @@ use thiserror::Error;
 pub enum DomainError {
     #[error("invalid ratio {0}")]
     InvalidRatio(f64),
+    /// Out-of-range numeric input, naming the offending field (e.g. priority, pd_hours).
+    /// Use this instead of overloading `InvalidRatio` for values that are not ratios.
+    #[error("invalid {field}: {value}")]
+    InvalidValue { field: &'static str, value: f64 },
+    /// An enum-valued field (status, segment_kind, dependency type) got an unknown value.
+    #[error("invalid status: {0}")]
+    InvalidStatus(String),
+    /// A structural input rule was violated (self-dependency, segment without parent, ...).
+    #[error("invalid input: {0}")]
+    InvalidInput(&'static str),
     #[error("invalid date window")]
     InvalidDateWindow,
     #[error("not found: {0}")]

@@ -2,6 +2,13 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { api } from "../api";
 import type { Holiday, TimeOff, WeekTemplate } from "../types";
+import { useRefreshStore } from "./refresh";
+
+// A working-calendar change (week template, holiday, time-off) shifts capacity, so it
+// invalidates utilization (workload) and the occupancy grid (calendar) (design G4).
+function bumpCalendar() {
+  useRefreshStore().bump("workload", "calendar");
+}
 
 function weekFromTemplate(t: WeekTemplate | undefined): number[] {
   if (!t) return [1, 1, 1, 1, 1, 0, 0];
@@ -19,15 +26,16 @@ export const useCalendarStore = defineStore("calendar", () => {
     const rows = await api.listWorkWeeks();
     week.value = weekFromTemplate(rows.find((r) => r.scope === "global"));
   }
-  async function setWeek(w: number[]) { week.value = w; await api.setGlobalWorkWeek(w); }
+  async function setWeek(w: number[]) { week.value = w; await api.setGlobalWorkWeek(w); bumpCalendar(); }
   async function loadHolidays() { holidays.value = await api.listHolidays(); }
-  async function addHoliday(day: string, fraction: number, name: string | null) { await api.addHoliday(null, day, fraction, name); await loadHolidays(); }
-  async function removeHoliday(id: number) { await api.deleteHoliday(id); await loadHolidays(); }
+  async function addHoliday(day: string, fraction: number, name: string | null) { await api.addHoliday(null, day, fraction, name); await loadHolidays(); bumpCalendar(); }
+  async function removeHoliday(id: number) { await api.deleteHoliday(id); await loadHolidays(); bumpCalendar(); }
   async function loadTimeOff() { timeOff.value = await api.listTimeOff(); }
   async function addTimeOff(resourceId: number, day: string, fraction: number, reason: string | null) {
     await api.addTimeOff(resourceId, day, fraction, reason);
     await loadTimeOff();
+    bumpCalendar();
   }
-  async function removeTimeOff(id: number) { await api.deleteTimeOff(id); await loadTimeOff(); }
+  async function removeTimeOff(id: number) { await api.deleteTimeOff(id); await loadTimeOff(); bumpCalendar(); }
   return { week, holidays, timeOff, loadWeek, setWeek, loadHolidays, addHoliday, removeHoliday, loadTimeOff, addTimeOff, removeTimeOff };
 });

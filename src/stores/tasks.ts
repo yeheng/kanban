@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import { api } from "../api";
 import type { KanbanTask, TaskStatus } from "../types";
+import { useRefreshStore } from "./refresh";
 
 const COLUMNS: TaskStatus[] = ["todo", "in_progress", "blocked", "review", "done"];
 
@@ -30,6 +31,9 @@ export const useTasksStore = defineStore("tasks", () => {
   }
   async function addDependency(taskId: number, predecessorId: number, lagDays?: number) {
     await api.addDependency(taskId, predecessorId, lagDays);
+    // Dependency edges render in the Gantt; invalidate it so the arrow appears without a
+    // manual reload (design G4).
+    useRefreshStore().bump("gantt");
   }
   async function remove(id: number, pid: number) {
     await api.deleteTask(id);

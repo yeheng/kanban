@@ -23,7 +23,7 @@ const assignmentColumns = computed<DataTableColumns<ScoredAssignment>>(() => [
     <n-space :size="24">
       <n-statistic label="综合评分" :value="pct(opt.current.plan.solution.metrics.overall)" />
       <n-statistic label="技能" :value="pct(opt.current.plan.solution.metrics.skill_fit)" />
-      <n-statistic label="排期覆盖" :value="pct(opt.current.plan.solution.metrics.utilization)" />
+      <n-statistic label="排期覆盖" :value="pct(opt.current.plan.solution.metrics.scheduled_ratio)" />
     </n-space>
 
     <n-h4>已分配 ({{ opt.current.plan.solution.assignments.length }})</n-h4>

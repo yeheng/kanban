@@ -13,7 +13,7 @@ impl CalendarService {
 
     pub async fn set_global_work_week(pool: &SqlitePool, week: Vec<f64>) -> Result<(), AppError> {
         if week.len() != 7 {
-            return Err(domain::DomainError::InvalidRatio(week.len() as f64).into());
+            return Err(domain::DomainError::InvalidInput("work week must have exactly 7 day fractions").into());
         }
         validate_week(&week)?;
         let arr = [

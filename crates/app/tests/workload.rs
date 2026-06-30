@@ -167,7 +167,49 @@ async fn project_burn_ratio() {
     assert!((b.usage - (5.0 / 40.0)).abs() < 1e-9);
 }
 
-// ---- P1 #2: project calendar overrides affect utilization (design §4.9) ----
+// ---- P0-1: server-side per-team utilization band (design §3.3.8a) ----
+
+/// A resource's `status` band must use its TEAM's effective thresholds, not the global ones.
+/// Distinctive case: at 50% utilization the GLOBAL band is `under` (green starts at 0.70), but
+/// a team override with overload=0.30 makes the same 50% `red`. This pins that the server — not
+/// the frontend — is the single source of truth for the band, and that overrides take effect.
+#[tokio::test]
+async fn resource_status_uses_team_thresholds_not_global() {
+    use app::service::teams::TeamsService;
+    use db::models::TeamOverride;
+    let pool = fresh().await;
+    sqlx::query("INSERT INTO projects (id,name) VALUES (1,'P')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO tasks (id,project_id,title,start_date,end_date) VALUES (10,1,'T','2026-06-01','2026-07-31')").execute(&pool).await.unwrap();
+    // Alice 50% Mon..Fri -> utilization 0.5.
+    AllocationsRepo::create(&pool, 1, 10, MON, FRI, 0.5).await.unwrap();
+
+    // No team: 0.5 < green(0.70) -> "under", not overloaded.
+    let s = WorkloadService::resource_summary(&pool, 1, MON, FRI).await.unwrap();
+    assert!((s.utilization - 0.5).abs() < 1e-9);
+    assert_eq!(s.status, "under");
+    assert!(!s.overloaded);
+
+    // Team override: overload=0.30, yellow=0.20, green=0.10 -> 0.5 is "red" and overloaded.
+    let tid = TeamsService::create(&pool, "Eng", None).await.unwrap();
+    TeamsService::add_member(&pool, tid, 1, Some("lead")).await.unwrap();
+    TeamsService::set_override(&pool, TeamOverride {
+        team_id: tid, pd_hours: None, pm_workdays: None,
+        overload_threshold: Some(0.30), underload_threshold: None,
+        utilization_green: Some(0.10), utilization_yellow: Some(0.20),
+    }).await.unwrap();
+
+    let s = WorkloadService::resource_summary(&pool, 1, MON, FRI).await.unwrap();
+    assert_eq!(s.status, "red", "team overload=0.30 makes 0.5 red");
+    assert!(s.overloaded);
+
+    // The overloads list (batched per-team resolver) must also flag Alice now.
+    let ov = WorkloadService::overloads(&pool, MON, FRI).await.unwrap();
+    assert_eq!(ov.len(), 1);
+    assert_eq!(ov[0].resource_id, 1);
+    assert_eq!(ov[0].status, "red");
+}
+
 
 /// A project-scoped holiday reduces that project's allocation PD (numerator) while the
 /// global capacity (denominator) is unchanged, so utilization drops. This pins the

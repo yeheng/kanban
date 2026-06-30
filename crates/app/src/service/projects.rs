@@ -43,7 +43,7 @@ impl ProjectsService {
     pub async fn set_status(pool: &SqlitePool, id: i64, status: &str) -> Result<(), AppError> {
         match status {
             "planning" | "active" | "on_hold" | "done" | "cancelled" => {}
-            _ => return Err(domain::DomainError::InvalidRatio(0.0).into()),
+            _ => return Err(domain::DomainError::InvalidStatus(status.into()).into()),
         }
         Ok(ProjectsRepo::set_status(pool, id, status).await?)
     }
@@ -51,7 +51,7 @@ impl ProjectsService {
 
 fn validate_priority(p: i64) -> Result<(), AppError> {
     if !(1..=9).contains(&p) {
-        return Err(domain::DomainError::InvalidRatio(p as f64).into());
+        return Err(domain::DomainError::InvalidValue { field: "priority", value: p as f64 }.into());
     }
     Ok(())
 }

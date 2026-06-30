@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useWorkloadStore } from "../stores/workload";
-const props = defineProps<{ utilization: number }>();
+import type { UtilBand } from "../types";
+// `status` is the server-computed per-team band (preferred, single source of truth).
+// When absent (e.g. a preview built from a raw utilization), fall back to the global band.
+const props = defineProps<{ utilization: number; status?: UtilBand }>();
 const wl = useWorkloadStore();
 const pct = computed(() => Math.min(150, Math.round(props.utilization * 100)));
-const band = computed(() => wl.band(props.utilization));
+const band = computed<UtilBand>(() => props.status ?? wl.band(props.utilization));
 // Colors aligned with Naive UI theme palette
 const color = computed(() =>
   ({ under: "#d1d1d6", green: "#18a058", yellow: "#f0a020", red: "#d03050" }[band.value]),

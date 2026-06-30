@@ -11,6 +11,7 @@ pub fn router() -> Router<AppState> {
         .route("/api/teams", get(list_teams).post(create_team))
         .route("/api/teams/{id}", delete(delete_team))
         .route("/api/teams/{id}/members", get(list_team_members).post(add_member))
+        .route("/api/teams/{id}/members/{resource_id}", delete(remove_member))
         .route("/api/teams/{id}/override", get(get_override))
         .route("/api/teams/overrides", put(set_override))
 }
@@ -46,6 +47,14 @@ async fn add_member(
     Json(body): Json<AddMember>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::teams::TeamsService::add_member(&state.pool, team_id, body.resource_id, body.role.as_deref()).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn remove_member(
+    State(state): State<AppState>,
+    Path((team_id, resource_id)): Path<(i64, i64)>,
+) -> Result<axum::http::StatusCode, HttpError> {
+    app::service::teams::TeamsService::remove_member(&state.pool, team_id, resource_id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 

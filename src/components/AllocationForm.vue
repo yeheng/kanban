@@ -5,6 +5,7 @@ import { useAllocationsStore } from "../stores/allocations";
 import { useResourcesStore } from "../stores/resources";
 import { useProjectsStore } from "../stores/projects";
 import { api } from "../api";
+import { fmtDate, parseDateStrict } from "../utils/date";
 import type { Task } from "../types";
 
 const allocations = useAllocationsStore();
@@ -12,7 +13,7 @@ const resources = useResourcesStore();
 const projects = useProjectsStore();
 const resourceId = ref<number | null>(null);
 const taskId = ref<number | null>(null);
-const dateRange = ref<[number, number]>([Date.parse("2026-06-29"), Date.parse("2026-07-03")]);
+const dateRange = ref<[number, number]>([parseDateStrict("2026-06-29"), parseDateStrict("2026-07-03")]);
 const percent = ref(0.5);
 const tasks = ref<Task[]>([]);
 const impact = ref<{ utilization: number; overloaded: boolean } | null>(null);
@@ -24,11 +25,6 @@ const resourceOptions = computed(() =>
 const taskOptions = computed(() =>
   tasks.value.map((t) => ({ label: t.title, value: t.id })),
 );
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 async function loadTasks() {
   if (projects.current == null) return;

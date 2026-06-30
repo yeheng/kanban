@@ -70,32 +70,13 @@ impl Default for ObjectiveWeights {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub enum OverloadPolicy {
-    SoftWarn,
-    HardBlock,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ConstraintFlags {
-    pub allow_parallel_per_day: bool,
-    pub max_parallel_tasks_per_day: Option<i64>,
-    pub overload_policy: Option<OverloadPolicy>, // None => SoftWarn
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolverConfig {
     pub backend: String,
-    pub timeout_ms: u64,
-    pub seed: u64,
 }
 impl Default for SolverConfig {
     fn default() -> Self {
-        Self {
-            backend: "greedy".into(),
-            timeout_ms: 5000,
-            seed: 1,
-        }
+        Self { backend: "greedy".into() }
     }
 }
 
@@ -108,7 +89,6 @@ pub struct AllocationProblem {
     pub daily_capacity: Vec<DailyCapacity>,
     pub budget_pd: Option<f64>,
     pub weights: ObjectiveWeights,
-    pub flags: ConstraintFlags,
     pub config: SolverConfig,
 }
 
@@ -127,7 +107,9 @@ pub struct ScoredAssignment {
 pub struct SolutionMetrics {
     pub overall: f64,
     pub skill_fit: f64,
-    pub utilization: f64,
+    /// % of candidate tasks the solver placed (shown as "排期覆盖" in the UI).
+    pub scheduled_ratio: f64,
+    /// Jain fairness index over per-resource total committed ratio-days, ×100.
     pub fairness: f64,
 }
 

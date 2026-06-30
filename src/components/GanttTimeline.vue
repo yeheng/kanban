@@ -1,22 +1,25 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useGanttStore } from "../stores/gantt";
+import { fmtDate, parseDateStrict } from "../utils/date";
 import type { GanttBar } from "../types";
 
 const DAY_W = 28; // px per day
 const props = defineProps<{ start: string; end: string }>();
 const gantt = useGanttStore();
 
-const startMs = computed(() => Date.parse(props.start));
-const totalDays = computed(() => Math.max(1, Math.round((Date.parse(props.end) - startMs.value) / 86400000) + 1));
+// Parse/format consistently in local time (see utils/date): mixing UTC `Date.parse` with a
+// local formatter shifted dates by a day in zones west of UTC, corrupting drag/resize writes.
+const startMs = computed(() => parseDateStrict(props.start));
+const totalDays = computed(() => Math.max(1, Math.round((parseDateStrict(props.end) - startMs.value) / 86400000) + 1));
 const days = computed(() => {
   const out: string[] = [];
   const d = new Date(startMs.value);
-  for (let i = 0; i < totalDays.value; i++) { out.push(toStr(d.getTime())); d.setDate(d.getDate() + 1); }
+  for (let i = 0; i < totalDays.value; i++) { out.push(fmtDate(d.getTime())); d.setDate(d.getDate() + 1); }
   return out;
 });
 
-function dayIndexOf(dateStr: string) { return Math.round((Date.parse(dateStr) - startMs.value) / 86400000); }
+function dayIndexOf(dateStr: string) { return Math.round((parseDateStrict(dateStr) - startMs.value) / 86400000); }
 function barLeft(b: GanttBar) { return dayIndexOf(b.start_date) * DAY_W; }
 function barWidth(b: GanttBar) { return (dayIndexOf(b.end_date) - dayIndexOf(b.start_date) + 1) * DAY_W; }
 
@@ -33,9 +36,7 @@ type Drag = { id: number; mode: "move" | "resize"; startX: number; origStart: st
 const drag = ref<Drag | null>(null);
 const previewDelta = ref(0);
 
-function toStr(ms: number) {
-  const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
+function toStr(ms: number) { return fmtDate(ms); }
 function onDown(e: PointerEvent, b: GanttBar, mode: "move" | "resize") {
   const target = e.target as HTMLElement;
   if (mode === "resize" && !target.classList.contains("gantt-timeline__resize")) return;
@@ -50,8 +51,8 @@ function onMove(e: PointerEvent) {
 function onUp() {
   const d = drag.value; if (!d) return;
   const deltaMs = previewDelta.value * 86400000;
-  const newStart = d.mode === "move" ? toStr(Date.parse(d.origStart) + deltaMs) : d.origStart;
-  const newEnd = toStr(Date.parse(d.origEnd) + deltaMs);
+  const newStart = d.mode === "move" ? toStr(parseDateStrict(d.origStart) + deltaMs) : d.origStart;
+  const newEnd = toStr(parseDateStrict(d.origEnd) + deltaMs);
   drag.value = null; previewDelta.value = 0;
   if ((newStart !== d.origStart || newEnd !== d.origEnd) && newStart <= newEnd) {
     gantt.moveOrResize(d.id, newStart, newEnd, d.percent);
@@ -65,7 +66,7 @@ const arrows = computed<Arrow[]>(() => {
   for (const r of rows.value) {
     for (const b of r.bars) {
       const left = barLeft(b);
-      const startMs = Date.parse(b.start_date);
+      const startMs = parseDateStrict(b.start_date);
       const prev = pos.get(b.task_id);
       if (!prev || startMs < prev.startMs) {
         pos.set(b.task_id, { startX: left, endX: left + barWidth(b), y: rowIdx * 32 + 16, startMs });

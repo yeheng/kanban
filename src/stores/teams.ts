@@ -14,11 +14,15 @@ export const useTeamsStore = defineStore("teams", () => {
     await api.addTeamMember(teamId, resourceId, role);
     await loadMembers(teamId);
   }
+  async function removeMember(teamId: number, resourceId: number) {
+    await api.removeTeamMember(teamId, resourceId);
+    await loadMembers(teamId);
+  }
   async function setOverride(override: TeamOverride) {
     await api.setTeamOverride(override);
   }
   async function getOverride(teamId: number) {
     return api.getTeamOverride(teamId);
   }
-  return { items, members, load, create, remove, loadMembers, addMember, setOverride, getOverride };
+  return { items, members, load, create, remove, loadMembers, addMember, removeMember, setOverride, getOverride };
 });

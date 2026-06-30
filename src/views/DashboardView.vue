@@ -7,6 +7,7 @@ import { useProjectsStore } from "../stores/projects";
 import { useTeamsStore } from "../stores/teams";
 import { useUnitStore } from "../stores/unit";
 import { useRefreshStore } from "../stores/refresh";
+import { fmtDate, parseDateStrict } from "../utils/date";
 import UtilBar from "../components/UtilBar.vue";
 
 const wl = useWorkloadStore();
@@ -14,7 +15,7 @@ const resources = useResourcesStore();
 const projects = useProjectsStore();
 const teams = useTeamsStore();
 const unit = useUnitStore();
-const dateRange = ref<[number, number]>([Date.parse("2026-06-29"), Date.parse("2026-07-03")]);
+const dateRange = ref<[number, number]>([parseDateStrict("2026-06-29"), parseDateStrict("2026-07-03")]);
 const selectedTeam = ref<number | null>(null);
 const allTeamsValue = "__all__";
 
@@ -23,11 +24,6 @@ const teamOptions = computed(() => [
   ...teams.items.map((t) => ({ label: t.name, value: String(t.id) })),
 ]);
 const selectedTeamValue = computed(() => selectedTeam.value == null ? allTeamsValue : String(selectedTeam.value));
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 async function refresh() {
   const start = fmtDate(dateRange.value[0]);
@@ -39,9 +35,17 @@ async function refresh() {
   if (selectedTeam.value != null) await wl.loadTeamSummary(selectedTeam.value, start, end);
 }
 
-function updateSelectedTeam(value: string) {
+async function updateSelectedTeam(value: string) {
   selectedTeam.value = value === allTeamsValue ? null : Number(value);
-  void refresh();
+  // Apply the team's PD/PM workday override so PM display reflects the team (design §3.3.8a);
+  // revert to the global value when no team is selected.
+  if (selectedTeam.value != null) {
+    const ov = await teams.getOverride(selectedTeam.value);
+    unit.applyTeamOverride(ov?.pm_workdays ?? null);
+  } else {
+    unit.applyTeamOverride(null);
+  }
+  await refresh();
 }
 onMounted(async () => { await wl.loadThresholds(); await teams.load(); await refresh(); });
 
@@ -71,7 +75,7 @@ watch(() => refreshBus.version.workload, () => { void refresh(); });
   <n-table :bordered="false" :single-line="false">
     <tr v-for="s in wl.resourceSummaries" :key="s.resource_id">
       <td style="width: 120px">资源 #{{ s.resource_id }}</td>
-      <td><UtilBar :utilization="s.utilization" /></td>
+      <td><UtilBar :utilization="s.utilization" :status="s.status" /></td>
       <td>{{ unit.formatPd(s.workload_pd) }} / {{ unit.formatPd(s.capacity_pd) }}</td>
     </tr>
   </n-table>
@@ -86,7 +90,7 @@ watch(() => refreshBus.version.workload, () => { void refresh(); });
   <n-h3>团队利用率</n-h3>
   <n-select :value="selectedTeamValue" :options="teamOptions" @update:value="updateSelectedTeam" style="width: 200px" />
   <div v-if="wl.teamSummary" style="margin-top: 8px">
-    <UtilBar :utilization="wl.teamSummary.utilization" />
+    <UtilBar :utilization="wl.teamSummary.utilization" :status="wl.teamSummary.status" />
     <n-text depth="3" style="font-size: 12px">过载成员：{{ wl.teamSummary.overloaded_members.join(", ") || "无" }}</n-text>
   </div>
 </template>

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from "vue";
-import { NH2, NSpace, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, NButton, NSelect, NEmpty, NText } from "naive-ui";
+import { NH2, NSpace, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, NButton, NSelect, NEmpty, NText, NTag } from "naive-ui";
 import { useTasksStore } from "../stores/tasks";
 import { useProjectsStore } from "../stores/projects";
 import { useRefreshStore } from "../stores/refresh";
 import KanbanColumn from "../components/KanbanColumn.vue";
+import { fmtDate, parseDate } from "../utils/date";
 import type { KanbanTask, TaskStatus } from "../types";
 
 const tasks = useTasksStore();
@@ -21,14 +22,16 @@ const editDateRange = ref<[number, number] | null>(null);
 const editDescription = ref("");
 const depPredecessor = ref<number | null>(null);
 const depLag = ref(0);
+const editError = ref<string | null>(null);
 
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function parseDate(s: string | null): number | null {
-  if (!s) return null;
-  return Date.parse(s);
+/** Pull the human-readable `detail` out of the backend's `{code,detail}` error body. */
+function errText(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  try {
+    const j = JSON.parse(raw);
+    if (j && typeof j.detail === "string") return j.detail;
+  } catch { /* not a JSON error body */ }
+  return raw;
 }
 
 const otherTasks = computed(() =>
@@ -60,22 +63,29 @@ function onEdit(task: KanbanTask) {
   editDescription.value = task.description ?? "";
   depPredecessor.value = null;
   depLag.value = 0;
+  editError.value = null;
   editVisible.value = true;
 }
 
 async function saveEdit() {
   if (!editing.value || !projects.current) return;
-  await tasks.update(editing.value.id, {
-    title: editTitle.value,
-    estimatePd: editEstimate.value,
-    start: editDateRange.value ? fmtDate(editDateRange.value[0]) : null,
-    end: editDateRange.value ? fmtDate(editDateRange.value[1]) : null,
-    description: editDescription.value || null,
-  }, projects.current);
-  if (depPredecessor.value != null) {
-    await tasks.addDependency(editing.value.id, depPredecessor.value, depLag.value);
+  editError.value = null;
+  try {
+    await tasks.update(editing.value.id, {
+      title: editTitle.value,
+      estimatePd: editEstimate.value,
+      start: editDateRange.value ? fmtDate(editDateRange.value[0]) : null,
+      end: editDateRange.value ? fmtDate(editDateRange.value[1]) : null,
+      description: editDescription.value || null,
+    }, projects.current);
+    if (depPredecessor.value != null) {
+      await tasks.addDependency(editing.value.id, depPredecessor.value, depLag.value);
+    }
+    editVisible.value = false;
+  } catch (e: unknown) {
+    // Keep the modal open so the user can correct the input (e.g. a dependency cycle → 422).
+    editError.value = errText(e);
   }
-  editVisible.value = false;
 }
 
 async function onDelete(id: number) {
@@ -137,6 +147,9 @@ async function onDelete(id: number) {
             <n-input-number v-model:value="depLag" :step="1" style="width: 100px" />
             <n-text>天</n-text>
           </n-space>
+        </n-form-item>
+        <n-form-item v-if="editError">
+          <n-tag type="error">{{ editError }}</n-tag>
         </n-form-item>
         <n-space justify="end">
           <n-button @click="editVisible = false">取消</n-button>

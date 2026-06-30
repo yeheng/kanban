@@ -6,19 +6,15 @@ import { useResourcesStore } from "../stores/resources";
 import { useWorkloadStore } from "../stores/workload";
 import { useRefreshStore } from "../stores/refresh";
 import OccupancyGrid from "../components/OccupancyGrid.vue";
+import { fmtDate, parseDateStrict } from "../utils/date";
 import type { DayOccupancy } from "../types";
 
 const resources = useResourcesStore();
 const wl = useWorkloadStore();
 const refreshBus = useRefreshStore();
-const dateRange = ref<[number, number]>([Date.parse("2026-06-29"), Date.parse("2026-07-12")]);
+const dateRange = ref<[number, number]>([parseDateStrict("2026-06-29"), parseDateStrict("2026-07-12")]);
 const items = ref<DayOccupancy[]>([]);
 const days = ref<string[]>([]);
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
 
 function buildDays() {
   const out: string[] = [];

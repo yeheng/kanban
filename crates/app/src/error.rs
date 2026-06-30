@@ -28,7 +28,11 @@ impl From<domain::DomainError> for AppError {
     fn from(e: domain::DomainError) -> Self {
         use domain::DomainError::*;
         match e {
-            InvalidRatio(_) | InvalidDateWindow => AppError::validation(e.to_string()),
+            InvalidRatio(_)
+            | InvalidValue { .. }
+            | InvalidStatus(_)
+            | InvalidInput(_)
+            | InvalidDateWindow => AppError::validation(e.to_string()),
             NotFound(s) => AppError::not_found(s),
             DependencyCycle(_)
             | DependencyViolation { .. }
@@ -45,11 +49,32 @@ impl From<db::DbError> for AppError {
     fn from(e: db::DbError) -> Self {
         match e {
             db::DbError::NotFound => AppError::not_found("entity".into()),
+            db::DbError::Sqlx(inner) => classify_sqlx(&inner),
             other => AppError::db(other.to_string()),
         }
     }
 }
 
 impl From<sqlx::Error> for AppError {
-    fn from(e: sqlx::Error) -> Self { AppError::db(e.to_string()) }
+    fn from(e: sqlx::Error) -> Self { classify_sqlx(&e) }
+}
+
+/// Single source of truth for turning a sqlx error into an `AppError`.
+///
+/// SQLite reports CHECK / NOT NULL / FOREIGN KEY / UNIQUE constraint failures *and* trigger
+/// `RAISE(ABORT, ...)` rejections with primary result code 19 (`SQLITE_CONSTRAINT`); the
+/// extended codes (275 CHECK, 787 FK, 1299 NOTNULL, 1811 TRIGGER, 2067 UNIQUE, ...) all share
+/// the low byte 19. Those are user-correctable business-rule rejections (e.g. an allocation
+/// outside its task window), so they map to `DOMAIN` (422) and surface the DB message — NOT a
+/// blanket `DB` 500 that reads as a server crash and pollutes error telemetry. Everything else
+/// (connection loss, protocol errors, ...) stays a genuine `DB` failure.
+fn classify_sqlx(e: &sqlx::Error) -> AppError {
+    if let sqlx::Error::Database(db_err) = e {
+        if let Some(code) = db_err.code() {
+            if code.parse::<i64>().map(|n| n % 256 == 19).unwrap_or(false) {
+                return AppError::domain(db_err.message().to_string());
+            }
+        }
+    }
+    AppError::db(e.to_string())
 }

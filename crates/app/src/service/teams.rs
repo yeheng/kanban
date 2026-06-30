@@ -18,6 +18,9 @@ impl TeamsService {
     pub async fn add_member(pool: &SqlitePool, team_id: i64, resource_id: i64, role: Option<&str>) -> Result<(), AppError> {
         Ok(TeamMembersRepo::add(pool, team_id, resource_id, role).await?)
     }
+    pub async fn remove_member(pool: &SqlitePool, team_id: i64, resource_id: i64) -> Result<(), AppError> {
+        Ok(TeamMembersRepo::remove(pool, team_id, resource_id).await?)
+    }
     pub async fn members(pool: &SqlitePool, team_id: i64) -> Result<Vec<TeamMember>, AppError> {
         Ok(TeamMembersRepo::list_members(pool, team_id).await?)
     }
@@ -33,9 +36,9 @@ impl TeamsService {
 fn validate_override(o: &TeamOverride) -> Result<(), AppError> {
     if let Some(g) = o.utilization_green { if !(0.0..=1.0).contains(&g) { return Err(domain::DomainError::InvalidRatio(g).into()); } }
     if let Some(y) = o.utilization_yellow { if !(0.0..=1.0).contains(&y) { return Err(domain::DomainError::InvalidRatio(y).into()); } }
-    if let Some(p) = o.pd_hours { if p <= 0.0 { return Err(domain::DomainError::InvalidRatio(p).into()); } }
-    if let Some(p) = o.pm_workdays { if p <= 0.0 { return Err(domain::DomainError::InvalidRatio(p).into()); } }
-    if let Some(t) = o.overload_threshold { if t <= 0.0 { return Err(domain::DomainError::InvalidRatio(t).into()); } }
-    if let Some(t) = o.underload_threshold { if t < 0.0 { return Err(domain::DomainError::InvalidRatio(t).into()); } }
+    if let Some(p) = o.pd_hours { if p <= 0.0 { return Err(domain::DomainError::InvalidValue { field: "pd_hours", value: p }.into()); } }
+    if let Some(p) = o.pm_workdays { if p <= 0.0 { return Err(domain::DomainError::InvalidValue { field: "pm_workdays", value: p }.into()); } }
+    if let Some(t) = o.overload_threshold { if t <= 0.0 { return Err(domain::DomainError::InvalidValue { field: "overload_threshold", value: t }.into()); } }
+    if let Some(t) = o.underload_threshold { if t < 0.0 { return Err(domain::DomainError::InvalidValue { field: "underload_threshold", value: t }.into()); } }
     Ok(())
 }

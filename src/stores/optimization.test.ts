@@ -8,7 +8,7 @@ beforeEach(() => { setActivePinia(createPinia()); });
 
 describe("optimization store", () => {
   it("runs with current weights and stores plan", async () => {
-    vi.mocked(api.runOptimization).mockResolvedValue({ run_id: 7, plan: { solution: { run_id: 7, assignments: [], unscheduled: [], metrics: { overall: 80, skill_fit: 80, utilization: 100, fairness: 0 } }, explanation_md: "ok" } });
+    vi.mocked(api.runOptimization).mockResolvedValue({ run_id: 7, plan: { solution: { run_id: 7, assignments: [], unscheduled: [], metrics: { overall: 80, skill_fit: 80, scheduled_ratio: 100, fairness: 0 } }, explanation_md: "ok" } });
     const s = useOptimizationStore();
     await s.run(5);
     expect(s.current?.run_id).toBe(7);

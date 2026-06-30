@@ -64,6 +64,22 @@ impl FallbackScorer {
 #[async_trait]
 impl Scorer for FallbackScorer {
     async fn score(&self, r: &CandidateResource, t: &CandidateTask) -> f64 {
+        self.score_sync(r, t)
+    }
+    /// Pure-CPU scorer — build the matrix without R·T awaits (default impl would).
+    async fn matrix(&self, problem: &AllocationProblem) -> ScoreMatrix {
+        let mut m = ScoreMatrix::with_capacity(problem.resources.len() * problem.tasks.len());
+        for r in &problem.resources {
+            for t in &problem.tasks {
+                m.insert((r.id, t.id), self.score_sync(r, t));
+            }
+        }
+        m
+    }
+}
+
+impl FallbackScorer {
+    fn score_sync(&self, r: &CandidateResource, t: &CandidateTask) -> f64 {
         // mandatory skills must be met at min proficiency, else 0 (hard filter reflected in score)
         for req in &t.skill_reqs {
             if req.is_mandatory {
@@ -117,33 +133,82 @@ pub mod semantic {
         }
     }
 
+    fn mandatory_skills_met(r: &CandidateResource, t: &CandidateTask) -> bool {
+        for req in &t.skill_reqs {
+            if req.is_mandatory
+                && !matches!(r.skills.get(&req.skill_id), Some(p) if *p >= req.min_proficiency)
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn resource_text(r: &CandidateResource) -> String {
+        format!("skills={:?} tags={:?}", r.skills, r.tags)
+    }
+    fn task_text(t: &CandidateTask) -> String {
+        format!("{} reqs={:?}", t.title, t.skill_reqs)
+    }
+
     #[async_trait]
     impl super::Scorer for SemanticScorer {
         async fn score(&self, r: &CandidateResource, t: &CandidateTask) -> f64 {
-            // Hard filter: mandatory skills must be met (same rule as FallbackScorer).
-            for req in &t.skill_reqs {
-                if req.is_mandatory {
-                    if !matches!(r.skills.get(&req.skill_id), Some(p) if *p >= req.min_proficiency)
-                    {
-                        return 0.0;
-                    }
-                }
+            if !Self::mandatory_skills_met(r, t) {
+                return 0.0;
             }
             let Some(client) = self.client() else {
                 return 0.0;
             };
             let model = client.embedding_model(&self.model);
-            let r_text = format!("skills={:?} tags={:?}", r.skills, r.tags);
-            let t_text = format!("{} reqs={:?}", t.title, t.skill_reqs);
-            let er = match model.embed_text(&r_text).await {
+            let er = match model.embed_text(&Self::resource_text(r)).await {
                 Ok(e) => e,
                 Err(_) => return 0.0,
             };
-            let et = match model.embed_text(&t_text).await {
+            let et = match model.embed_text(&Self::task_text(t)).await {
                 Ok(e) => e,
                 Err(_) => return 0.0,
             };
             cosine(&er.vec, &et.vec).max(0.0)
+        }
+
+        /// Pre-embed each resource and each task ONCE (R+T embeds), then cosine every
+        /// pair. The default impl would call `score` R·T times and re-embed resources
+        /// for every task — O(R·T) round-trips instead of O(R+T). On any provider error
+        /// the whole matrix degrades to 0.0 (design §2.8 graceful degradation).
+        async fn matrix(&self, problem: &AllocationProblem) -> ScoreMatrix {
+            use std::collections::HashMap;
+            let mut m = ScoreMatrix::with_capacity(problem.resources.len() * problem.tasks.len());
+            let Some(client) = self.client() else {
+                return m; // provider unavailable ⇒ all-zero (degrades gracefully)
+            };
+            let model = client.embedding_model(&self.model);
+
+            let mut er: HashMap<i64, Vec<f64>> = HashMap::new();
+            for r in &problem.resources {
+                if let Ok(e) = model.embed_text(&Self::resource_text(r)).await {
+                    er.insert(r.id, e.vec);
+                }
+            }
+            let mut et: HashMap<i64, Vec<f64>> = HashMap::new();
+            for t in &problem.tasks {
+                if let Ok(e) = model.embed_text(&Self::task_text(t)).await {
+                    et.insert(t.id, e.vec);
+                }
+            }
+            for r in &problem.resources {
+                let Some(vr) = er.get(&r.id) else { continue };
+                for t in &problem.tasks {
+                    let Some(vt) = et.get(&t.id) else { continue };
+                    let sc = if Self::mandatory_skills_met(r, t) {
+                        cosine(vr, vt).max(0.0)
+                    } else {
+                        0.0
+                    };
+                    m.insert((r.id, t.id), sc);
+                }
+            }
+            m
         }
     }
 

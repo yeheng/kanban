@@ -166,6 +166,8 @@ export const api = {
     request("GET", `/api/teams/${teamId}/members`),
   addTeamMember: (teamId: number, resourceId: number, role: string | null): Promise<void> =>
     request("POST", `/api/teams/${teamId}/members`, { resource_id: resourceId, role }),
+  removeTeamMember: (teamId: number, resourceId: number): Promise<void> =>
+    request("DELETE", `/api/teams/${teamId}/members/${resourceId}`),
   setTeamOverride: (override: TeamOverride): Promise<void> =>
     request("PUT", "/api/teams/overrides", override),
   getTeamOverride: (teamId: number): Promise<TeamOverride | null> =>

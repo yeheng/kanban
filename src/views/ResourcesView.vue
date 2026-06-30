@@ -5,6 +5,7 @@ import ResourceForm from "../components/ResourceForm.vue";
 import { useResourcesStore } from "../stores/resources";
 import { useCatalogStore } from "../stores/catalog";
 import { onMounted } from "vue";
+import { fmtDate, parseDate } from "../utils/date";
 import type { Resource, ResourceSkill, ResourceTag } from "../types";
 
 const resources = useResourcesStore();
@@ -41,15 +42,6 @@ const tagCache = ref<Record<number, ResourceTag[]>>({});
 async function loadDisplay(r: Resource) {
   if (!skillCache.value[r.id]) skillCache.value[r.id] = await resources.loadSkills(r.id);
   if (!tagCache.value[r.id]) tagCache.value[r.id] = await resources.loadTags(r.id);
-}
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function parseDate(s: string | null): number | null {
-  if (!s) return null;
-  return Date.parse(s);
 }
 
 async function openEdit(r: Resource) {

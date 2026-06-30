@@ -1,7 +1,7 @@
 use crate::error::AppError;
 use db::models::{KanbanTask, Task, TaskSkillRequirement};
 use db::repo::tasks::TaskCreate;
-use db::TasksRepo;
+use db::{TaskDepsRepo, TasksRepo};
 use sqlx::SqlitePool;
 
 pub struct TasksService;
@@ -16,13 +16,13 @@ impl TasksService {
         sort_order: i64,
         skill_reqs: &[(i64, i64, bool, f64)], tag_ids: &[i64],
     ) -> Result<i64, AppError> {
-        if estimate_pd < 0.0 { return Err(domain::DomainError::InvalidRatio(estimate_pd).into()); }
+        if estimate_pd < 0.0 { return Err(domain::DomainError::InvalidValue { field: "estimate_pd", value: estimate_pd }.into()); }
         if let (Some(s), Some(e)) = (start, end) {
             if e < s { return Err(domain::DomainError::InvalidDateWindow.into()); }
         }
         for &(_, min_prof, _, _) in skill_reqs {
             if !(1..=5).contains(&min_prof) {
-                return Err(domain::DomainError::InvalidRatio(min_prof as f64).into());
+                return Err(domain::DomainError::InvalidValue { field: "min_proficiency", value: min_prof as f64 }.into());
             }
         }
         validate_segment(parent_task_id, segment_kind)?;
@@ -49,7 +49,7 @@ impl TasksService {
     pub async fn set_status(pool: &SqlitePool, id: i64, status: &str) -> Result<(), AppError> {
         match status {
             "todo" | "in_progress" | "blocked" | "review" | "done" | "cancelled" => {}
-            _ => return Err(domain::DomainError::InvalidRatio(0.0).into()),
+            _ => return Err(domain::DomainError::InvalidStatus(status.into()).into()),
         }
         Ok(TasksRepo::set_status(pool, id, status).await?)
     }
@@ -59,7 +59,7 @@ impl TasksService {
         estimate_pd: f64, start: Option<&str>, end: Option<&str>,
         is_long_term: bool, parent_task_id: Option<i64>, segment_kind: Option<&str>,
     ) -> Result<(), AppError> {
-        if estimate_pd < 0.0 { return Err(domain::DomainError::InvalidRatio(estimate_pd).into()); }
+        if estimate_pd < 0.0 { return Err(domain::DomainError::InvalidValue { field: "estimate_pd", value: estimate_pd }.into()); }
         if let (Some(s), Some(e)) = (start, end) {
             if e < s { return Err(domain::DomainError::InvalidDateWindow.into()); }
         }
@@ -67,7 +67,7 @@ impl TasksService {
         // A segment cannot be its own parent, and the parent chain must not cycle.
         if let Some(pid) = parent_task_id {
             if pid == id {
-                return Err(domain::DomainError::InvalidRatio(0.0).into());
+                return Err(domain::DomainError::InvalidInput("task cannot be its own parent").into());
             }
             // Walk up the parent chain to ensure setting this parent doesn't create a cycle.
             let mut cur = pid;
@@ -104,35 +104,57 @@ impl TasksService {
 
 impl TasksService {
     /// Add a dependency edge after checking it creates no cycle (design §3.3.12).
+    ///
+    /// `dep_type` is normalized to the schema's 4-code enum (`FS`/`FF`/`SS`/`SF`). The edge
+    /// read + cycle check + insert run inside ONE `with_write_tx` (BEGIN IMMEDIATE + busy-retry,
+    /// design §3.7) so a concurrent writer can't slip a cycle-forming edge between the check and
+    /// the insert. The cycle rejection is carried out of the tx as the `T` value (no insert, the
+    /// tx commits read-only) and re-raised as a DOMAIN error.
     pub async fn add_dependency(
-        pool: &SqlitePool, task_id: i64, predecessor_id: i64, lag_days: i64,
+        pool: &SqlitePool,
+        task_id: i64,
+        predecessor_id: i64,
+        lag_days: i64,
+        dep_type: &str,
     ) -> Result<(), AppError> {
         if task_id == predecessor_id {
-            return Err(domain::DomainError::InvalidRatio(0.0).into()); // self-dep invalid
+            return Err(domain::DomainError::InvalidInput("a task cannot depend on itself").into());
         }
+        let dep_type = normalize_dep_type(dep_type)?;
 
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-        let mut edges: Vec<(i64, i64)> =
-            sqlx::query_as("SELECT task_id, predecessor_id FROM task_dependencies")
-                .fetch_all(&mut *tx)
-                .await?;
-        edges.push((task_id, predecessor_id));
-        if has_cycle(&edges) {
-            return Err(domain::DomainError::DependencyCycle(task_id).into());
-        }
-
-        sqlx::query(
-            "INSERT INTO task_dependencies (task_id, predecessor_id, lag_days) VALUES (?,?,?) \
-             ON CONFLICT(task_id, predecessor_id) DO UPDATE SET lag_days = excluded.lag_days",
-        )
-        .bind(task_id)
-        .bind(predecessor_id)
-        .bind(lag_days)
-        .execute(&mut *tx)
+        let outcome: Result<(), domain::DomainError> = db::tx::with_write_tx(pool, move |mut tx| {
+            Box::pin(async move {
+                let mut edges: Vec<(i64, i64)> =
+                    sqlx::query_as("SELECT task_id, predecessor_id FROM task_dependencies")
+                        .fetch_all(&mut *tx)
+                        .await?;
+                edges.push((task_id, predecessor_id));
+                if has_cycle(&edges) {
+                    // Hand the tx back unmodified; carry the rejection as the success value.
+                    return Ok((tx, Err(domain::DomainError::DependencyCycle(task_id))));
+                }
+                TaskDepsRepo::upsert_tx(&mut tx, task_id, predecessor_id, lag_days, dep_type)
+                    .await?;
+                Ok((tx, Ok::<(), domain::DomainError>(())))
+            })
+        })
         .await?;
-        tx.commit().await?;
-        Ok(())
+        outcome.map_err(Into::into)
     }
+}
+
+/// Normalize a dependency-type input to the schema's 4-code enum (design §3.3.12). Accepts the
+/// codes directly (case-insensitive) plus the common long forms; anything else is a VALIDATION
+/// error rather than a CHECK-constraint 500 at INSERT time.
+fn normalize_dep_type(s: &str) -> Result<&'static str, AppError> {
+    let code = match s.trim().to_ascii_uppercase().as_str() {
+        "FS" | "FINISH_TO_START" | "FINISH-TO-START" => "FS",
+        "FF" | "FINISH_TO_FINISH" | "FINISH-TO-FINISH" => "FF",
+        "SS" | "START_TO_START" | "START-TO-START" => "SS",
+        "SF" | "START_TO_FINISH" | "START-TO-FINISH" => "SF",
+        _ => return Err(domain::DomainError::InvalidStatus(s.to_string()).into()),
+    };
+    Ok(code)
 }
 
 /// Validate long-term / segment fields (design §3.3.11, §3.4):
@@ -142,10 +164,10 @@ impl TasksService {
 fn validate_segment(parent_task_id: Option<i64>, segment_kind: Option<&str>) -> Result<(), AppError> {
     if let Some(kind) = segment_kind {
         if !matches!(kind, "milestone" | "phase" | "segment") {
-            return Err(domain::DomainError::InvalidRatio(0.0).into());
+            return Err(domain::DomainError::InvalidInput("segment_kind must be milestone, phase, or segment").into());
         }
         if parent_task_id.is_none() {
-            return Err(domain::DomainError::InvalidRatio(0.0).into());
+            return Err(domain::DomainError::InvalidInput("a segment must reference a parent task").into());
         }
     }
     Ok(())

@@ -114,12 +114,29 @@ impl TasksRepo {
 pub struct TaskDepsRepo;
 
 impl TaskDepsRepo {
-    pub async fn add(pool: &SqlitePool, task_id: i64, predecessor_id: i64, lag_days: i64) -> Result<(), DbError> {
+    /// Insert (or update the lag/type of) a dependency edge inside an existing write tx.
+    /// Cycle-freedom is enforced by the caller (the service reads all edges in the SAME tx
+    /// before calling this), so this is purely the write step. `dep_type` must already be one
+    /// of the schema's `FS`/`FF`/`SS`/`SF` codes (the service normalizes it).
+    pub async fn upsert_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+        task_id: i64,
+        predecessor_id: i64,
+        lag_days: i64,
+        dep_type: &str,
+    ) -> Result<(), DbError> {
         sqlx::query(
-            "INSERT INTO task_dependencies (task_id, predecessor_id, lag_days) VALUES (?,?,?) \
-             ON CONFLICT(task_id, predecessor_id) DO UPDATE SET lag_days = excluded.lag_days")
-            .bind(task_id).bind(predecessor_id).bind(lag_days)
-            .execute(pool).await?;
+            "INSERT INTO task_dependencies (task_id, predecessor_id, lag_days, dep_type) \
+             VALUES (?,?,?,?) \
+             ON CONFLICT(task_id, predecessor_id) DO UPDATE SET \
+             lag_days = excluded.lag_days, dep_type = excluded.dep_type",
+        )
+        .bind(task_id)
+        .bind(predecessor_id)
+        .bind(lag_days)
+        .bind(dep_type)
+        .execute(&mut **tx)
+        .await?;
         Ok(())
     }
 

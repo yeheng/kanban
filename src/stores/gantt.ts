@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { api } from "../api";
 import type { GanttBar, DepEdge } from "../types";
+import { useRefreshStore } from "./refresh";
 
 export const useGanttStore = defineStore("gantt", () => {
   const bars = ref<GanttBar[]>([]);
@@ -21,6 +22,9 @@ export const useGanttStore = defineStore("gantt", () => {
   async function moveOrResize(allocationId: number, start: string, end: string, percent: number) {
     await api.updateAllocation(allocationId, start, end, percent);
     await load();
+    // A gantt drag/resize is an allocation write — invalidate every allocation-derived view
+    // (design G4), not just the gantt the user is looking at.
+    useRefreshStore().bump("allocations", "workload", "gantt", "kanban", "calendar");
   }
   return { bars, deps, mode, focusId, load, moveOrResize };
 });

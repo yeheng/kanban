@@ -8,7 +8,9 @@ function cell(rid: number, day: string) {
 }
 function bg(o?: DayOccupancy) {
   if (!o) return "#f7f7fa";
-  return ({ under: "#e0e0e6", green: "#9ad19a", yellow: "#f0d070", red: "#e08090" } as const)[wl.band(o.utilization)];
+  // Prefer the server's per-team band; fall back to the global band for older payloads.
+  const b = o.status ?? wl.band(o.utilization);
+  return ({ under: "#e0e0e6", green: "#9ad19a", yellow: "#f0d070", red: "#e08090" } as const)[b];
 }
 </script>
 

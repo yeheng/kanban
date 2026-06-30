@@ -18,7 +18,7 @@ async fn explains_counts_and_scores() {
         metrics: SolutionMetrics {
             overall: 70.0,
             skill_fit: 80.0,
-            utilization: 50.0,
+            scheduled_ratio: 50.0,
             fairness: 0.0,
         },
     };

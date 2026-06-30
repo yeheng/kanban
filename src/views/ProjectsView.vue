@@ -5,6 +5,7 @@ import ProjectForm from "../components/ProjectForm.vue";
 import TaskForm from "../components/TaskForm.vue";
 import { useProjectsStore } from "../stores/projects";
 import { useUnitStore } from "../stores/unit";
+import { fmtDate, parseDate } from "../utils/date";
 import type { Project } from "../types";
 
 const projects = useProjectsStore();
@@ -18,15 +19,6 @@ const editPriority = ref(5);
 const editBudget = ref(0);
 const editDateRange = ref<[number, number] | null>(null);
 const editDescription = ref("");
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function parseDate(s: string | null): number | null {
-  if (!s) return null;
-  return Date.parse(s);
-}
 
 function openEdit(p: Project) {
   editingId.value = p.id;

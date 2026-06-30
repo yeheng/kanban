@@ -67,6 +67,11 @@ async function addMember() {
   memberRole.value = "";
 }
 
+async function removeMember(resourceId: number) {
+  if (selectedTeam.value == null) return;
+  await teams.removeMember(selectedTeam.value, resourceId);
+}
+
 async function saveOverride() {
   if (selectedTeam.value == null) return;
   const override: TeamOverride = {
@@ -150,6 +155,14 @@ function resourceName(id: number): string {
           <template #description>
             <n-tag v-if="m.role" size="small" :bordered="false">{{ m.role }}</n-tag>
             <n-text v-else depth="3" style="font-size: 12px">无角色</n-text>
+          </template>
+          <template #header-extra>
+            <n-popconfirm @positive-click="removeMember(m.resource_id)">
+              <template #trigger>
+                <n-button size="small" type="error" quaternary>移除</n-button>
+              </template>
+              确定将 "{{ resourceName(m.resource_id) }}" 移出团队吗？
+            </n-popconfirm>
           </template>
         </n-thing>
       </n-list-item>

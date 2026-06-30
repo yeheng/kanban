@@ -48,9 +48,10 @@ async fn add_dependency(
     Path(task_id): Path<i64>,
     Json(body): Json<AddDependency>,
 ) -> Result<axum::http::StatusCode, HttpError> {
-    let _dep_type = body.dep_type.as_deref().unwrap_or("finish_to_start");
+    // Default to finish-to-start; the service validates/normalizes to the FS/FF/SS/SF codes.
+    let dep_type = body.dep_type.as_deref().unwrap_or("FS");
     app::service::tasks::TasksService::add_dependency(
-        &state.pool, task_id, body.predecessor_id, body.lag_days.unwrap_or(0),
+        &state.pool, task_id, body.predecessor_id, body.lag_days.unwrap_or(0), dep_type,
     ).await?;
     Ok(axum::http::StatusCode::CREATED)
 }
