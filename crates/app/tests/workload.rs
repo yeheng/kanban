@@ -166,3 +166,61 @@ async fn project_burn_ratio() {
     assert!((b.allocated_pd - 5.0).abs() < 1e-9);
     assert!((b.usage - (5.0 / 40.0)).abs() < 1e-9);
 }
+
+// ---- P1 #2: project calendar overrides affect utilization (design §4.9) ----
+
+/// A project-scoped holiday reduces that project's allocation PD (numerator) while the
+/// global capacity (denominator) is unchanged, so utilization drops. This pins the
+/// "project-level override affects utilization" property and the global-denominator policy.
+#[tokio::test]
+async fn project_holiday_changes_utilization_not_global_capacity() {
+    let pool = fresh().await;
+    sqlx::query("INSERT INTO projects (id,name) VALUES (1,'P')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO tasks (id,project_id,title,start_date,end_date) VALUES (10,1,'T','2026-06-01','2026-07-31')").execute(&pool).await.unwrap();
+    // Wed is a holiday ONLY for project 1 (project-scoped).
+    sqlx::query("INSERT INTO holiday (project_id,day,fraction,name) VALUES (1,'2026-07-01',1.0,'ProjHoliday')")
+        .execute(&pool).await.unwrap();
+    // Alice 100% Mon..Fri on project 1.
+    AllocationsRepo::create(&pool, 1, 10, MON, FRI, 1.0).await.unwrap();
+
+    let s = WorkloadService::resource_summary(&pool, 1, MON, FRI).await.unwrap();
+    // Denominator: global capacity = 5.0 (Mon-Fri, no global holiday).
+    assert!((s.capacity_pd - 5.0).abs() < 1e-9, "global capacity unaffected: {}", s.capacity_pd);
+    // Numerator: project-1 allocation PD = 4.0 (Wed dropped by project holiday).
+    assert!((s.workload_pd - 4.0).abs() < 1e-9, "workload reflects project holiday: {}", s.workload_pd);
+    // Utilization = 4.0 / 5.0 = 0.8.
+    assert!((s.utilization - 0.8).abs() < 1e-9, "utilization = {}", s.utilization);
+}
+
+/// Capacity-conflict detection must rate each existing allocation against its OWN
+/// project's calendar (bug fix). Distinctive case: the existing allocation's project
+/// (P2) has a Wed holiday, the new allocation's project (P1) does not. Both allocations
+/// are 100% Mon..Fri. Pre-fix, the existing P2 load on Wed was rated against P1's
+/// calendar (day_factor>0) and counted on top of the new 100% — but that alone wouldn't
+/// flip the verdict since Mon/Tue/Thu/Fri already conflict. So instead we scope the new
+/// allocation to Wed ONLY: pre-fix the P2 Wed load (wrongly counted under P1) + new 100%
+/// > 1.0 ⇒ wrongly rejected; post-fix the P2 Wed load is dropped (P2 holiday) and only
+/// the new 100% counts ⇒ accepted. This is the case that distinguishes the fix.
+#[tokio::test]
+async fn capacity_accepts_when_existing_alloc_holiday_drops_load_under_own_calendar() {
+    use app::service::allocations::AllocationsService;
+    let pool = fresh().await;
+    sqlx::query("INSERT INTO projects (id,name) VALUES (1,'P1')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO projects (id,name) VALUES (2,'P2')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
+    // P2 has a Wed holiday; P1 does not.
+    sqlx::query("INSERT INTO holiday (project_id,day,fraction,name) VALUES (2,'2026-07-01',1.0,'P2Wed')")
+        .execute(&pool).await.unwrap();
+    // Existing allocation: Alice 100% on P2, Mon..Fri.
+    sqlx::query("INSERT INTO tasks (id,project_id,title,start_date,end_date) VALUES (10,2,'T2','2026-06-01','2026-07-31')").execute(&pool).await.unwrap();
+    AllocationsRepo::create(&pool, 1, 10, MON, FRI, 1.0).await.unwrap();
+
+    // New allocation on P1 (no Wed holiday) at 100%, Wed ONLY.
+    sqlx::query("INSERT INTO tasks (id,project_id,title,start_date,end_date) VALUES (11,1,'T1','2026-07-01','2026-07-01')").execute(&pool).await.unwrap();
+    // Pre-fix: P2's Wed load counted under P1 → 100% (existing) + 100% (new) = 200% > 1.0 ⇒ rejected (WRONG).
+    // Post-fix: P2's Wed load dropped (P2 holiday) → only 100% (new) ≤ 1.0 ⇒ accepted (CORRECT).
+    AllocationsService::create(&pool, 1, 11, "2026-07-01", "2026-07-01", 1.0)
+        .await
+        .expect("accepted: existing P2 Wed load dropped by its own-project holiday");
+}

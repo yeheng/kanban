@@ -12,8 +12,8 @@ beforeEach(() => { setActivePinia(createPinia()); vi.mocked(api.kanbanTasks).moc
 describe("tasks store", () => {
   it("groups tasks by status", async () => {
     vi.mocked(api.kanbanTasks).mockResolvedValue([
-      { id: 1, project_id: 1, title: "A", description: null, status: "todo", sort_order: 0, estimate_pd: 1, start_date: null, end_date: null, assignee: null, skill_count: 0 },
-      { id: 2, project_id: 1, title: "B", description: null, status: "done", sort_order: 0, estimate_pd: 1, start_date: null, end_date: null, assignee: null, skill_count: 0 },
+      { id: 1, project_id: 1, parent_task_id: null, title: "A", description: null, status: "todo", sort_order: 0, estimate_pd: 1, start_date: null, end_date: null, assignee: null, skill_count: 0, is_long_term: 0, segment_kind: null },
+      { id: 2, project_id: 1, parent_task_id: null, title: "B", description: null, status: "done", sort_order: 0, estimate_pd: 1, start_date: null, end_date: null, assignee: null, skill_count: 0, is_long_term: 0, segment_kind: null },
     ]);
     const s = useTasksStore();
     await s.load(1);
@@ -23,7 +23,7 @@ describe("tasks store", () => {
 
   it("moveStatus updates optimistically and rolls back on error", async () => {
     vi.mocked(api.kanbanTasks).mockResolvedValue([
-      { id: 1, project_id: 1, title: "A", description: null, status: "todo", sort_order: 0, estimate_pd: 1, start_date: null, end_date: null, assignee: null, skill_count: 0 },
+      { id: 1, project_id: 1, parent_task_id: null, title: "A", description: null, status: "todo", sort_order: 0, estimate_pd: 1, start_date: null, end_date: null, assignee: null, skill_count: 0, is_long_term: 0, segment_kind: null },
     ]);
     vi.mocked(api.setTaskStatus).mockRejectedValueOnce(new Error("boom"));
     const s = useTasksStore();

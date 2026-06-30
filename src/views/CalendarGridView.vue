@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { NH2, NSpace, NDatePicker, NButton } from "naive-ui";
 import { api } from "../api";
 import { useResourcesStore } from "../stores/resources";
 import { useWorkloadStore } from "../stores/workload";
+import { useRefreshStore } from "../stores/refresh";
 import OccupancyGrid from "../components/OccupancyGrid.vue";
 import type { DayOccupancy } from "../types";
 
 const resources = useResourcesStore();
 const wl = useWorkloadStore();
+const refreshBus = useRefreshStore();
 const dateRange = ref<[number, number]>([Date.parse("2026-06-29"), Date.parse("2026-07-12")]);
 const items = ref<DayOccupancy[]>([]);
 const days = ref<string[]>([]);
@@ -34,6 +36,8 @@ async function refresh() {
   items.value = await api.dailyOccupancy(start, end);
 }
 onMounted(async () => { await wl.loadThresholds(); await resources.load(); await refresh(); });
+// Reload occupancy when an allocation write / AI accept bumps the refresh bus (design G4).
+watch(() => refreshBus.version.calendar, () => { void refresh(); });
 </script>
 
 <template>

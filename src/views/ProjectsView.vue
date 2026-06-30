@@ -74,7 +74,7 @@ async function saveEdit() {
             <n-tag size="small" :bordered="false" type="info">预算 {{ unit.formatPd(p.budget_pd) }}</n-tag>
           </n-space>
         </template>
-        <template #suffix>
+        <template #action>
           <n-space :size="4">
             <n-button
               v-if="p.status === 'active'"

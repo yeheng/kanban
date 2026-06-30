@@ -20,8 +20,16 @@ pub struct WorkloadService;
 
 impl WorkloadService {
     /// Per-resource utilization over a window (design §4.3–4.5).
-    /// Capacity uses the GLOBAL calendar (project_id = 0 ⇒ no project overrides);
-    /// workload sums the resource's allocations across all projects.
+    ///
+    /// Denominator policy (cross-project resource summaries, design §4.9): the capacity
+    /// denominator uses the GLOBAL calendar (`project_id = 0` ⇒ no project overrides) by
+    /// design — a resource's total availability is not project-specific. The workload
+    /// numerator sums the resource's allocations across ALL projects, with each
+    /// allocation rated against its OWN project's calendar (via `alloc_pd`). This means a
+    /// project-level work-week or holiday override affects the *numerator* (that project's
+    /// allocation PD) but not the denominator, so utilization reflects the override.
+    /// `CalendarOccupancyService` follows the same global-denominator policy (see
+    /// `occupancy.rs`), keeping dashboard/calendar/occupancy consistent.
     pub async fn resource_summary(
         pool: &SqlitePool,
         resource_id: i64,

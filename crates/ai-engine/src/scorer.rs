@@ -161,6 +161,7 @@ pub mod semantic {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::scorer::Scorer;
         #[tokio::test]
         #[ignore = "needs Ollama running with the embed model"]
         async fn smoke_semantic() {

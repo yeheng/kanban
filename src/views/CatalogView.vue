@@ -54,7 +54,7 @@ async function addTag() {
     </n-form-item>
   </n-form>
   <n-space v-if="catalog.tags.length" :size="8">
-    <n-tag v-for="t in catalog.tags" :key="t.id" :color="t.color ?? undefined">
+    <n-tag v-for="t in catalog.tags" :key="t.id" :color="t.color ? { color: t.color } : undefined">
       {{ t.name }}
     </n-tag>
   </n-space>

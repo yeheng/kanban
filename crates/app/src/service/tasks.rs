@@ -12,7 +12,8 @@ impl TasksService {
         pool: &SqlitePool,
         project_id: i64, title: &str, description: Option<&str>,
         estimate_pd: f64, start: Option<&str>, end: Option<&str>,
-        is_long_term: bool, sort_order: i64,
+        is_long_term: bool, parent_task_id: Option<i64>, segment_kind: Option<&str>,
+        sort_order: i64,
         skill_reqs: &[(i64, i64, bool, f64)], tag_ids: &[i64],
     ) -> Result<i64, AppError> {
         if estimate_pd < 0.0 { return Err(domain::DomainError::InvalidRatio(estimate_pd).into()); }
@@ -24,9 +25,19 @@ impl TasksService {
                 return Err(domain::DomainError::InvalidRatio(min_prof as f64).into());
             }
         }
+        validate_segment(parent_task_id, segment_kind)?;
+        // A segment must reference an existing, non-deleted parent task in the same project.
+        if let Some(pid) = parent_task_id {
+            let row: Option<(i64,)> = sqlx::query_as(
+                "SELECT 1 FROM tasks WHERE id=? AND project_id=? AND deleted_at IS NULL")
+                .bind(pid).bind(project_id).fetch_optional(pool).await?;
+            if row.is_none() {
+                return Err(domain::DomainError::NotFound(format!("parent task {}", pid)).into());
+            }
+        }
         let input = TaskCreate {
-            project_id, title, description, estimate_pd, start, end, is_long_term, sort_order,
-            skill_reqs, tag_ids,
+            project_id, title, description, estimate_pd, start, end, is_long_term,
+            parent_task_id, segment_kind, sort_order, skill_reqs, tag_ids,
         };
         Ok(TasksRepo::create(pool, input).await?)
     }
@@ -46,12 +57,36 @@ impl TasksService {
     pub async fn update(
         pool: &SqlitePool, id: i64, title: &str, description: Option<&str>,
         estimate_pd: f64, start: Option<&str>, end: Option<&str>,
+        is_long_term: bool, parent_task_id: Option<i64>, segment_kind: Option<&str>,
     ) -> Result<(), AppError> {
         if estimate_pd < 0.0 { return Err(domain::DomainError::InvalidRatio(estimate_pd).into()); }
         if let (Some(s), Some(e)) = (start, end) {
             if e < s { return Err(domain::DomainError::InvalidDateWindow.into()); }
         }
-        Ok(TasksRepo::update(pool, id, title, description, estimate_pd, start, end).await?)
+        validate_segment(parent_task_id, segment_kind)?;
+        // A segment cannot be its own parent, and the parent chain must not cycle.
+        if let Some(pid) = parent_task_id {
+            if pid == id {
+                return Err(domain::DomainError::InvalidRatio(0.0).into());
+            }
+            // Walk up the parent chain to ensure setting this parent doesn't create a cycle.
+            let mut cur = pid;
+            for _ in 0..1000 {
+                let row: Option<(Option<i64>,)> = sqlx::query_as(
+                    "SELECT parent_task_id FROM tasks WHERE id=? AND deleted_at IS NULL")
+                    .bind(cur).fetch_optional(pool).await?;
+                match row {
+                    None => return Err(domain::DomainError::NotFound(format!("parent task {}", cur)).into()),
+                    Some((Some(p),)) if p == id => {
+                        return Err(domain::DomainError::DependencyCycle(id).into());
+                    }
+                    Some((Some(p),)) => cur = p,
+                    Some((None,)) => break, // reached a top-level parent
+                }
+            }
+        }
+        Ok(TasksRepo::update(pool, id, title, description, estimate_pd, start, end,
+            is_long_term, parent_task_id, segment_kind).await?)
     }
 
     pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
@@ -98,6 +133,22 @@ impl TasksService {
         tx.commit().await?;
         Ok(())
     }
+}
+
+/// Validate long-term / segment fields (design §3.3.11, §3.4):
+/// - `segment_kind` must be one of milestone|phase|segment (or None).
+/// - A segment (non-None segment_kind) MUST have a parent_task_id; a plain long-term task
+///   (is_long_term with no segment_kind) has parent NULL.
+fn validate_segment(parent_task_id: Option<i64>, segment_kind: Option<&str>) -> Result<(), AppError> {
+    if let Some(kind) = segment_kind {
+        if !matches!(kind, "milestone" | "phase" | "segment") {
+            return Err(domain::DomainError::InvalidRatio(0.0).into());
+        }
+        if parent_task_id.is_none() {
+            return Err(domain::DomainError::InvalidRatio(0.0).into());
+        }
+    }
+    Ok(())
 }
 
 /// Edge direction: task depends on predecessor (task must come after predecessor).

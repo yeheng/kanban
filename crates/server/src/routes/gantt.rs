@@ -48,6 +48,7 @@ async fn add_dependency(
     Path(task_id): Path<i64>,
     Json(body): Json<AddDependency>,
 ) -> Result<axum::http::StatusCode, HttpError> {
+    let _dep_type = body.dep_type.as_deref().unwrap_or("finish_to_start");
     app::service::tasks::TasksService::add_dependency(
         &state.pool, task_id, body.predecessor_id, body.lag_days.unwrap_or(0),
     ).await?;

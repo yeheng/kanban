@@ -5,14 +5,21 @@ import type { DataTableColumns } from "naive-ui";
 import { useAllocationsStore } from "../stores/allocations";
 import { useResourcesStore } from "../stores/resources";
 import { useProjectsStore } from "../stores/projects";
+import { useRefreshStore } from "../stores/refresh";
 import AllocationForm from "../components/AllocationForm.vue";
 import type { AllocationView } from "../types";
 
 const allocations = useAllocationsStore();
 const resources = useResourcesStore();
 const projects = useProjectsStore();
+const refreshBus = useRefreshStore();
 onMounted(() => resources.load());
-watchEffect(async () => { if (projects.current != null) await allocations.load(projects.current); });
+// Reading refreshBus.version.allocations inside the effect makes it a dependency, so a bump
+// (e.g. after an AI accept) re-runs the load without a manual refresh (design G4).
+watchEffect(async () => {
+  void refreshBus.version.allocations;
+  if (projects.current != null) await allocations.load(projects.current);
+});
 
 // Edit modal state
 const editVisible = ref(false);

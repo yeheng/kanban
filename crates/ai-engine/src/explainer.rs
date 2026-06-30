@@ -87,6 +87,7 @@ pub mod llm {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use crate::explainer::Explainer;
         #[tokio::test]
         #[ignore = "needs Ollama running with the chat model"]
         async fn smoke_llm() {

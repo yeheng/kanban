@@ -5,9 +5,24 @@ use sqlx::SqlitePool;
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum ReportKind {
     ResourceUtilization,
+    TeamUtilization,
     ProjectBurn,
     AiDecisions,
     Cost,
+}
+
+/// A catalog entry describing a report kind: id, display title, the export formats
+/// available for it, and whether it accepts a project_id filter. Surfaced via
+/// `report_catalog()` so the frontend can render the design's report roadmap and hide
+/// unavailable formats instead of failing on export (design §8 / G5).
+#[derive(Debug, Clone, Serialize)]
+pub struct ReportCatalogEntry {
+    pub kind: String,
+    pub title: String,
+    pub description: String,
+    pub formats: Vec<String>,
+    pub accepts_project_id: bool,
+    pub mvp: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -24,6 +39,7 @@ impl ReportService {
     ) -> Result<ReportTable, AppError> {
         match kind {
             ReportKind::ResourceUtilization => Self::resource_utilization(pool, start, end).await,
+            ReportKind::TeamUtilization => Self::team_utilization(pool, start, end).await,
             ReportKind::ProjectBurn => Self::project_burn(pool).await,
             ReportKind::AiDecisions => Self::ai_decisions(pool).await,
             ReportKind::Cost => Self::cost(pool, project_id).await,
@@ -32,30 +48,58 @@ impl ReportService {
 
     async fn resource_utilization(pool: &SqlitePool, start: &str, end: &str) -> Result<ReportTable, AppError> {
         let cal = db::repo::calendar::hydrate(pool).await?;
+        // Global PM conversion for report-level PM columns (design §2.9; cross-resource
+        // aggregation uses the global N, not per-team overrides).
+        let unit = crate::service::thresholds::global_unit_config(pool).await?;
         let mut rows = Vec::new();
         for r in db::ResourcesRepo::list_active(pool).await? {
             let s = crate::service::workload::WorkloadService::resource_summary_with_cal(pool, &cal, r.id, start, end).await?;
             rows.push(vec![
                 r.name, fmt(s.capacity_pd), fmt(s.workload_pd), fmt(s.utilization),
                 s.overloaded.to_string(),
+                fmt(unit.pd_to_pm(s.capacity_pd)), fmt(unit.pd_to_pm(s.workload_pd)),
             ]);
         }
         Ok(ReportTable {
             title: "Resource Utilization".into(),
-            columns: cols(["resource", "capacity_pd", "workload_pd", "utilization", "overloaded"]),
+            columns: cols(["resource", "capacity_pd", "workload_pd", "utilization", "overloaded", "capacity_pm", "workload_pm"]),
+            rows,
+        })
+    }
+
+    /// Team utilization report (design §8 / G5 "by team" aggregation dimension).
+    /// Per active team: Σ workload / Σ capacity + overloaded-member count.
+    async fn team_utilization(pool: &SqlitePool, start: &str, end: &str) -> Result<ReportTable, AppError> {
+        let unit = crate::service::thresholds::global_unit_config(pool).await?;
+        let mut rows = Vec::new();
+        for t in db::TeamsRepo::list_active(pool).await? {
+            let s = crate::service::workload::WorkloadService::team_summary(pool, t.id, start, end).await?;
+            rows.push(vec![
+                t.name, s.overloaded_members.len().to_string(),
+                fmt(s.capacity_pd), fmt(s.workload_pd), fmt(s.utilization),
+                fmt(unit.pd_to_pm(s.capacity_pd)), fmt(unit.pd_to_pm(s.workload_pd)),
+            ]);
+        }
+        Ok(ReportTable {
+            title: "Team Utilization".into(),
+            columns: cols(["team", "overloaded_members", "capacity_pd", "workload_pd", "utilization", "capacity_pm", "workload_pm"]),
             rows,
         })
     }
 
     async fn project_burn(pool: &SqlitePool) -> Result<ReportTable, AppError> {
+        let unit = crate::service::thresholds::global_unit_config(pool).await?;
         let mut rows = Vec::new();
         for p in db::ProjectsRepo::list_active(pool).await? {
             let b = crate::service::workload::WorkloadService::project_burn(pool, p.id).await?;
-            rows.push(vec![p.name, fmt(b.budget_pd), fmt(b.allocated_pd), fmt(b.usage)]);
+            rows.push(vec![
+                p.name, fmt(b.budget_pd), fmt(b.allocated_pd), fmt(b.usage),
+                fmt(unit.pd_to_pm(b.budget_pd)), fmt(unit.pd_to_pm(b.allocated_pd)),
+            ]);
         }
         Ok(ReportTable {
             title: "Project Budget Burn".into(),
-            columns: cols(["project", "budget_pd", "allocated_pd", "usage"]),
+            columns: cols(["project", "budget_pd", "allocated_pd", "usage", "budget_pm", "allocated_pm"]),
             rows,
         })
     }
@@ -151,6 +195,44 @@ impl ReportService {
         serde_json::to_string_pretty(&serde_json::json!({
             "window": { "start": start, "end": end }, "resources": entries,
         })).map_err(|e| AppError::internal(e.to_string()))
+    }
+
+    /// Report catalog mapped to the design roadmap (design §8 / G5). Each entry lists the
+    /// formats actually available (csv/xlsx always; pdf only when the `app/pdf` feature is
+    /// compiled in) so the frontend can hide unavailable formats rather than fail on export.
+    pub fn report_catalog() -> Vec<ReportCatalogEntry> {
+        let csv_xlsx = vec!["csv".into(), "xlsx".into()];
+        #[cfg(feature = "pdf")]
+        let formats = { let mut f = csv_xlsx.clone(); f.push("pdf".into()); f };
+        #[cfg(not(feature = "pdf"))]
+        let formats = csv_xlsx;
+        vec![
+            ReportCatalogEntry {
+                kind: "ResourceUtilization".into(), title: "资源利用率".into(),
+                description: "按资源：容量/工作负载/利用率/过载 (MVP)".into(),
+                formats: formats.clone(), accepts_project_id: false, mvp: true,
+            },
+            ReportCatalogEntry {
+                kind: "TeamUtilization".into(), title: "团队利用率".into(),
+                description: "按团队聚合：Σ工作负载/Σ容量 + 过载成员 (MVP)".into(),
+                formats: formats.clone(), accepts_project_id: false, mvp: true,
+            },
+            ReportCatalogEntry {
+                kind: "ProjectBurn".into(), title: "项目预算消耗".into(),
+                description: "按项目：预算/已分配/消耗比 (MVP)".into(),
+                formats: formats.clone(), accepts_project_id: false, mvp: true,
+            },
+            ReportCatalogEntry {
+                kind: "Cost".into(), title: "成本".into(),
+                description: "按资源×项目：PD×费率 = 成本 (MVP)".into(),
+                formats: formats.clone(), accepts_project_id: true, mvp: true,
+            },
+            ReportCatalogEntry {
+                kind: "AiDecisions".into(), title: "AI 决策记录".into(),
+                description: "结构化 AI 运行记录 (MVP)".into(),
+                formats, accepts_project_id: false, mvp: true,
+            },
+        ]
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::error::DbError;
-use crate::models::Resource;
+use crate::models::{Resource, ResourceSkill, ResourceTag};
+use crate::tx::with_write_tx;
 use sqlx::SqlitePool;
 
 pub struct ResourcesRepo;
@@ -67,5 +68,70 @@ impl ResourcesRepo {
             .execute(pool).await?.rows_affected();
         if n == 0 { return Err(DbError::NotFound); }
         Ok(())
+    }
+
+    /// List a resource's skills with the skill name resolved (design §3.3.5).
+    pub async fn list_skills(pool: &SqlitePool, resource_id: i64) -> Result<Vec<ResourceSkill>, DbError> {
+        Ok(sqlx::query_as::<_, ResourceSkill>(
+            "SELECT rs.resource_id, rs.skill_id, s.name AS skill_name, rs.proficiency, rs.evidence \
+             FROM resource_skills rs JOIN skills s ON s.id = rs.skill_id \
+             WHERE rs.resource_id = ? ORDER BY s.name",
+        )
+        .bind(resource_id)
+        .fetch_all(pool)
+        .await?)
+    }
+
+    /// Replace a resource's skills atomically: (skill_id, proficiency). Caller validates
+    /// proficiency ∈ 1..=5 and that skill ids exist. Uses a write tx so a partial failure
+    /// rolls back (design §3.7 single-source-of-truth write paths).
+    pub async fn set_skills(
+        pool: &SqlitePool, resource_id: i64, skills: &[(i64, i64)],
+    ) -> Result<(), DbError> {
+        with_write_tx(pool, move |mut tx| {
+            Box::pin(async move {
+                sqlx::query("DELETE FROM resource_skills WHERE resource_id = ?")
+                    .bind(resource_id)
+                    .execute(&mut *tx).await?;
+                for &(sid, prof) in skills {
+                    sqlx::query(
+                        "INSERT INTO resource_skills (resource_id, skill_id, proficiency) VALUES (?,?,?)")
+                        .bind(resource_id).bind(sid).bind(prof)
+                        .execute(&mut *tx).await?;
+                }
+                Ok((tx, ()))
+            })
+        }).await
+    }
+
+    /// List a resource's tags with the tag name + color resolved (design §3.3.6).
+    pub async fn list_tags(pool: &SqlitePool, resource_id: i64) -> Result<Vec<ResourceTag>, DbError> {
+        Ok(sqlx::query_as::<_, ResourceTag>(
+            "SELECT rt.resource_id, rt.tag_id, t.name AS tag_name, t.color \
+             FROM resource_tags rt JOIN tags t ON t.id = rt.tag_id \
+             WHERE rt.resource_id = ? ORDER BY t.name",
+        )
+        .bind(resource_id)
+        .fetch_all(pool)
+        .await?)
+    }
+
+    /// Replace a resource's tags atomically: tag_ids. Caller validates tag ids exist.
+    pub async fn set_tags(
+        pool: &SqlitePool, resource_id: i64, tag_ids: &[i64],
+    ) -> Result<(), DbError> {
+        with_write_tx(pool, move |mut tx| {
+            Box::pin(async move {
+                sqlx::query("DELETE FROM resource_tags WHERE resource_id = ?")
+                    .bind(resource_id)
+                    .execute(&mut *tx).await?;
+                for &tid in tag_ids {
+                    sqlx::query("INSERT INTO resource_tags (resource_id, tag_id) VALUES (?,?)")
+                        .bind(resource_id).bind(tid)
+                        .execute(&mut *tx).await?;
+                }
+                Ok((tx, ()))
+            })
+        }).await
     }
 }

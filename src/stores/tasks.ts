@@ -15,6 +15,7 @@ export const useTasksStore = defineStore("tasks", () => {
     start: string | null; end: string | null;
     skillReqs: [number, number, boolean, number][]; tagIds: number[];
     description?: string | null;
+    isLongTerm?: boolean; parentTaskId?: number | null; segmentKind?: string | null;
   }) {
     await api.createTask(args);
     await load(args.projectId);
@@ -22,6 +23,7 @@ export const useTasksStore = defineStore("tasks", () => {
   async function update(id: number, args: {
     title: string; estimatePd: number; start: string | null; end: string | null;
     description?: string | null;
+    isLongTerm?: boolean; parentTaskId?: number | null; segmentKind?: string | null;
   }, pid: number) {
     await api.updateTask(id, args);
     await load(pid);

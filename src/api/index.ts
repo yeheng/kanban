@@ -1,4 +1,4 @@
-import type { Project, KanbanTask, Skill, Tag, Resource, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunRow } from "../types";
+import type { Project, KanbanTask, Skill, Tag, Resource, ResourceSkill, ResourceTag, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunRow } from "../types";
 
 export type SkillReq = [number, number, boolean, number];
 
@@ -53,6 +53,7 @@ export const api = {
     start: string | null; end: string | null;
     skillReqs: SkillReq[]; tagIds: number[];
     description?: string | null;
+    isLongTerm?: boolean; parentTaskId?: number | null; segmentKind?: string | null;
   }): Promise<number> =>
     request("POST", "/api/tasks", {
       project_id: args.projectId,
@@ -63,13 +64,16 @@ export const api = {
       skill_reqs: args.skillReqs,
       tag_ids: args.tagIds,
       description: args.description ?? null,
-      is_long_term: false,
+      is_long_term: args.isLongTerm ?? false,
+      parent_task_id: args.parentTaskId ?? null,
+      segment_kind: args.segmentKind ?? null,
       sort_order: 0,
     }),
   updateTask: (id: number, args: {
     title: string; estimatePd: number;
     start: string | null; end: string | null;
     description?: string | null;
+    isLongTerm?: boolean; parentTaskId?: number | null; segmentKind?: string | null;
   }): Promise<void> =>
     request("PATCH", `/api/tasks/${id}`, {
       title: args.title,
@@ -77,6 +81,9 @@ export const api = {
       estimate_pd: args.estimatePd,
       start: args.start,
       end: args.end,
+      is_long_term: args.isLongTerm ?? false,
+      parent_task_id: args.parentTaskId ?? null,
+      segment_kind: args.segmentKind ?? null,
     }),
   deleteTask: (id: number): Promise<void> =>
     request("DELETE", `/api/tasks/${id}`),
@@ -102,6 +109,14 @@ export const api = {
     }),
   deleteResource: (id: number): Promise<void> =>
     request("DELETE", `/api/resources/${id}`),
+  getResourceSkills: (id: number): Promise<ResourceSkill[]> =>
+    request("GET", `/api/resources/${id}/skills`),
+  setResourceSkills: (id: number, skills: [number, number][]): Promise<void> =>
+    request("PUT", `/api/resources/${id}/skills`, { skills }),
+  getResourceTags: (id: number): Promise<ResourceTag[]> =>
+    request("GET", `/api/resources/${id}/tags`),
+  setResourceTags: (id: number, tagIds: number[]): Promise<void> =>
+    request("PUT", `/api/resources/${id}/tags`, { tag_ids: tagIds }),
 
   // ---- Phase 2: workload ----
   resourceSummary: (resourceId: number, start: string, end: string): Promise<ResourceSummary> =>
@@ -113,6 +128,8 @@ export const api = {
   projectBurn: (projectId: number): Promise<ProjectBurn> =>
     request("GET", `/api/projects/${projectId}/burn`),
   getThresholds: (): Promise<Thresholds> => request("GET", "/api/thresholds"),
+  getUnitConfig: (): Promise<{ pd_hours: number; pm_workdays: number }> =>
+    request("GET", "/api/config/units"),
 
   // ---- Phase 2: allocations ----
   createAllocation: (resourceId: number, taskId: number, start: string, end: string, percent: number): Promise<number> =>
@@ -178,7 +195,7 @@ export const api = {
 
   // ---- Phase 5: reports ----
   /** Fetch a report file and trigger a browser download (no Tauri save dialog — the app is HTTP). */
-  async exportReport(kind: ReportKind, projectId: number | null, start: string, end: string, format: "csv" | "xlsx"): Promise<boolean> {
+  async exportReport(kind: ReportKind, projectId: number | null, start: string, end: string, format: ReportFormat): Promise<boolean> {
     const params = new URLSearchParams({ start, end, format });
     if (projectId != null) params.set("project_id", String(projectId));
     const res = await fetch(`${BASE}/api/reports/${kind}?${params}`);
@@ -193,10 +210,24 @@ export const api = {
     triggerDownload(await res.blob(), "workforce-snapshot.json");
     return true;
   },
+  /** Report roadmap with available formats (design §8 / G5). */
+  getReportCatalog: (): Promise<ReportCatalogEntry[]> =>
+    request("GET", "/api/reports/catalog"),
 };
 
-export const reportKinds = ["ResourceUtilization", "ProjectBurn", "AiDecisions", "Cost"] as const;
+export const reportKinds = ["ResourceUtilization", "TeamUtilization", "ProjectBurn", "AiDecisions", "Cost"] as const;
 export type ReportKind = typeof reportKinds[number];
+export type ReportFormat = "csv" | "xlsx" | "pdf";
+
+/** A report catalog entry from the backend (design §8 roadmap mapping). */
+export interface ReportCatalogEntry {
+  kind: string;
+  title: string;
+  description: string;
+  formats: string[];
+  accepts_project_id: boolean;
+  mvp: boolean;
+}
 
 /** Trigger a browser file download from a Blob (used by report exports). */
 function triggerDownload(blob: Blob, filename: string): void {

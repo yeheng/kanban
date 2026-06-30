@@ -24,6 +24,15 @@ pub struct ResourceSkill {
     pub evidence: Option<String>,
 }
 
+/// Resource↔tag join row with the tag name resolved (for display).
+#[derive(Debug, Clone, FromRow, serde::Serialize)]
+pub struct ResourceTag {
+    pub resource_id: i64,
+    pub tag_id: i64,
+    pub tag_name: String,
+    pub color: Option<String>,
+}
+
 /// Allocation row with its task's `project_id` already joined in. The project_id
 /// lives on the row (not passed to `to_domain`) so the bridge is zero-argument.
 #[derive(Debug, Clone, FromRow, serde::Serialize)]
@@ -143,8 +152,11 @@ pub struct Task {
 pub struct KanbanTask {
     pub id: i64,
     pub project_id: i64,
+    pub parent_task_id: Option<i64>,
     pub title: String,
     pub description: Option<String>,
+    pub is_long_term: i64,
+    pub segment_kind: Option<String>,
     pub status: String,
     pub sort_order: i64,
     pub estimate_pd: f64,

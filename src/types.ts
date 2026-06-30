@@ -5,13 +5,23 @@ export interface Project {
   max_parallel_tasks_per_day: number | null; status: string;
 }
 export interface KanbanTask {
-  id: number; project_id: number; title: string; status: string;
+  id: number; project_id: number; parent_task_id: number | null; title: string;
+  is_long_term: number; segment_kind: string | null; status: string;
   description: string | null; sort_order: number; estimate_pd: number;
   start_date: string | null; end_date: string | null;
   assignee: string | null; skill_count: number;
 }
 export interface Skill { id: number; name: string; }
 export interface Tag { id: number; name: string; color: string | null; }
+/** Resource↔skill with resolved name + proficiency 1..5 (design §3.3.5). */
+export interface ResourceSkill {
+  resource_id: number; skill_id: number; skill_name: string;
+  proficiency: number; evidence: string | null;
+}
+/** Resource↔tag with resolved name + color (design §3.3.6). */
+export interface ResourceTag {
+  resource_id: number; tag_id: number; tag_name: string; color: string | null;
+}
 export interface Resource {
   id: number; name: string; email: string | null;
   available_from: string | null; available_to: string | null;

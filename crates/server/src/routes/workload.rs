@@ -19,6 +19,8 @@ pub fn router() -> Router<AppState> {
         .route("/api/occupancy", get(daily_occupancy))
         // Dashboard color bands (global thresholds)
         .route("/api/thresholds", get(get_thresholds))
+        // Global PD/PM unit constants (design §2.9; used by frontend PM display)
+        .route("/api/config/units", get(get_unit_config))
 }
 
 /// Effective global thresholds for Dashboard color bands.
@@ -33,6 +35,19 @@ pub struct ThresholdsDto {
 async fn get_thresholds(State(state): State<AppState>) -> Result<Json<ThresholdsDto>, HttpError> {
     let t = db::SettingsRepo::thresholds(&state.pool).await?;
     Ok(Json(ThresholdsDto { overload: t.overload, underload: t.underload, green: t.green, yellow: t.yellow }))
+}
+
+/// Global PD/PM constants for frontend PM display (design §2.9). Per-team overrides are
+/// applied client-side via the team override API.
+#[derive(Debug, Serialize)]
+pub struct UnitConfigDto {
+    pub pd_hours: f64,
+    pub pm_workdays: f64,
+}
+
+async fn get_unit_config(State(state): State<AppState>) -> Result<Json<UnitConfigDto>, HttpError> {
+    let u = app::service::thresholds::global_unit_config(&state.pool).await?;
+    Ok(Json(UnitConfigDto { pd_hours: u.hours_per_pd, pm_workdays: u.pd_per_pm }))
 }
 
 #[derive(Debug, Deserialize)]

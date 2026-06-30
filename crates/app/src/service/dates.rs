@@ -1,31 +1,9 @@
 use crate::error::AppError;
 use chrono::NaiveDate;
 
-pub(crate) struct OptionalWindow {
-    pub start: Option<String>,
-    pub end: Option<String>,
-}
-
 pub(crate) struct RequiredWindow {
     pub start: String,
     pub end: String,
-}
-
-pub(crate) fn optional_window(
-    start: Option<&str>,
-    end: Option<&str>,
-) -> Result<OptionalWindow, AppError> {
-    let start_date = parse_optional(start)?;
-    let end_date = parse_optional(end)?;
-    if let (Some(s), Some(e)) = (start_date, end_date) {
-        if e < s {
-            return Err(domain::DomainError::InvalidDateWindow.into());
-        }
-    }
-    Ok(OptionalWindow {
-        start: start_date.map(format_date),
-        end: end_date.map(format_date),
-    })
 }
 
 pub(crate) fn required_window(start: &str, end: &str) -> Result<RequiredWindow, AppError> {
@@ -38,10 +16,6 @@ pub(crate) fn required_window(start: &str, end: &str) -> Result<RequiredWindow, 
         start: format_date(start_date),
         end: format_date(end_date),
     })
-}
-
-fn parse_optional(value: Option<&str>) -> Result<Option<NaiveDate>, AppError> {
-    value.map(parse_required).transpose()
 }
 
 fn parse_required(value: &str) -> Result<NaiveDate, AppError> {

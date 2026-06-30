@@ -11,10 +11,16 @@ use serde::Deserialize;
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        // GET /api/reports/catalog → report roadmap with available formats (design §8 / G5).
+        .route("/api/reports/catalog", get(catalog))
         // GET /api/reports/{kind}?project_id=&start=&end=&format=  → file download (bytes).
         .route("/api/reports/{kind}", get(export_report))
         // GET /api/reports/snapshot?start=&end=  → pretty JSON (also downloadable via the view).
         .route("/api/reports/snapshot", get(snapshot))
+}
+
+async fn catalog() -> Json<Vec<app::service::reports::ReportCatalogEntry>> {
+    Json(app::service::reports::ReportService::report_catalog())
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +74,7 @@ async fn snapshot(
 fn parse_kind(s: &str) -> Result<ReportKind, HttpError> {
     match s {
         "ResourceUtilization" => Ok(ReportKind::ResourceUtilization),
+        "TeamUtilization" => Ok(ReportKind::TeamUtilization),
         "ProjectBurn" => Ok(ReportKind::ProjectBurn),
         "AiDecisions" => Ok(ReportKind::AiDecisions),
         "Cost" => Ok(ReportKind::Cost),

@@ -2,8 +2,7 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import { api } from "../api";
 import type { RunResult, RunRow, ObjectiveWeights } from "../types";
-import { useAllocationsStore } from "./allocations";
-import { useGanttStore } from "./gantt";
+import { useRefreshStore } from "./refresh";
 
 export const useOptimizationStore = defineStore("optimization", () => {
   const current = ref<RunResult | null>(null);
@@ -21,12 +20,10 @@ export const useOptimizationStore = defineStore("optimization", () => {
     await api.applySolution(runId);
     current.value = null;
     await loadHistory();
-    // Clear dependent stores so stale allocation/gantt data gets reloaded on next visit
-    const alloc = useAllocationsStore();
-    const gantt = useGanttStore();
-    alloc.items = [];
-    gantt.bars = [];
-    gantt.deps = [];
+    // Applying an AI solution writes allocations, which invalidates every view that caches
+    // allocation-derived data (allocations, workload, gantt, kanban, calendar). Bump the shared
+    // refresh bus so subscribed views reload instead of showing stale data (design G4).
+    useRefreshStore().bump("allocations", "workload", "gantt", "kanban", "calendar");
   }
   async function reject(runId: number) { await api.rejectSolution(runId); current.value = null; await loadHistory(); }
   /** Normalize the three weights to sum to 1 (called on slider change). */

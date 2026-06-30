@@ -100,6 +100,50 @@ async fn validate_allocation_constraints(
 ) -> Result<(), AppError> {
     validate_capacity(pool, self_id, resource_id, task_id, start, end, percent).await?;
     validate_dependencies(pool, task_id, start, end).await?;
+    validate_skills(pool, resource_id, task_id).await?;
+    Ok(())
+}
+
+/// Enforce mandatory skill requirements (design §3.8 hard-constraint #4, §9 #12).
+///
+/// Each `task_skill_requirements` row with `is_mandatory = 1` requires the resource to
+/// hold the skill at `>= min_proficiency`. Soft requirements (`is_mandatory = 0`) are
+/// scoring hints and never block allocation (design §9 #12 "nice-to-have"). Returns the
+/// first missing/insufficient skill as a `SkillMismatch` domain error.
+async fn validate_skills(
+    pool: &SqlitePool,
+    resource_id: i64,
+    task_id: i64,
+) -> Result<(), AppError> {
+    // Mandatory requirements: (skill_id, min_proficiency).
+    let reqs: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT skill_id, min_proficiency \
+         FROM task_skill_requirements \
+         WHERE task_id = ? AND is_mandatory = 1",
+    )
+    .bind(task_id)
+    .fetch_all(pool)
+    .await?;
+
+    if reqs.is_empty() {
+        return Ok(());
+    }
+
+    // Resource proficiency per skill: (skill_id, proficiency).
+    let held: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT skill_id, proficiency FROM resource_skills WHERE resource_id = ?",
+    )
+    .bind(resource_id)
+    .fetch_all(pool)
+    .await?;
+    let held_map: HashMap<i64, i64> = held.into_iter().collect();
+
+    for (skill_id, min_prof) in reqs {
+        let have = held_map.get(&skill_id).copied().unwrap_or(0);
+        if have < min_prof {
+            return Err(domain::DomainError::SkillMismatch { task_id, skill_id }.into());
+        }
+    }
     Ok(())
 }
 
@@ -123,12 +167,14 @@ async fn validate_capacity(
     .ok_or_else(|| domain::DomainError::NotFound(format!("task {}", task_id)))?;
     let cal = db::repo::calendar::hydrate(pool).await?;
 
-    let rows: Vec<(i64, NaiveDate, NaiveDate, f64)> = sqlx::query_as(
-        "SELECT id, start_date, end_date, percent \
-         FROM allocations \
-         WHERE resource_id=? AND deleted_at IS NULL AND status <> 'cancelled' \
-           AND (? IS NULL OR id <> ?) \
-           AND start_date <= ? AND end_date >= ?",
+    // Join tasks to get each existing allocation's OWN project_id (calendar scope).
+    let rows: Vec<(i64, i64, NaiveDate, NaiveDate, f64)> = sqlx::query_as(
+        "SELECT a.id, t.project_id, a.start_date, a.end_date, a.percent \
+         FROM allocations a \
+         JOIN tasks t ON t.id = a.task_id AND t.deleted_at IS NULL \
+         WHERE a.resource_id=? AND a.deleted_at IS NULL AND a.status <> 'cancelled' \
+           AND (? IS NULL OR a.id <> ?) \
+           AND a.start_date <= ? AND a.end_date >= ?",
     )
     .bind(resource_id)
     .bind(self_id)
@@ -139,11 +185,16 @@ async fn validate_capacity(
     .await?;
 
     let mut load_by_day: HashMap<NaiveDate, f64> = HashMap::new();
-    for (_id, s, e, existing_percent) in rows {
+    for (_id, existing_project_id, s, e, existing_percent) in rows {
         let mut d = s.max(start_date);
         let last = e.min(end_date);
         while d <= last {
-            if cal.day_factor(project_id, resource_id, d) > 0.0 {
+            // Each existing allocation is rated against ITS OWN project's calendar
+            // (consistent with `domain::workload_pd` / `alloc_pd`), NOT the new task's
+            // project. This fixes a bug where a cross-project allocation on a day that is
+            // a holiday in the new task's project (but not the allocation's own project)
+            // was wrongly dropped from the load, masking capacity conflicts.
+            if cal.day_factor(existing_project_id, resource_id, d) > 0.0 {
                 *load_by_day.entry(d).or_default() += existing_percent;
             }
             d = d.checked_add_days(Days::new(1)).unwrap();

@@ -20,7 +20,7 @@ async fn end_to_end_kanban_with_assignee() {
 
     let tid = TasksService::create(
         &pool, pid, "Implement core", None, 5.0, Some("2026-06-05"), Some("2026-06-15"),
-        false, 0, &[(rust, 4, true, 1.0)], &[hot]).await.unwrap();
+        false, None, None, 0, &[(rust, 4, true, 1.0)], &[hot]).await.unwrap();
 
     // assign Alice (within task window & project window)
     AllocationsRepo::create(&pool, rid, tid, "2026-06-08", "2026-06-12", 0.5).await.unwrap();

@@ -30,6 +30,8 @@ struct CreateTask {
     start: Option<String>,
     end: Option<String>,
     is_long_term: Option<bool>,
+    parent_task_id: Option<i64>,
+    segment_kind: Option<String>,
     sort_order: Option<i64>,
     skill_reqs: Vec<(i64, i64, bool, f64)>,
     tag_ids: Vec<i64>,
@@ -48,6 +50,8 @@ async fn create_task(
         body.start.as_deref(),
         body.end.as_deref(),
         body.is_long_term.unwrap_or(false),
+        body.parent_task_id,
+        body.segment_kind.as_deref(),
         body.sort_order.unwrap_or(0),
         &body.skill_reqs,
         &body.tag_ids,
@@ -75,6 +79,9 @@ struct UpdateTask {
     estimate_pd: f64,
     start: Option<String>,
     end: Option<String>,
+    is_long_term: Option<bool>,
+    parent_task_id: Option<i64>,
+    segment_kind: Option<String>,
 }
 
 async fn update_task(
@@ -85,6 +92,8 @@ async fn update_task(
     app::service::tasks::TasksService::update(
         &state.pool, id, &body.title, body.description.as_deref(),
         body.estimate_pd, body.start.as_deref(), body.end.as_deref(),
+        body.is_long_term.unwrap_or(false),
+        body.parent_task_id, body.segment_kind.as_deref(),
     ).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

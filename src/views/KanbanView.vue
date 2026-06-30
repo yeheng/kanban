@@ -3,11 +3,13 @@ import { computed, ref, watchEffect } from "vue";
 import { NH2, NSpace, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, NButton, NSelect, NEmpty, NText } from "naive-ui";
 import { useTasksStore } from "../stores/tasks";
 import { useProjectsStore } from "../stores/projects";
+import { useRefreshStore } from "../stores/refresh";
 import KanbanColumn from "../components/KanbanColumn.vue";
 import type { KanbanTask, TaskStatus } from "../types";
 
 const tasks = useTasksStore();
 const projects = useProjectsStore();
+const refreshBus = useRefreshStore();
 const draggingId = ref<number | null>(null);
 
 // Edit modal state
@@ -37,6 +39,8 @@ const predecessorOptions = computed(() =>
 );
 
 watchEffect(async () => {
+  // Reload kanban when the refresh bus bumps it (allocation write / AI accept).
+  void refreshBus.version.kanban;
   if (projects.current) await tasks.load(projects.current);
 });
 

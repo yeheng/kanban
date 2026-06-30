@@ -4,11 +4,13 @@ import { NH2, NSpace, NButton, NSelect, NText, NAlert } from "naive-ui";
 import { useGanttStore } from "../stores/gantt";
 import { useProjectsStore } from "../stores/projects";
 import { useResourcesStore } from "../stores/resources";
+import { useRefreshStore } from "../stores/refresh";
 import GanttTimeline from "../components/GanttTimeline.vue";
 
 const gantt = useGanttStore();
 const projects = useProjectsStore();
 const resources = useResourcesStore();
+const refreshBus = useRefreshStore();
 const err = ref<string | null>(null);
 const start = ref("2026-06-29");
 const end = ref("2026-08-09");
@@ -22,6 +24,8 @@ const resourceOptions = computed(() =>
 );
 
 watchEffect(async () => {
+  // Reload when the refresh bus bumps gantt (e.g. after an allocation write / AI accept).
+  void refreshBus.version.gantt;
   if (gantt.mode === "project" && projects.current != null) {
     gantt.focusId = projects.current;
     await safeLoad();

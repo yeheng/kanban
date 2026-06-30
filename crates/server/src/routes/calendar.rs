@@ -2,7 +2,7 @@ use crate::error::HttpError;
 use crate::state::AppState;
 use app::service::calendar::CalendarService;
 use axum::extract::{Path, State};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get};
 use axum::{Json, Router};
 use db::models::{Holiday, TimeOff, WeekTemplate};
 use serde::Deserialize;

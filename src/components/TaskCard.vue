@@ -14,6 +14,8 @@ const unit = useUnitStore();
 <template>
   <div
     class="task-card"
+    :class="{ 'task-card--segment': task.parent_task_id != null }"
+    :style="{ marginLeft: task.parent_task_id != null ? '16px' : '0' }"
     draggable="true"
     @dragstart="emit('dragstart', task.id)"
     @click="emit('edit', task)"
@@ -39,6 +41,8 @@ const unit = useUnitStore();
       <n-tag v-if="task.skill_count" size="tiny" :bordered="false" type="info">
         {{ task.skill_count }} skill(s)
       </n-tag>
+      <n-tag v-if="task.is_long_term" size="tiny" :bordered="false" type="warning">长期</n-tag>
+      <n-tag v-if="task.segment_kind" size="tiny" :bordered="false" type="warning">{{ task.segment_kind }}</n-tag>
     </div>
     <n-text v-if="task.assignee" depth="3" class="task-card__assignee">
       @{{ task.assignee }}

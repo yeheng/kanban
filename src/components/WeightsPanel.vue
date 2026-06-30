@@ -29,7 +29,7 @@ const cn: Record<WeightKey, string> = { skill_fit: "技能最优", balance: "负
       <n-text>{{ Math.round(opt.weights[k] * 100) }}%</n-text>
     </n-space>
     <n-text depth="3" class="weights-panel__note">
-      权重会记录到运行快照供复现；求解器尚按均衡目标求解，权重生效在后续迭代接入。
+      权重已接入求解器：技能/负载权重影响候选排序与打分系数，预算权重达到主导时触发预算上限。权重随运行快照留存供复现。
     </n-text>
   </div>
 </template>

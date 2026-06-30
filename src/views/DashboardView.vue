@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { NH2, NH3, NSpace, NDatePicker, NButton, NSelect, NAlert, NText, NStatistic, NTable } from "naive-ui";
 import { useWorkloadStore } from "../stores/workload";
 import { useResourcesStore } from "../stores/resources";
 import { useProjectsStore } from "../stores/projects";
 import { useTeamsStore } from "../stores/teams";
 import { useUnitStore } from "../stores/unit";
+import { useRefreshStore } from "../stores/refresh";
 import UtilBar from "../components/UtilBar.vue";
 
 const wl = useWorkloadStore();
@@ -15,11 +16,13 @@ const teams = useTeamsStore();
 const unit = useUnitStore();
 const dateRange = ref<[number, number]>([Date.parse("2026-06-29"), Date.parse("2026-07-03")]);
 const selectedTeam = ref<number | null>(null);
+const allTeamsValue = "__all__";
 
 const teamOptions = computed(() => [
-  { label: "— 选择团队 —", value: null },
-  ...teams.items.map((t) => ({ label: t.name, value: t.id })),
+  { label: "— 选择团队 —", value: allTeamsValue },
+  ...teams.items.map((t) => ({ label: t.name, value: String(t.id) })),
 ]);
+const selectedTeamValue = computed(() => selectedTeam.value == null ? allTeamsValue : String(selectedTeam.value));
 
 function fmtDate(ms: number): string {
   const d = new Date(ms);
@@ -35,7 +38,17 @@ async function refresh() {
   if (projects.current != null) await wl.loadProjectBurn(projects.current);
   if (selectedTeam.value != null) await wl.loadTeamSummary(selectedTeam.value, start, end);
 }
+
+function updateSelectedTeam(value: string) {
+  selectedTeam.value = value === allTeamsValue ? null : Number(value);
+  void refresh();
+}
 onMounted(async () => { await wl.loadThresholds(); await teams.load(); await refresh(); });
+
+// Reload workload when an allocation/task change bumps the shared refresh bus (design G4),
+// so the dashboard reflects AI-accepted allocations without a manual refresh click.
+const refreshBus = useRefreshStore();
+watch(() => refreshBus.version.workload, () => { void refresh(); });
 </script>
 
 <template>
@@ -71,7 +84,7 @@ onMounted(async () => { await wl.loadThresholds(); await teams.load(); await ref
   />
 
   <n-h3>团队利用率</n-h3>
-  <n-select v-model:value="selectedTeam" :options="teamOptions" @update:value="refresh" style="width: 200px" />
+  <n-select :value="selectedTeamValue" :options="teamOptions" @update:value="updateSelectedTeam" style="width: 200px" />
   <div v-if="wl.teamSummary" style="margin-top: 8px">
     <UtilBar :utilization="wl.teamSummary.utilization" />
     <n-text depth="3" style="font-size: 12px">过载成员：{{ wl.teamSummary.overloaded_members.join(", ") || "无" }}</n-text>

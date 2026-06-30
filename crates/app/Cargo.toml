@@ -21,6 +21,9 @@ printpdf = { version = "0.7", default-features = false, optional = true }
 [features]
 default = []
 pdf = ["dep:printpdf"]
+# Forward to ai-engine's `llm` feature so `SemanticScorer`/`LlmExplainer` compile in when
+# the app is built with `--features llm` (opt-in semantic matching via local Ollama).
+llm = ["ai-engine/llm"]
 
 [dev-dependencies]
 tokio = { workspace = true }

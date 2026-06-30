@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { NH2, NList, NListItem, NThing, NText, NTag, NPopconfirm, NButton, NSpace, NModal, NForm, NFormItem, NInput, NDatePicker, NInputNumber, NEmpty } from "naive-ui";
+import { NH2, NList, NListItem, NThing, NText, NTag, NPopconfirm, NButton, NSpace, NModal, NForm, NFormItem, NInput, NDatePicker, NInputNumber, NEmpty, NSelect } from "naive-ui";
 import ResourceForm from "../components/ResourceForm.vue";
 import { useResourcesStore } from "../stores/resources";
+import { useCatalogStore } from "../stores/catalog";
 import { onMounted } from "vue";
-import type { Resource } from "../types";
+import type { Resource, ResourceSkill, ResourceTag } from "../types";
 
 const resources = useResourcesStore();
-onMounted(() => resources.load());
+const catalog = useCatalogStore();
+onMounted(() => { resources.load(); catalog.load(); });
 
 // Edit modal state
 const editVisible = ref(false);
@@ -18,6 +20,28 @@ const editAvailFrom = ref<number | null>(null);
 const editAvailTo = ref<number | null>(null);
 const editCapacity = ref<number | null>(null);
 const editRate = ref<number | null>(null);
+// Skills: selected skill ids with per-skill proficiency (1..5).
+const editSkills = ref<{ skillId: number; proficiency: number }[]>([]);
+// Tags: selected tag ids.
+const editTags = ref<number[]>([]);
+
+const skillOptions = () => catalog.skills.map(s => ({ label: s.name, value: s.id }));
+const tagOptions = () => catalog.tags.map(t => ({ label: t.name, value: t.id }));
+
+function updateSelectedSkills(ids: number[]) {
+  editSkills.value = ids.map((id) => {
+    const existing = editSkills.value.find((s) => s.skillId === id);
+    return existing ?? { skillId: id, proficiency: 3 };
+  });
+}
+
+// Display: per-resource skills/tags fetched lazily for the list.
+const skillCache = ref<Record<number, ResourceSkill[]>>({});
+const tagCache = ref<Record<number, ResourceTag[]>>({});
+async function loadDisplay(r: Resource) {
+  if (!skillCache.value[r.id]) skillCache.value[r.id] = await resources.loadSkills(r.id);
+  if (!tagCache.value[r.id]) tagCache.value[r.id] = await resources.loadTags(r.id);
+}
 
 function fmtDate(ms: number): string {
   const d = new Date(ms);
@@ -28,7 +52,7 @@ function parseDate(s: string | null): number | null {
   return Date.parse(s);
 }
 
-function openEdit(r: Resource) {
+async function openEdit(r: Resource) {
   editingId.value = r.id;
   editName.value = r.name;
   editEmail.value = r.email ?? "";
@@ -36,6 +60,10 @@ function openEdit(r: Resource) {
   editAvailTo.value = parseDate(r.available_to);
   editCapacity.value = r.daily_capacity_pd;
   editRate.value = r.daily_rate_pd;
+  // Load existing skills (with proficiency) + tags into the editor.
+  const [skills, tags] = await Promise.all([resources.loadSkills(r.id), resources.loadTags(r.id)]);
+  editSkills.value = skills.map(s => ({ skillId: s.skill_id, proficiency: s.proficiency }));
+  editTags.value = tags.map(t => t.tag_id);
   editVisible.value = true;
 }
 
@@ -49,6 +77,11 @@ async function saveEdit() {
     dailyCapacityPd: editCapacity.value,
     dailyRatePd: editRate.value,
   });
+  await resources.saveSkills(editingId.value, editSkills.value.map(s => [s.skillId, s.proficiency]));
+  await resources.saveTags(editingId.value, editTags.value);
+  // Refresh display cache for this resource.
+  delete skillCache.value[editingId.value];
+  delete tagCache.value[editingId.value];
   editVisible.value = false;
 }
 </script>
@@ -57,7 +90,7 @@ async function saveEdit() {
   <n-h2>资源 / Resources</n-h2>
   <ResourceForm />
   <n-list v-if="resources.items.length" bordered hoverable>
-    <n-list-item v-for="r in resources.items" :key="r.id">
+    <n-list-item v-for="r in resources.items" :key="r.id" @mouseenter="loadDisplay(r)">
       <n-thing :title="r.name">
         <template #description>
           <n-space :size="4" align="center">
@@ -65,9 +98,23 @@ async function saveEdit() {
             <n-tag v-if="r.daily_capacity_pd" size="tiny" :bordered="false">{{ r.daily_capacity_pd }} PD/天</n-tag>
             <n-tag v-if="r.daily_rate_pd" size="tiny" :bordered="false" type="info">{{ r.daily_rate_pd }}/天</n-tag>
             <n-text v-if="r.available_from" depth="3" style="font-size: 12px">从 {{ r.available_from }}</n-text>
+            <n-tag
+              v-for="s in (skillCache[r.id] || [])"
+              :key="'sk' + s.skill_id"
+              size="tiny"
+              :bordered="false"
+              type="success"
+            >{{ s.skill_name }} {{ s.proficiency }}</n-tag>
+            <n-tag
+              v-for="t in (tagCache[r.id] || [])"
+              :key="'tg' + t.tag_id"
+              size="tiny"
+              :bordered="false"
+              :color="{ color: t.color || undefined }"
+            >{{ t.tag_name }}</n-tag>
           </n-space>
         </template>
-        <template #suffix>
+        <template #action>
           <n-space :size="4">
             <n-button size="small" @click="openEdit(r)">编辑</n-button>
             <n-popconfirm @positive-click="resources.remove(r.id)">
@@ -102,6 +149,41 @@ async function saveEdit() {
       </n-form-item>
       <n-form-item label="日费率">
         <n-input-number v-model:value="editRate" :min="0" :step="100" placeholder="如 800" />
+      </n-form-item>
+      <n-form-item label="技能">
+        <n-space vertical style="width: 100%">
+          <n-select
+            multiple
+            :options="skillOptions()"
+            :value="editSkills.map(s => s.skillId)"
+            placeholder="选择技能"
+            @update:value="updateSelectedSkills"
+          />
+          <n-space v-if="editSkills.length" :size="4" vertical>
+            <n-space v-for="s in editSkills" :key="s.skillId" align="center" :size="8">
+              <n-text style="width: 90px; font-size: 12px">
+                {{ catalog.skills.find(sk => sk.id === s.skillId)?.name ?? s.skillId }}
+              </n-text>
+              <n-input-number
+                v-model:value="s.proficiency"
+                :min="1"
+                :max="5"
+                :step="1"
+                size="small"
+                style="width: 90px"
+              />
+              <n-text depth="3" style="font-size: 11px">熟练度 1-5</n-text>
+            </n-space>
+          </n-space>
+        </n-space>
+      </n-form-item>
+      <n-form-item label="标签">
+        <n-select
+          multiple
+          :options="tagOptions()"
+          v-model:value="editTags"
+          placeholder="选择标签"
+        />
       </n-form-item>
       <n-space justify="end">
         <n-button @click="editVisible = false">取消</n-button>

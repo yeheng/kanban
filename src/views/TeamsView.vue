@@ -103,7 +103,7 @@ function resourceName(id: number): string {
   <n-list bordered>
     <n-list-item v-for="t in teams.items" :key="t.id">
       <n-thing :title="t.name" :description="t.description ?? ''">
-        <template #suffix>
+        <template #action>
           <n-space :size="8">
             <n-button
               size="small"

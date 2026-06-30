@@ -40,7 +40,7 @@ function onProjectChange(id: number | null) {
 
 onMounted(async () => {
   for (let i = 0; i < 40; i++) {
-    try { await projects.load(); await catalog.load(); ready.value = true; return; }
+    try { await projects.load(); await catalog.load(); await unit.loadGlobal(); ready.value = true; return; }
     catch { await new Promise((r) => setTimeout(r, 100)); }
   }
 });

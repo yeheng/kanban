@@ -13,6 +13,8 @@ pub struct TaskCreate<'a> {
     pub start: Option<&'a str>,
     pub end: Option<&'a str>,
     pub is_long_term: bool,
+    pub parent_task_id: Option<i64>,
+    pub segment_kind: Option<&'a str>,
     pub sort_order: i64,
     pub skill_reqs: &'a [(i64 /*skill_id*/, i64 /*min_prof*/, bool /*mandatory*/, f64 /*weight*/)],
     pub tag_ids: &'a [i64],
@@ -26,11 +28,11 @@ impl TasksRepo {
     pub async fn create(pool: &SqlitePool, input: TaskCreate<'_>) -> Result<i64, DbError> {
         crate::tx::with_write_tx(pool, |mut tx| Box::pin(async move {
             let (id,): (i64,) = sqlx::query_as(
-                "INSERT INTO tasks (project_id, title, description, estimate_pd, start_date, end_date, \
-                 is_long_term, sort_order) VALUES (?,?,?,?,?,?,?,?) RETURNING id")
-                .bind(input.project_id).bind(input.title).bind(input.description)
+                "INSERT INTO tasks (project_id, parent_task_id, title, description, estimate_pd, start_date, end_date, \
+                 is_long_term, segment_kind, sort_order) VALUES (?,?,?,?,?,?,?,?,?,?) RETURNING id")
+                .bind(input.project_id).bind(input.parent_task_id).bind(input.title).bind(input.description)
                 .bind(input.estimate_pd).bind(input.start).bind(input.end)
-                .bind(input.is_long_term as i64).bind(input.sort_order)
+                .bind(input.is_long_term as i64).bind(input.segment_kind).bind(input.sort_order)
                 .fetch_one(&mut *tx).await?;
             for &(skill_id, min_prof, mandatory, weight) in input.skill_reqs {
                 sqlx::query(
@@ -65,12 +67,15 @@ impl TasksRepo {
     pub async fn update(
         pool: &SqlitePool, id: i64, title: &str, description: Option<&str>,
         estimate_pd: f64, start: Option<&str>, end: Option<&str>,
+        is_long_term: bool, parent_task_id: Option<i64>, segment_kind: Option<&str>,
     ) -> Result<(), DbError> {
         let n = sqlx::query(
             "UPDATE tasks SET title=?, description=?, estimate_pd=?, start_date=?, end_date=?, \
+                    is_long_term=?, parent_task_id=?, segment_kind=?, \
                     updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') \
              WHERE id=? AND deleted_at IS NULL")
-            .bind(title).bind(description).bind(estimate_pd).bind(start).bind(end).bind(id)
+            .bind(title).bind(description).bind(estimate_pd).bind(start).bind(end)
+            .bind(is_long_term as i64).bind(parent_task_id).bind(segment_kind).bind(id)
             .execute(pool).await?.rows_affected();
         if n == 0 { return Err(DbError::NotFound); }
         Ok(())
@@ -95,8 +100,8 @@ impl TasksRepo {
     /// Kanban-shaped read: task + first assignee name + skill count (design §7 Kanban card).
     pub async fn list_kanban(pool: &SqlitePool, project_id: i64) -> Result<Vec<KanbanTask>, DbError> {
         Ok(sqlx::query_as::<_, KanbanTask>(
-            "SELECT t.id, t.project_id, t.title, t.description, t.status, t.sort_order, \
-                    t.estimate_pd, t.start_date, t.end_date, \
+            "SELECT t.id, t.project_id, t.parent_task_id, t.title, t.description, t.is_long_term, t.segment_kind, \
+                    t.status, t.sort_order, t.estimate_pd, t.start_date, t.end_date, \
                     (SELECT r.name FROM allocations a JOIN resources r ON r.id = a.resource_id \
                      WHERE a.task_id = t.id AND a.deleted_at IS NULL AND r.deleted_at IS NULL LIMIT 1) AS assignee, \
                     (SELECT count(*) FROM task_skill_requirements sr WHERE sr.task_id = t.id) AS skill_count \
