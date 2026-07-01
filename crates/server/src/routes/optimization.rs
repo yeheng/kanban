@@ -1,6 +1,6 @@
 use crate::error::HttpError;
 use crate::state::AppState;
-use app::service::optimization::{OptimizationService, RunResult, RunRow};
+use app::service::optimization::{OptimizationService, RunList, RunResult};
 use axum::extract::{Path, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -10,6 +10,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/api/optimization/run/{project_id}", post(run_optimization))
         .route("/api/optimization/runs", get(list_runs))
+        .route("/api/optimization/runs/{id}", get(get_run))
         .route("/api/optimization/runs/{id}/apply", post(apply_solution))
         .route("/api/optimization/runs/{id}/reject", post(reject_solution))
 }
@@ -36,15 +37,26 @@ async fn run_optimization(
 }
 
 #[derive(Debug, Deserialize)]
-struct LimitQuery { limit: Option<i64> }
+struct PageQuery { offset: Option<i64>, limit: Option<i64> }
 
 #[tracing::instrument(skip(state))]
 async fn list_runs(
     State(state): State<AppState>,
-    Query(q): Query<LimitQuery>,
-) -> Result<Json<Vec<RunRow>>, HttpError> {
-    tracing::debug!("listing optimization runs");
-    Ok(Json(OptimizationService::list_recent(&state.pool, q.limit.unwrap_or(20)).await?))
+    Query(q): Query<PageQuery>,
+) -> Result<Json<RunList>, HttpError> {
+    let offset = q.offset.unwrap_or(0).max(0);
+    let limit = q.limit.unwrap_or(10).max(1);
+    tracing::debug!(offset = offset, limit = limit, "listing optimization runs");
+    Ok(Json(OptimizationService::list_recent(&state.pool, offset, limit).await?))
+}
+
+#[tracing::instrument(skip(state), fields(run_id = run_id))]
+async fn get_run(
+    State(state): State<AppState>,
+    Path(run_id): Path<i64>,
+) -> Result<Json<RunResult>, HttpError> {
+    tracing::debug!(run_id = run_id, "fetching optimization run");
+    Ok(Json(OptimizationService::get_run(&state.pool, run_id).await?))
 }
 
 #[tracing::instrument(skip(state), fields(run_id = run_id))]

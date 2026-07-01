@@ -99,6 +99,7 @@ export interface SolutionMetrics { overall: number; skill_fit: number; scheduled
 export interface Solution { run_id: number; assignments: ScoredAssignment[]; unscheduled: number[]; metrics: SolutionMetrics; }
 export interface RunResult { run_id: number; plan: { solution: Solution; explanation_md: string; }; }
 export interface RunRow { id: number; objective: string; status: string; applied: number; score_overall: number | null; created_at: string; }
+export interface RunList { rows: RunRow[]; total: number; }
 
 // Global settings (design §3.3.1)
 export interface Settings {

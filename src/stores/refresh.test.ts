@@ -13,7 +13,7 @@ import { api } from "../api";
 vi.mock("../api", () => ({
   api: {
     applySolution: vi.fn().mockResolvedValue(undefined),
-    listOptimizationRuns: vi.fn().mockResolvedValue([]),
+    listOptimizationRuns: vi.fn().mockResolvedValue({ rows: [], total: 0 }),
     createAllocation: vi.fn().mockResolvedValue(1),
     listAllocations: vi.fn().mockResolvedValue([]),
     rejectSolution: vi.fn().mockResolvedValue(undefined),

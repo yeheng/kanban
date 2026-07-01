@@ -5,7 +5,7 @@ use ai_engine::types::*;
 use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[allow(unused_imports)]
@@ -197,14 +197,72 @@ impl OptimizationService {
         Ok(())
     }
 
-    #[tracing::instrument(skip(pool), fields(limit = limit))]
-    pub async fn list_recent(pool: &SqlitePool, limit: i64) -> Result<Vec<RunRow>, AppError> {
+    /// Paginated list of historical runs. Returns both the page rows and the total count so
+    /// the frontend can render a real pager (offset/limit, ordered newest-first).
+    #[tracing::instrument(skip(pool), fields(offset = offset, limit = limit))]
+    pub async fn list_recent(pool: &SqlitePool, offset: i64, limit: i64) -> Result<RunList, AppError> {
+        let limit = limit.max(1);
         let rows = sqlx::query_as::<_, RunRow>(
             "SELECT id, objective, status, applied, score_overall, created_at FROM ai_optimization_runs \
-             ORDER BY created_at DESC LIMIT ?")
-            .bind(limit).fetch_all(pool).await?;
-        tracing::debug!(count = rows.len(), limit = limit, "listed optimization runs");
-        Ok(rows)
+             ORDER BY created_at DESC LIMIT ? OFFSET ?")
+            .bind(limit).bind(offset.max(0)).fetch_all(pool).await?;
+        let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM ai_optimization_runs")
+            .fetch_one(pool).await?;
+        tracing::debug!(count = rows.len(), total = total, offset = offset, limit = limit, "listed optimization runs");
+        Ok(RunList { rows, total })
+    }
+
+    /// Reconstruct a persisted run as a `RunResult` so the UI (or reports) can replay the
+    /// AI decision: assignments, unscheduled tasks, metrics, and explanation. The unscheduled
+    /// list is derived from the input snapshot (all candidate tasks minus assigned ones) so it
+    /// remains accurate even if tasks are later deleted or changed.
+    #[tracing::instrument(skip(pool), fields(run_id = run_id))]
+    pub async fn get_run(pool: &SqlitePool, run_id: i64) -> Result<RunResult, AppError> {
+        let row: RunDetailRow = sqlx::query_as(
+            "SELECT id, output_plan_json, input_snapshot_json, score_overall, score_skill_fit, \
+             score_scheduled_ratio, score_fairness, explanation_md, solver_status \
+             FROM ai_optimization_runs WHERE id=?",
+        )
+        .bind(run_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::not_found(format!("optimization run {run_id}")))?;
+
+        let assignments: Vec<ai_engine::ScoredAssignment> =
+            serde_json::from_str(row.output_plan_json.as_deref().unwrap_or("[]"))
+                .map_err(|e| AppError::internal(format!("invalid optimization plan json: {e}")))?;
+
+        // Reconstruct the problem snapshot so we can recover the full candidate task set.
+        let problem: AllocationProblem =
+            serde_json::from_str(&row.input_snapshot_json).unwrap_or_default();
+        let assigned: HashSet<i64> = assignments.iter().map(|a| a.task_id).collect();
+        let mut unscheduled: Vec<i64> = problem
+            .tasks
+            .iter()
+            .map(|t| t.id)
+            .filter(|id| !assigned.contains(id))
+            .collect();
+        // Preserve a deterministic order for easier UI diffs.
+        unscheduled.sort();
+
+        let solution = Solution {
+            run_id: row.id,
+            assignments,
+            unscheduled,
+            metrics: SolutionMetrics {
+                overall: row.score_overall.unwrap_or(0.0),
+                skill_fit: row.score_skill_fit.unwrap_or(0.0),
+                scheduled_ratio: row.score_scheduled_ratio.unwrap_or(0.0),
+                fairness: row.score_fairness.unwrap_or(0.0),
+            },
+            status: parse_solver_status(&row.solver_status),
+        };
+        let plan = ai_engine::OptimizedPlan {
+            solution,
+            explanation_md: row.explanation_md.unwrap_or_default(),
+        };
+        tracing::debug!(run_id = run_id, assignments = plan.solution.assignments.len(), unscheduled = plan.solution.unscheduled.len(), "loaded optimization run");
+        Ok(RunResult { run_id: row.id, plan })
     }
     /// 列出某 run 的全部 LLM 建议。
     pub async fn list_suggestions(pool: &SqlitePool, run_id: i64) -> Result<Vec<SuggestionItem>, AppError> {
@@ -346,6 +404,36 @@ pub struct RunRow {
     pub applied: i64,
     pub score_overall: Option<f64>,
     pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RunList {
+    pub rows: Vec<RunRow>,
+    pub total: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RunDetailRow {
+    pub id: i64,
+    pub output_plan_json: Option<String>,
+    pub input_snapshot_json: String,
+    pub score_overall: Option<f64>,
+    pub score_skill_fit: Option<f64>,
+    pub score_scheduled_ratio: Option<f64>,
+    pub score_fairness: Option<f64>,
+    pub explanation_md: Option<String>,
+    pub solver_status: String,
+}
+
+fn parse_solver_status(s: &str) -> SolverStatus {
+    match s {
+        "optimal" => SolverStatus::Optimal,
+        "feasible" => SolverStatus::Feasible,
+        "infeasible" => SolverStatus::Infeasible,
+        "timeout" => SolverStatus::Timeout,
+        "error" => SolverStatus::Error,
+        _ => SolverStatus::Feasible,
+    }
 }
 
 /// Re-read the current (start, end) window for each id in `ids`, inside the given tx, so apply()

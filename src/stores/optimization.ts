@@ -1,12 +1,14 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import { api } from "../api";
-import type { RunResult, RunRow, ObjectiveWeights } from "../types";
+import type { RunResult, RunList, ObjectiveWeights } from "../types";
 import { useRefreshStore } from "./refresh";
 
 export const useOptimizationStore = defineStore("optimization", () => {
   const current = ref<RunResult | null>(null);
-  const history = ref<RunRow[]>([]);
+  const history = ref<RunList>({ rows: [], total: 0 });
+  const page = ref(1);
+  const pageSize = ref(10);
   const weights = ref<ObjectiveWeights>({ skill_fit: 0.4, balance: 0.4, budget: 0.2 });
   const busy = ref(false);
 
@@ -15,7 +17,21 @@ export const useOptimizationStore = defineStore("optimization", () => {
     try { current.value = await api.runOptimization(projectId, weights.value); }
     finally { busy.value = false; }
   }
-  async function loadHistory() { history.value = await api.listOptimizationRuns(20); }
+  async function loadHistory() {
+    const offset = (page.value - 1) * pageSize.value;
+    history.value = await api.listOptimizationRuns(offset, pageSize.value);
+  }
+  async function loadRun(runId: number) { current.value = await api.getOptimizationRun(runId); }
+  async function setPage(n: number) {
+    const totalPages = Math.max(1, Math.ceil(history.value.total / pageSize.value));
+    page.value = Math.max(1, Math.min(n, totalPages));
+    await loadHistory();
+  }
+  async function setPageSize(n: number) {
+    pageSize.value = Math.max(1, n);
+    page.value = 1;
+    await loadHistory();
+  }
   async function accept(runId: number) {
     await api.applySolution(runId);
     current.value = null;
@@ -37,5 +53,5 @@ export const useOptimizationStore = defineStore("optimization", () => {
       };
     }
   }
-  return { current, history, weights, busy, run, loadHistory, accept, reject, normalize };
+  return { current, history, page, pageSize, weights, busy, run, loadHistory, loadRun, setPage, setPageSize, accept, reject, normalize };
 });
