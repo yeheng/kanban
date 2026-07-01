@@ -28,6 +28,7 @@ impl Advisor for NoAdvisor {
 /// - ChangeResourceCapacity / UpsertResourceSkill：覆盖对应字段（范围已在 LlmAdvisor::validate_item 校验）。
 /// - AddResource：**跳过**——需从 DB 取 resource，app 层 rerun 单独处理（本函数只动内存）。
 /// - SwapResource / ChangePercent：advisory，不强制生效（求解器无对应旋钮），本函数不改动 problem。
+///
 /// 冲突（同一目标多条）后写覆盖。返回被跳过的 AddResource 列表，供 rerun 从 DB 补。
 pub fn apply_suggestions(problem: &mut AllocationProblem, suggestions: &[Suggestion]) -> Vec<Suggestion> {
     let mut add_resource_pending = Vec::new();

@@ -320,14 +320,15 @@ impl OptimizationService {
     pub async fn rerun(
         pool: &SqlitePool, parent_run_id: i64, accepted_ids: Vec<i64>,
     ) -> Result<RunResult, AppError> {
-        // 1. 读父 run 快照 + 配置。
+        // 1. 读父 run 快照 + 配置。weights/config 不单独读——它们已编码进 input_snapshot_json，
+        //    rerun 从重建的 problem 取 weights，config 由下方 ai 设置覆盖。
         #[derive(sqlx::FromRow)]
         struct ParentRow {
-            input_snapshot_json: String, weights_json: String, config_json: String,
+            input_snapshot_json: String,
             scope_project_ids: Option<String>,
         }
         let parent: ParentRow = sqlx::query_as(
-            "SELECT input_snapshot_json, weights_json, config_json, scope_project_ids \
+            "SELECT input_snapshot_json, scope_project_ids \
              FROM ai_optimization_runs WHERE id=?")
             .bind(parent_run_id).fetch_optional(pool).await?
             .ok_or_else(|| AppError::not_found(format!("optimization run {parent_run_id}")))?;
