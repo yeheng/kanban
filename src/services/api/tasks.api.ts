@@ -1,3 +1,4 @@
+import { type MaybeRef, computed, toValue } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { KanbanTask, Task, TaskStatus } from "@/types";
@@ -5,19 +6,23 @@ import type { KanbanTask, Task, TaskStatus } from "@/types";
 /** [skillId, proficiency, required, weight] — 与旧 api/index.ts 的 SkillReq 一致。 */
 export type SkillReq = [number, number, boolean, number];
 
-export function useListTasksQuery(projectId: number) {
+export function useListTasksQuery(projectId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(projectId));
   return useQuery<Task[]>({
-    queryKey: ["tasks", projectId],
-    queryFn: () => apiFetch<Task[]>(`/api/projects/${projectId}/tasks`),
+    queryKey: computed(() => ["tasks", id.value]),
+    queryFn: () => apiFetch<Task[]>(`/api/projects/${id.value}/tasks`),
+    enabled: () => id.value != null,
   });
 }
 
-export function useKanbanTasksQuery(projectId: number) {
+export function useKanbanTasksQuery(projectId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(projectId));
   return useQuery<KanbanTask[]>({
-    queryKey: ["kanban", projectId],
-    queryFn: () => apiFetch<KanbanTask[]>(`/api/projects/${projectId}/kanban`),
+    queryKey: computed(() => ["kanban", id.value]),
+    queryFn: () => apiFetch<KanbanTask[]>(`/api/projects/${id.value}/kanban`),
+    enabled: () => id.value != null,
   });
 }
 

@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watchEffect } from "vue";
-import { useAllocationsStore } from "@/stores/allocations";
-import { useResourcesStore } from "@/stores/resources";
+import { computed, ref } from "vue";
+import { useListAllocationsQuery, useUpdateAllocationMutation, useDeleteAllocationMutation } from "@/services/api/allocations.api";
 import { useProjectsStore } from "@/stores/projects";
-import { useRefreshStore } from "@/stores/refresh";
 import AllocationForm from "@/components/AllocationForm.vue";
 import DateRangePicker from "@/components/DateRangePicker.vue";
 import { Button } from "@/components/ui/button";
@@ -14,17 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { fmtDate, parseDateStrict } from "@/utils/date";
 import type { AllocationView } from "@/types";
 
-const allocations = useAllocationsStore();
-const resources = useResourcesStore();
+const allocationsQuery = useListAllocationsQuery(computed(() => projects.current));
+const updateAllocation = useUpdateAllocationMutation();
+const deleteAllocation = useDeleteAllocationMutation();
 const projects = useProjectsStore();
-const refreshBus = useRefreshStore();
-onMounted(() => resources.load());
-// Reading refreshBus.version.allocations inside the effect makes it a dependency, so a bump
-// (e.g. after an AI accept) re-runs the load without a manual refresh (design G4).
-watchEffect(async () => {
-  void refreshBus.version.allocations;
-  if (projects.current != null) await allocations.load(projects.current);
-});
 
 // Edit modal state
 const editVisible = ref(false);
@@ -41,13 +32,13 @@ function openEdit(row: AllocationView) {
 
 async function saveEdit() {
   if (editingId.value == null || projects.current == null) return;
-  await allocations.update(
-    editingId.value,
-    fmtDate(editDateRange.value[0]),
-    fmtDate(editDateRange.value[1]),
-    editPercent.value,
-    projects.current,
-  );
+  await updateAllocation.mutateAsync({
+    id: editingId.value,
+    start: fmtDate(editDateRange.value[0]),
+    end: fmtDate(editDateRange.value[1]),
+    percent: editPercent.value,
+    projectId: projects.current,
+  });
   editVisible.value = false;
 }
 
@@ -62,12 +53,12 @@ function openDelete(row: AllocationView) {
 
 async function confirmDelete() {
   if (deleteTargetId.value == null || projects.current == null) return;
-  await allocations.remove(deleteTargetId.value, projects.current);
+  await deleteAllocation.mutateAsync({ id: deleteTargetId.value, projectId: projects.current });
   deleteVisible.value = false;
   deleteTargetId.value = null;
 }
 
-const tableData = computed(() => allocations.items);
+const tableData = computed(() => allocationsQuery.data.value ?? []);
 </script>
 
 <template>

@@ -18,64 +18,71 @@ import {
 } from "@/components/ui/number-field";
 import { Badge } from "@/components/ui/badge";
 import DateRangePicker from "@/components/DateRangePicker.vue";
-import { useAllocationsStore } from "@/stores/allocations";
-import { useResourcesStore } from "@/stores/resources";
+import { useCreateAllocationMutation } from "@/services/api/allocations.api";
+import { useListResourcesQuery } from "@/services/api/resources.api";
+import { useListTasksQuery } from "@/services/api/tasks.api";
+import { useResourceSummaryQuery } from "@/services/api/workload.api";
 import { useProjectsStore } from "@/stores/projects";
-import { api } from "@/api";
 import { fmtDate, parseDateStrict } from "@/utils/date";
-import type { Task } from "@/types";
 
-const allocations = useAllocationsStore();
-const resources = useResourcesStore();
+const createAllocation = useCreateAllocationMutation();
+const resourcesQuery = useListResourcesQuery();
 const projects = useProjectsStore();
+const tasksQuery = useListTasksQuery(computed(() => projects.current));
+
 const resourceId = ref<number | null>(null);
 const taskId = ref<number | null>(null);
 const dateRange = ref<[number, number]>([parseDateStrict("2026-06-29"), parseDateStrict("2026-07-03")]);
 const percent = ref(0.5);
-const tasks = ref<Task[]>([]);
 const impact = ref<{ utilization: number; overloaded: boolean } | null>(null);
 const error = ref<string | null>(null);
 
 const resourceOptions = computed(() =>
-  resources.items.map((r) => ({ label: r.name, value: r.id })),
+  (resourcesQuery.data.value ?? []).map((r) => ({ label: r.name, value: r.id })),
 );
 const taskOptions = computed(() =>
-  tasks.value.map((t) => ({ label: t.title, value: t.id })),
+  (tasksQuery.data.value ?? []).map((t) => ({ label: t.title, value: t.id })),
 );
 
 const resourceIdSelect = computed<string | number | undefined>({
   get: () => resourceId.value ?? undefined,
-  set: (v) => {
-    resourceId.value = v == null ? null : Number(v);
-  },
+  set: (v) => { resourceId.value = v == null ? null : Number(v); },
 });
 
 const taskIdSelect = computed<string | number | undefined>({
   get: () => taskId.value ?? undefined,
-  set: (v) => {
-    taskId.value = v == null ? null : Number(v);
-  },
+  set: (v) => { taskId.value = v == null ? null : Number(v); },
 });
 
-async function loadTasks() {
-  if (projects.current == null) return;
-  tasks.value = await api.listTasks(projects.current);
-}
+const startStr = computed(() => fmtDate(dateRange.value[0]));
+const endStr = computed(() => fmtDate(dateRange.value[1]));
+const resourceSummaryQuery = useResourceSummaryQuery(resourceId, startStr, endStr);
+
+watch([resourceId, dateRange], () => {
+  impact.value = null;
+});
+
 async function submit() {
   error.value = null;
   if (resourceId.value == null || taskId.value == null || projects.current == null) return;
-  const start = fmtDate(dateRange.value[0]);
-  const end = fmtDate(dateRange.value[1]);
+  const start = startStr.value;
+  const end = endStr.value;
   try {
-    await allocations.create(resourceId.value, taskId.value, start, end, percent.value, projects.current);
-    const s = await api.resourceSummary(resourceId.value, start, end);
-    impact.value = { utilization: s.utilization, overloaded: s.overloaded };
+    await createAllocation.mutateAsync({
+      resourceId: resourceId.value,
+      taskId: taskId.value,
+      start,
+      end,
+      percent: percent.value,
+      projectId: projects.current,
+    });
+    await resourceSummaryQuery.refetch();
+    const s = resourceSummaryQuery.data.value;
+    impact.value = s ? { utilization: s.utilization, overloaded: s.overloaded } : null;
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : String(e);
   }
 }
-resources.load();
-watch(() => projects.current, () => { loadTasks(); }, { immediate: true });
 </script>
 
 <template>

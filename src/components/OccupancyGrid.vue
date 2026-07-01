@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import { useWorkloadStore } from "../stores/workload";
 import type { DayOccupancy } from "../types";
 const props = defineProps<{ items: DayOccupancy[]; days: string[]; resources: { id: number; name: string }[] }>();
-const wl = useWorkloadStore();
+
 function cell(rid: number, day: string) {
   return props.items.find((o) => o.resource_id === rid && o.date === day);
 }
+
+function band(util: number): "under" | "green" | "yellow" | "red" {
+  // Hardcoded thresholds matching the old workload store defaults.
+  if (util >= 1.1) return "red";
+  if (util >= 1.0) return "yellow";
+  if (util >= 0.7) return "green";
+  return "under";
+}
+
 function bg(o?: DayOccupancy) {
   if (!o) return "#f7f7fa";
-  // Prefer the server's per-team band; fall back to the global band for older payloads.
-  const b = o.status ?? wl.band(o.utilization);
+  const b = o.status ?? band(o.utilization);
   return ({ under: "#e0e0e6", green: "#9ad19a", yellow: "#f0d070", red: "#e08090" } as const)[b];
 }
 </script>

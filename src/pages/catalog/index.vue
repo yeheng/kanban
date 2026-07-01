@@ -1,27 +1,29 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { ref } from "vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { useCatalogStore } from "@/stores/catalog";
+import { useListSkillsQuery, useListTagsQuery, useEnsureSkillMutation, useEnsureTagMutation } from "@/services/api/catalog.api";
 
-const catalog = useCatalogStore();
+const skillsQuery = useListSkillsQuery();
+const tagsQuery = useListTagsQuery();
+const ensureSkill = useEnsureSkillMutation();
+const ensureTag = useEnsureTagMutation();
+
 const skillName = ref("");
 const tagName = ref("");
 
-onMounted(() => catalog.load());
-
 async function addSkill() {
   if (!skillName.value.trim()) return;
-  await catalog.ensureSkill(skillName.value);
+  await ensureSkill.mutateAsync(skillName.value);
   skillName.value = "";
 }
 
 async function addTag() {
   if (!tagName.value.trim()) return;
-  await catalog.ensureTag(tagName.value, null);
+  await ensureTag.mutateAsync({ name: tagName.value, color: null });
   tagName.value = "";
 }
 </script>
@@ -38,9 +40,9 @@ async function addTag() {
     <Button @click="addSkill">添加技能</Button>
   </div>
 
-  <Card v-if="catalog.skills.length" class="mt-4">
+  <Card v-if="(skillsQuery.data.value ?? []).length" class="mt-4">
     <CardContent class="divide-y p-0">
-      <div v-for="s in catalog.skills" :key="s.id" class="flex items-center justify-between px-4 py-3">
+      <div v-for="s in skillsQuery.data.value ?? []" :key="s.id" class="flex items-center justify-between px-4 py-3">
         <span class="font-medium">{{ s.name }}</span>
         <Badge variant="secondary">ID: {{ s.id }}</Badge>
       </div>
@@ -57,8 +59,8 @@ async function addTag() {
     <Button @click="addTag">添加标签</Button>
   </div>
 
-  <div v-if="catalog.tags.length" class="mt-4 flex flex-wrap gap-2">
-    <Badge v-for="t in catalog.tags" :key="t.id" :style="t.color ? { backgroundColor: t.color } : undefined">
+  <div v-if="(tagsQuery.data.value ?? []).length" class="mt-4 flex flex-wrap gap-2">
+    <Badge v-for="t in tagsQuery.data.value ?? []" :key="t.id" :style="t.color ? { backgroundColor: t.color } : undefined">
       {{ t.name }}
     </Badge>
   </div>

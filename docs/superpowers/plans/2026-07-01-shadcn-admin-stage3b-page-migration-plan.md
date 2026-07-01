@@ -1367,11 +1367,11 @@ import { useListResourcesQuery } from "@/services/api/resources.api";
 import { useListTeamsQuery } from "@/services/api/teams.api";
 import { useListProjectsQuery } from "@/services/api/projects.api";
 import {
-  useGetThresholdsQuery,
   useProjectBurnQuery,
   useTeamSummaryQuery,
   useOverloadsQuery,
 } from "@/services/api/workload.api";
+import { useGetThresholdsQuery } from "@/services/api/config.api";
 import { useGetTeamOverrideQuery } from "@/services/api/teams.api";
 import { useProjectsStore } from "@/stores/projects";
 import { useUnitStore } from "@/stores/unit";
@@ -1898,7 +1898,6 @@ function toDateValue(ms: number): DateValue {
   const [year, month, dayOfMonth] = s.split("-").map(Number);
   return new CalendarDate(year, month, dayOfMonth);
 }
-
 function fromDateValue(dv: DateValue): number {
   return (
     parseDate(`${dv.year}-${String(dv.month).padStart(2, "0")}-${String(dv.day).padStart(2, "0")}`) ??
@@ -2691,5 +2690,3 @@ Known simplifications carried forward (as documented in spec):
 - AI history is paginated client-side because `useListOptimizationRunsQuery` returns all rows.
 
 No placeholders remain in this plan.
-
-

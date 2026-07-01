@@ -1,13 +1,10 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
-import { useCalendarStore } from "@/stores/calendar";
-import { useResourcesStore } from "@/stores/resources";
+import { useListResourcesQuery } from "@/services/api/resources.api";
 import WorkWeekEditor from "@/components/WorkWeekEditor.vue";
 import HolidayList from "@/components/HolidayList.vue";
 import TimeOffList from "@/components/TimeOffList.vue";
-const cal = useCalendarStore();
-const resources = useResourcesStore();
-onMounted(async () => { await resources.load(); await cal.loadHolidays(); await cal.loadWeek(); });
+
+const resourcesQuery = useListResourcesQuery();
 </script>
 
 <template>
@@ -18,6 +15,6 @@ onMounted(async () => { await resources.load(); await cal.loadHolidays(); await 
     <h2 class="text-xl font-semibold tracking-tight">节假日</h2>
     <HolidayList />
     <h2 class="text-xl font-semibold tracking-tight">请假 / 调休</h2>
-    <TimeOffList />
+    <TimeOffList :resources="resourcesQuery.data.value ?? []" />
   </div>
 </template>

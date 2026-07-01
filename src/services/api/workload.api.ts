@@ -1,44 +1,66 @@
+import { type MaybeRef, computed, toValue } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { ProjectBurn, ResourceSummary, TeamSummary } from "@/types";
 
-export function useResourceSummaryQuery(resourceId: number, start: string, end: string) {
+export function useResourceSummaryQuery(
+  resourceId: MaybeRef<number | null>,
+  start: MaybeRef<string>,
+  end: MaybeRef<string>,
+) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(resourceId));
+  const s = computed(() => toValue(start));
+  const e = computed(() => toValue(end));
   return useQuery<ResourceSummary>({
-    queryKey: ["workload-resource", resourceId, start, end],
+    queryKey: computed(() => ["workload-resource", id.value, s.value, e.value]),
     queryFn: () =>
       apiFetch<ResourceSummary>(
-        `/api/workload/resources/${resourceId}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+        `/api/workload/resources/${id.value}?start=${encodeURIComponent(s.value)}&end=${encodeURIComponent(e.value)}`,
       ),
+    enabled: () => id.value != null && !!s.value && !!e.value,
   });
 }
 
-export function useTeamSummaryQuery(teamId: number, start: string, end: string) {
+export function useTeamSummaryQuery(
+  teamId: MaybeRef<number | null>,
+  start: MaybeRef<string>,
+  end: MaybeRef<string>,
+) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(teamId));
+  const s = computed(() => toValue(start));
+  const e = computed(() => toValue(end));
   return useQuery<TeamSummary>({
-    queryKey: ["workload-team", teamId, start, end],
+    queryKey: computed(() => ["workload-team", id.value, s.value, e.value]),
     queryFn: () =>
       apiFetch<TeamSummary>(
-        `/api/workload/teams/${teamId}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+        `/api/workload/teams/${id.value}?start=${encodeURIComponent(s.value)}&end=${encodeURIComponent(e.value)}`,
       ),
+    enabled: () => id.value != null && !!s.value && !!e.value,
   });
 }
 
-export function useOverloadsQuery(start: string, end: string) {
+export function useOverloadsQuery(start: MaybeRef<string>, end: MaybeRef<string>) {
   const { apiFetch } = useApiFetch();
+  const s = computed(() => toValue(start));
+  const e = computed(() => toValue(end));
   return useQuery<ResourceSummary[]>({
-    queryKey: ["workload-overloads", start, end],
+    queryKey: computed(() => ["workload-overloads", s.value, e.value]),
     queryFn: () =>
       apiFetch<ResourceSummary[]>(
-        `/api/workload/overloads?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+        `/api/workload/overloads?start=${encodeURIComponent(s.value)}&end=${encodeURIComponent(e.value)}`,
       ),
+    enabled: () => !!s.value && !!e.value,
   });
 }
 
-export function useProjectBurnQuery(projectId: number) {
+export function useProjectBurnQuery(projectId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(projectId));
   return useQuery<ProjectBurn>({
-    queryKey: ["workload-burn", projectId],
-    queryFn: () => apiFetch<ProjectBurn>(`/api/projects/${projectId}/burn`),
+    queryKey: computed(() => ["workload-burn", id.value]),
+    queryFn: () => apiFetch<ProjectBurn>(`/api/projects/${id.value}/burn`),
+    enabled: () => id.value != null,
   });
 }

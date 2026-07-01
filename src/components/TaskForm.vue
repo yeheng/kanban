@@ -25,14 +25,17 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { useTasksStore } from "@/stores/tasks";
+import { useCreateTaskMutation, type SkillReq, useListTasksQuery } from "@/services/api/tasks.api";
+import { useListSkillsQuery, useListTagsQuery } from "@/services/api/catalog.api";
 import { useProjectsStore } from "@/stores/projects";
-import { useCatalogStore } from "@/stores/catalog";
 import { fmtDate, fmtDateOrNull, parseDate } from "@/utils/date";
 
-const tasks = useTasksStore();
+const createTask = useCreateTaskMutation();
 const projects = useProjectsStore();
-const catalog = useCatalogStore();
+const skillsQuery = useListSkillsQuery();
+const tagsQuery = useListTagsQuery();
+const tasksQuery = useListTasksQuery(computed(() => projects.current));
+
 const title = ref("");
 const estimate = ref(1);
 const selectedSkills = ref<number[]>([]);
@@ -44,14 +47,14 @@ const startMs = ref<number | null>(null);
 const endMs = ref<number | null>(null);
 
 const skillOptions = computed(() =>
-  catalog.skills.map((s) => ({ label: s.name, value: s.id })),
+  (skillsQuery.data.value ?? []).map((s) => ({ label: s.name, value: s.id })),
 );
 const tagOptions = computed(() =>
-  catalog.tags.map((t) => ({ label: t.name, value: t.id })),
+  (tagsQuery.data.value ?? []).map((t) => ({ label: t.name, value: t.id })),
 );
-// Parent candidates: long-term tasks in the current project (top-level, not segments).
+
 const parentOptions = computed(() =>
-  tasks.tasks
+  (tasksQuery.data.value ?? [])
     .filter((t) => t.title)
     .map((t) => ({ label: t.title, value: t.id })),
 );
@@ -100,8 +103,8 @@ function handleParentUpdate(v: unknown) {
 
 async function submit() {
   if (!title.value.trim() || !projects.current) return;
-  const skillReqs = selectedSkills.value.map((id) => [id, 3, true, 1] as [number, number, boolean, number]);
-  await tasks.create({
+  const skillReqs = selectedSkills.value.map((id) => [id, 3, true, 1] as SkillReq);
+  await createTask.mutateAsync({
     projectId: projects.current,
     title: title.value,
     estimatePd: estimate.value,
