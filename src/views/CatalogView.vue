@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
-import { NH2, NH3, NSpace, NForm, NFormItem, NInput, NButton, NList, NListItem, NThing, NTag, NEmpty } from "naive-ui";
-import { useCatalogStore } from "../stores/catalog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { useCatalogStore } from "@/stores/catalog";
 
 const catalog = useCatalogStore();
 const skillName = ref("");
@@ -23,40 +27,40 @@ async function addTag() {
 </script>
 
 <template>
-  <n-h2 style="margin-top: 0">技能与标签 / Skills & Tags</n-h2>
+  <h2 class="mt-0 text-2xl font-bold">技能与标签 / Skills & Tags</h2>
 
-  <n-h3>技能</n-h3>
-  <n-form inline>
-    <n-form-item label="名称">
-      <n-input v-model:value="skillName" placeholder="技能名" @keyup.enter="addSkill" />
-    </n-form-item>
-    <n-form-item>
-      <n-button type="primary" @click="addSkill">添加技能</n-button>
-    </n-form-item>
-  </n-form>
-  <n-list v-if="catalog.skills.length" bordered>
-    <n-list-item v-for="s in catalog.skills" :key="s.id">
-      <n-thing :title="s.name" />
-      <template #suffix>
-        <n-tag size="small" :bordered="false">ID: {{ s.id }}</n-tag>
-      </template>
-    </n-list-item>
-  </n-list>
-  <n-empty v-else description="暂无技能" />
+  <h3 class="text-xl font-semibold">技能</h3>
+  <div class="flex flex-wrap items-end gap-4">
+    <div class="grid gap-2">
+      <Label for="skill-name">名称</Label>
+      <Input id="skill-name" v-model="skillName" placeholder="技能名" @keyup.enter="addSkill" />
+    </div>
+    <Button @click="addSkill">添加技能</Button>
+  </div>
 
-  <n-h3>标签</n-h3>
-  <n-form inline>
-    <n-form-item label="名称">
-      <n-input v-model:value="tagName" placeholder="标签名" @keyup.enter="addTag" />
-    </n-form-item>
-    <n-form-item>
-      <n-button type="primary" @click="addTag">添加标签</n-button>
-    </n-form-item>
-  </n-form>
-  <n-space v-if="catalog.tags.length" :size="8">
-    <n-tag v-for="t in catalog.tags" :key="t.id" :color="t.color ? { color: t.color } : undefined">
+  <Card v-if="catalog.skills.length" class="mt-4">
+    <CardContent class="divide-y p-0">
+      <div v-for="s in catalog.skills" :key="s.id" class="flex items-center justify-between px-4 py-3">
+        <span class="font-medium">{{ s.name }}</span>
+        <Badge variant="secondary">ID: {{ s.id }}</Badge>
+      </div>
+    </CardContent>
+  </Card>
+  <p v-else class="text-muted-foreground">暂无技能</p>
+
+  <h3 class="text-xl font-semibold">标签</h3>
+  <div class="flex flex-wrap items-end gap-4">
+    <div class="grid gap-2">
+      <Label for="tag-name">名称</Label>
+      <Input id="tag-name" v-model="tagName" placeholder="标签名" @keyup.enter="addTag" />
+    </div>
+    <Button @click="addTag">添加标签</Button>
+  </div>
+
+  <div v-if="catalog.tags.length" class="mt-4 flex flex-wrap gap-2">
+    <Badge v-for="t in catalog.tags" :key="t.id" :style="t.color ? { backgroundColor: t.color } : undefined">
       {{ t.name }}
-    </n-tag>
-  </n-space>
-  <n-empty v-else description="暂无标签" />
+    </Badge>
+  </div>
+  <p v-else class="text-muted-foreground">暂无标签</p>
 </template>

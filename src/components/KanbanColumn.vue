@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { NText } from "naive-ui";
-import type { KanbanTask, TaskStatus } from "../types";
-import TaskCard from "./TaskCard.vue";
+import type { KanbanTask, TaskStatus } from "@/types";
+import TaskCard from "@/components/TaskCard.vue";
 
 const props = defineProps<{ status: TaskStatus; tasks: KanbanTask[] }>();
 const emit = defineEmits<{
@@ -18,40 +17,29 @@ function onDrop() { dragging.value = false; emit("drop", props.status); }
 
 <template>
   <div
-    class="kanban-column"
-    :class="{ 'kanban-column--dragging': dragging }"
+    class="kanban-column flex flex-col h-full w-[260px] min-w-[260px] rounded-lg p-2 overflow-hidden bg-muted transition-colors duration-200"
+    :class="{ 'bg-accent': dragging }"
     @dragover.prevent="dragging = true"
     @dragleave="dragging = false"
     @drop="onDrop"
   >
-    <n-text strong class="kanban-column__header">
+    <span class="kanban-column__header font-semibold shrink-0">
       {{ status }} ({{ tasks.length }})
-    </n-text>
-    <TaskCard
-      v-for="t in tasks"
-      :key="t.id"
-      :task="t"
-      @dragstart="(id: number) => emit('dragstart-card', id)"
-      @delete="(id: number) => emit('delete-card', id)"
-      @edit="(task: KanbanTask) => emit('edit-card', task)"
-    />
+    </span>
+    <div class="flex-1 min-h-0 overflow-y-auto -mx-1 px-1">
+      <TaskCard
+        v-for="t in tasks"
+        :key="t.id"
+        :task="t"
+        @dragstart="(id: number) => emit('dragstart-card', id)"
+        @delete="(id: number) => emit('delete-card', id)"
+        @edit="(task: KanbanTask) => emit('edit-card', task)"
+      />
+    </div>
   </div>
 </template>
 
 <style scoped>
-.kanban-column {
-  width: 240px;
-  min-width: 240px;
-  background: #f5f5f8;
-  border-radius: 8px;
-  padding: 8px;
-  height: 100%;
-  overflow-y: auto;
-  transition: background 0.2s ease;
-}
-.kanban-column--dragging {
-  background: #e8f0e8;
-}
 .kanban-column__header {
   display: block;
   text-transform: capitalize;

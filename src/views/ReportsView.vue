@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { NH2, NSpace, NSelect, NDatePicker, NButton, NText } from "naive-ui";
-import { api, reportKinds, type ReportKind, type ReportCatalogEntry } from "../api";
-import { useProjectsStore } from "../stores/projects";
-import { fmtDate, parseDateStrict } from "../utils/date";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import DateRangePicker from "@/components/DateRangePicker.vue";
+import { api, reportKinds, type ReportKind, type ReportCatalogEntry } from "@/api";
+import { useProjectsStore } from "@/stores/projects";
+import { fmtDate, parseDateStrict } from "@/utils/date";
 
 const projects = useProjectsStore();
 const kind = ref<ReportKind>("ResourceUtilization");
@@ -85,34 +93,59 @@ async function doSnapshot() {
   }
 }
 
-function updateProject(value: string) {
-  projectId.value = value === allProjectsValue ? null : Number(value);
+function updateProject(value: unknown) {
+  const s = String(value);
+  projectId.value = s === allProjectsValue ? null : Number(s);
 }
 </script>
 
 <template>
-  <n-h2 style="margin-top: 0">报表 / Reports</n-h2>
-  <n-space align="center" :size="8" wrap>
-    <n-select v-model:value="kind" :options="kindOptions" style="width: 160px" />
-    <n-select
+  <h2 class="text-2xl font-bold tracking-tight" style="margin-top: 0">报表 / Reports</h2>
+  <div class="flex flex-wrap items-center gap-2">
+    <Select v-model="kind">
+      <SelectTrigger class="w-[160px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem v-for="o in kindOptions" :key="o.value" :value="o.value">
+          {{ o.label }}
+        </SelectItem>
+      </SelectContent>
+    </Select>
+    <Select
       v-if="acceptsProject"
-      :value="projectValue"
-      :options="projectOptions"
-      placeholder="项目"
-      @update:value="updateProject"
-      style="width: 200px"
-    />
+      :model-value="projectValue"
+      @update:model-value="updateProject"
+    >
+      <SelectTrigger class="w-[200px]">
+        <SelectValue placeholder="项目" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem v-for="o in projectOptions" :key="o.value" :value="o.value">
+          {{ o.label }}
+        </SelectItem>
+      </SelectContent>
+    </Select>
     <span>窗口</span>
-    <n-date-picker v-model:value="dateRange" type="daterange" clearable />
+    <DateRangePicker v-model="dateRange" />
     <span>格式</span>
-    <n-select v-model:value="fmt" :options="fmtOptions" style="width: 100px" />
-  </n-space>
-  <n-space style="margin-top: 12px" :size="8">
-    <n-button type="primary" :loading="busy" @click="doExport">导出报表</n-button>
-    <n-button :loading="busy" @click="doSnapshot">导出人力快照 (JSON)</n-button>
-  </n-space>
-  <n-text v-if="msg" style="margin-top: 8px">{{ msg }}</n-text>
-  <n-text depth="3" style="font-size: 12px; margin-top: 8px">
+    <Select v-model="fmt">
+      <SelectTrigger class="w-[100px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem v-for="o in fmtOptions" :key="o.value" :value="o.value">
+          {{ o.label }}
+        </SelectItem>
+      </SelectContent>
+    </Select>
+  </div>
+  <div class="mt-3 flex gap-2">
+    <Button :disabled="busy" @click="doExport">导出报表</Button>
+    <Button variant="outline" :disabled="busy" @click="doSnapshot">导出人力快照 (JSON)</Button>
+  </div>
+  <p v-if="msg" class="mt-2 text-sm text-muted-foreground">{{ msg }}</p>
+  <p class="mt-2 text-xs text-muted-foreground">
     报表通过浏览器下载保存。可用格式由后端目录决定（PDF 需启用 app/pdf feature）。
-  </n-text>
+  </p>
 </template>

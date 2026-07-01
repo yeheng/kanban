@@ -1,25 +1,29 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
+import { toast } from "vue-sonner";
+import { useSettingsStore } from "@/stores/settings";
+import type { Settings } from "@/types";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  NH2,
-  NH3,
-  NForm,
-  NFormItem,
-  NInput,
-  NInputNumber,
-  NSelect,
-  NButton,
-  NSpace,
-  NSpin,
-  NCard,
-  useMessage,
-} from "naive-ui";
-import { useSettingsStore } from "../stores/settings";
-import type { Settings } from "../types";
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "@/components/ui/number-field";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const settings = useSettingsStore();
-const message = useMessage();
-
 const draft = ref<Settings | null>(null);
 
 watch(
@@ -66,9 +70,9 @@ async function save() {
   if (!draft.value) return;
   try {
     await settings.save(draft.value);
-    message.success("设置已保存");
+    toast.success("设置已保存");
   } catch (e) {
-    message.error(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
+    toast.error(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -77,95 +81,235 @@ function reset() {
     draft.value = { ...settings.settings };
   }
 }
+
+function updateNullableString(field: "ai_base_url" | "ai_api_key_enc", value: string | number) {
+  if (!draft.value) return;
+  draft.value[field] = String(value || "");
+}
 </script>
 
 <template>
-  <n-h2 style="margin-top: 0">设置 / Settings</n-h2>
+  <div class="space-y-6">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">设置</h1>
+      <p class="text-muted-foreground">全局配置与偏好</p>
+    </div>
 
-  <n-spin v-if="settings.loading || !draft" description="加载中..." />
+    <div v-if="settings.loading || !draft" class="space-y-4">
+      <Skeleton class="h-32 w-full" />
+      <Skeleton class="h-32 w-full" />
+      <Skeleton class="h-32 w-full" />
+    </div>
 
-  <template v-else>
-    <n-space vertical :size="16">
-      <n-card title="单位 / Units">
-        <n-form inline>
-          <n-form-item label="默认单位">
-            <n-select v-model:value="draft.default_unit" :options="unitOptions" style="width: 160px" />
-          </n-form-item>
-          <n-form-item label="每 PD 小时">
-            <n-input-number v-model:value="draft.pd_hours" :step="0.5" :min="0.5" style="width: 140px" />
-          </n-form-item>
-          <n-form-item label="每 PM 人日">
-            <n-input-number v-model:value="draft.pm_workdays" :step="1" :min="1" style="width: 140px" />
-          </n-form-item>
-        </n-form>
-      </n-card>
+    <div v-else class="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>单位 / Units</CardTitle>
+          <CardDescription>默认单位与换算系数</CardDescription>
+        </CardHeader>
+        <CardContent class="grid gap-6 sm:grid-cols-3">
+          <div class="grid gap-2">
+            <Label>默认单位</Label>
+            <Select v-model="draft.default_unit">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in unitOptions" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="grid gap-2">
+            <Label>每 PD 小时</Label>
+            <NumberField v-model="draft.pd_hours" :step="0.5" :min="0.5">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+          <div class="grid gap-2">
+            <Label>每 PM 人日</Label>
+            <NumberField v-model="draft.pm_workdays" :step="1" :min="1">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+        </CardContent>
+      </Card>
 
-      <n-card title="利用率阈值 / Thresholds">
-        <n-form inline>
-          <n-form-item label="过载阈值">
-            <n-input-number v-model:value="draft.overload_threshold" :step="0.05" :min="0" style="width: 140px" />
-          </n-form-item>
-          <n-form-item label="低载阈值">
-            <n-input-number v-model:value="draft.underload_threshold" :step="0.05" :min="0" style="width: 140px" />
-          </n-form-item>
-          <n-form-item label="绿灯利用率">
-            <n-input-number v-model:value="draft.utilization_green" :step="0.05" :min="0" :max="1" style="width: 140px" />
-          </n-form-item>
-          <n-form-item label="黄灯利用率">
-            <n-input-number v-model:value="draft.utilization_yellow" :step="0.05" :min="0" :max="1" style="width: 140px" />
-          </n-form-item>
-        </n-form>
-      </n-card>
+      <Card>
+        <CardHeader>
+          <CardTitle>利用率阈值 / Thresholds</CardTitle>
+          <CardDescription>过载、低载与颜色区间</CardDescription>
+        </CardHeader>
+        <CardContent class="grid gap-6 sm:grid-cols-4">
+          <div class="grid gap-2">
+            <Label>过载阈值</Label>
+            <NumberField v-model="draft.overload_threshold" :step="0.05" :min="0">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+          <div class="grid gap-2">
+            <Label>低载阈值</Label>
+            <NumberField v-model="draft.underload_threshold" :step="0.05" :min="0">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+          <div class="grid gap-2">
+            <Label>绿灯利用率</Label>
+            <NumberField v-model="draft.utilization_green" :step="0.05" :min="0" :max="1">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+          <div class="grid gap-2">
+            <Label>黄灯利用率</Label>
+            <NumberField v-model="draft.utilization_yellow" :step="0.05" :min="0" :max="1">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+        </CardContent>
+      </Card>
 
-      <n-card title="AI / LLM">
-        <n-form inline>
-          <n-form-item label="Provider">
-            <n-select v-model:value="draft.ai_provider" :options="providerOptions" style="width: 160px" />
-          </n-form-item>
-          <n-form-item label="Base URL">
-            <n-input v-model:value="draft.ai_base_url" placeholder="可选，如 http://localhost:11434" style="width: 260px" />
-          </n-form-item>
-          <n-form-item label="API Key">
-            <n-input v-model:value="draft.ai_api_key_enc" type="password" placeholder="可选" style="width: 220px" />
-          </n-form-item>
-          <n-form-item label="Chat Model">
-            <n-input v-model:value="draft.ai_chat_model" style="width: 180px" />
-          </n-form-item>
-          <n-form-item label="Embed Model">
-            <n-input v-model:value="draft.ai_embed_model" style="width: 180px" />
-          </n-form-item>
-          <n-form-item label="Embed 维度">
-            <n-input-number v-model:value="draft.ai_embed_dim" :step="1" :min="1" style="width: 140px" />
-          </n-form-item>
-          <n-form-item label="密钥存储">
-            <n-select v-model:value="draft.secret_store" :options="secretStoreOptions" style="width: 180px" />
-          </n-form-item>
-        </n-form>
-      </n-card>
+      <Card>
+        <CardHeader>
+          <CardTitle>AI / LLM</CardTitle>
+          <CardDescription>模型与密钥配置</CardDescription>
+        </CardHeader>
+        <CardContent class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="grid gap-2">
+            <Label>Provider</Label>
+            <Select v-model="draft.ai_provider">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in providerOptions" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="grid gap-2">
+            <Label>Base URL</Label>
+            <Input
+              :model-value="draft?.ai_base_url ?? ''"
+              placeholder="可选，如 http://localhost:11434"
+              @update:model-value="(v) => updateNullableString('ai_base_url', v)"
+            />
+          </div>
+          <div class="grid gap-2">
+            <Label>API Key</Label>
+            <Input
+              :model-value="draft?.ai_api_key_enc ?? ''"
+              type="password"
+              placeholder="可选"
+              @update:model-value="(v) => updateNullableString('ai_api_key_enc', v)"
+            />
+          </div>
+          <div class="grid gap-2">
+            <Label>Chat Model</Label>
+            <Input v-model="draft.ai_chat_model" />
+          </div>
+          <div class="grid gap-2">
+            <Label>Embed Model</Label>
+            <Input v-model="draft.ai_embed_model" />
+          </div>
+          <div class="grid gap-2">
+            <Label>Embed 维度</Label>
+            <NumberField v-model="draft.ai_embed_dim" :step="1" :min="1">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+          <div class="grid gap-2">
+            <Label>密钥存储</Label>
+            <Select v-model="draft.secret_store">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in secretStoreOptions" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
 
-      <n-card title="求解器 / Solver">
-        <n-form inline>
-          <n-form-item label="后端">
-            <n-select v-model:value="draft.solver_backend" :options="solverOptions" style="width: 160px" />
-          </n-form-item>
-          <n-form-item label="超时 (ms)">
-            <n-input-number v-model:value="draft.solver_timeout_ms" :step="100" :min="1" style="width: 140px" />
-          </n-form-item>
-        </n-form>
-      </n-card>
+      <Card>
+        <CardHeader>
+          <CardTitle>求解器 / Solver</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-6 sm:grid-cols-2">
+          <div class="grid gap-2">
+            <Label>后端</Label>
+            <Select v-model="draft.solver_backend">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in solverOptions" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="grid gap-2">
+            <Label>超时 (ms)</Label>
+            <NumberField v-model="draft.solver_timeout_ms" :step="100" :min="1">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+        </CardContent>
+      </Card>
 
-      <n-card title="区域 / Locale">
-        <n-form inline>
-          <n-form-item label="Locale">
-            <n-input v-model:value="draft.locale" style="width: 140px" />
-          </n-form-item>
-        </n-form>
-      </n-card>
+      <Card>
+        <CardHeader>
+          <CardTitle>区域 / Locale</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-6 sm:grid-cols-2">
+          <div class="grid gap-2">
+            <Label>Locale</Label>
+            <Input v-model="draft.locale" />
+          </div>
+        </CardContent>
+      </Card>
 
-      <n-space>
-        <n-button type="primary" :loading="settings.saving" @click="save">保存设置</n-button>
-        <n-button @click="reset">重置</n-button>
-      </n-space>
-    </n-space>
-  </template>
+      <div class="flex gap-2">
+        <Button type="button" :loading="settings.saving" @click="save">保存设置</Button>
+        <Button type="button" variant="outline" @click="reset">重置</Button>
+      </div>
+    </div>
+  </div>
 </template>

@@ -73,10 +73,49 @@ impl Default for ObjectiveWeights {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SolverConfig {
     pub backend: String,
+    /// Wall-clock budget handed to the exact solver (HiGHS) in milliseconds. The solver is
+    /// also wrapped in an outer `tokio::time::timeout` with this value (plus slack) by the
+    /// app layer, so a runaway solve cannot hang the request. Default 5000 (matches the DB
+    /// `settings.solver_timeout_ms` default, 0001_init.sql:16).
+    pub timeout_ms: u64,
+    /// If the count of feasible (resource, task) pairs exceeds this, the MILP backend is
+    /// skipped and the greedy solver runs instead (variable-count guard against NP-hard
+    /// blowup). Default 20000 (design §5.5.2 `milp_var_threshold`).
+    pub milp_var_threshold: usize,
 }
 impl Default for SolverConfig {
     fn default() -> Self {
-        Self { backend: "greedy".into() }
+        Self {
+            backend: "greedy".into(),
+            timeout_ms: 5000,
+            milp_var_threshold: 20000,
+        }
+    }
+}
+
+/// Solver outcome class. Serializes to the lowercase token that the DB `ai_optimization_runs.
+/// solver_status` CHECK constraint accepts: `optimal | feasible | infeasible | timeout | error`
+/// (0001_init.sql:247). `GreedySolver` always returns `Feasible`; `MilpSolver` distinguishes
+/// HiGHS's proven-optimum / time-limited-feasible / infeasible / timeout outcomes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum SolverStatus {
+    #[default]
+    Feasible,
+    Optimal,
+    Infeasible,
+    Timeout,
+    Error,
+}
+impl SolverStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SolverStatus::Feasible => "feasible",
+            SolverStatus::Optimal => "optimal",
+            SolverStatus::Infeasible => "infeasible",
+            SolverStatus::Timeout => "timeout",
+            SolverStatus::Error => "error",
+        }
     }
 }
 
@@ -119,6 +158,11 @@ pub struct Solution {
     pub assignments: Vec<ScoredAssignment>,
     pub unscheduled: Vec<i64>, // task ids
     pub metrics: SolutionMetrics,
+    /// Outcome class of the solver that produced this solution. Mirrors the DB
+    /// `solver_status` enum (0001_init.sql:247). Defaults to `Feasible` for backward
+    /// compatibility with the greedy path and `Solution::default()`.
+    #[serde(default)]
+    pub status: SolverStatus,
 }
 
 /// score[(resource_id, task_id)] -> 0..1 (filled by the Scorer, consumed by the Solver).

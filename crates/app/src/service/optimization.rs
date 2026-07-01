@@ -1,12 +1,11 @@
 use crate::error::AppError;
-use ai_engine::explainer::TemplateExplainer;
 use ai_engine::scorer::FallbackScorer;
-use ai_engine::solver::GreedySolver;
+use ai_engine::solver::{GreedySolver, Solver};
 use ai_engine::types::*;
-use ai_engine::OptimizationEngine;
 use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -34,13 +33,17 @@ impl OptimizationService {
         // tune how the budget *score* feeds into `overall` (design §5 multi-objective, G3).
         let total = (problem.weights.skill_fit + problem.weights.balance).max(0.001);
         let scorer: Arc<dyn ai_engine::scorer::Scorer> = select_scorer(&ai, problem.weights.skill_fit / total, problem.weights.balance / total);
-        let engine = OptimizationEngine {
-            scorer,
-            solver: Arc::new(GreedySolver),
-            explainer: Arc::new(TemplateExplainer),
-        };
+        let explainer: Arc<dyn ai_engine::explainer::Explainer> = select_explainer(&ai);
         let started = chrono::Utc::now();
-        let mut plan = engine.optimize(&problem).await;
+        // Score → solve (spawn_blocking + timeout + greedy fallback for the MILP path) → explain.
+        // solve() is synchronous CPU-bound (greedy cheap, HiGHS heavy); the exact solver runs
+        // off the async runtime and is bounded by both HiGHS's own time_limit and an outer
+        // tokio::time::timeout. Infeasible/timeout/error ⇒ greedy fallback, status=Feasible
+        // (design §5.8.4: infeasible ⇒ degrade to greedy, never empty/panic).
+        let scores = scorer.matrix(&problem).await;
+        let solution = solve_with_fallback(&ai, &problem, &scores).await;
+        let explanation_md = explainer.explain(&problem, &solution).await;
+        let mut plan = ai_engine::OptimizedPlan { solution, explanation_md };
         let finished = chrono::Utc::now();
         let duration_ms = (finished - started).num_milliseconds();
 
@@ -54,18 +57,27 @@ impl OptimizationService {
         // MAX(id)+1 race — two concurrent runs could both predict the same run_id, baking a
         // stale value into the persisted JSON). scope='full' (this is a full project re-plan;
         // 'incremental' is reserved for when the solver respects existing allocations).
+        //
+        // constraints_json / input_snapshot_json / output_plan_json are bound as '' here and
+        // backfilled by the UPDATE below (after the real run_id is known) — keeping the
+        // placeholder/bind order aligned with the column order so each bind lands on the
+        // right column (an earlier version off-by-one mis-stored score columns).
+        //   binds: seed scope proj cfg wts overall skill sched fair expl prov chat embed
+        //          backend status started finished duration   (= 18 binds, 19 `?` + 3 '' + 1
+        //          'proposed' literal = 22 columns)
         let (run_id,): (i64,) = sqlx::query_as(
             "INSERT INTO ai_optimization_runs (seed, scope, scope_project_ids, config_json, constraints_json, \
                 weights_json, input_snapshot_json, output_plan_json, score_overall, score_skill_fit, \
                 score_scheduled_ratio, score_fairness, explanation_md, provider, chat_model, embed_model, \
                 solver_backend, solver_status, status, started_at, finished_at, duration_ms) \
-             VALUES (?,?,?,?,'',?,?, '',?,?,?,?,?,?,?,?,?,'feasible','proposed', ?,?,?) RETURNING id")
+             VALUES (?,?,?,?,'',?,'','',?,?,?,?,?,?,?,?,?,?,'proposed',?,?,?) RETURNING id")
             .bind(0i64).bind("full").bind(format!("[{}]", project_id))
             .bind(cfg).bind(wts)
             .bind(plan.solution.metrics.overall).bind(plan.solution.metrics.skill_fit)
             .bind(plan.solution.metrics.scheduled_ratio).bind(plan.solution.metrics.fairness)
             .bind(&plan.explanation_md)
             .bind(&ai.provider).bind(&ai.chat_model).bind(&ai.embed_model).bind(&ai.solver_backend)
+            .bind(plan.solution.status.as_str())
             .bind(started.to_rfc3339()).bind(finished.to_rfc3339()).bind(duration_ms)
             .fetch_one(pool).await?;
 
@@ -84,8 +96,15 @@ impl OptimizationService {
 
     /// Accept a proposed run: write its assignments as allocations (source='ai', run_id) and
     /// mark applied. Idempotent: re-applying an already-applied run returns 0 and writes
-    /// nothing. The trg_allocation_validate_insert trigger enforces task/resource windows;
-    /// an out-of-window proposal ABORTs the tx (surfaced as AppError).
+    /// nothing.
+    ///
+    /// TOCTOU guard: `run` snapshots task/resource windows; `apply` inserts later. If a window
+    /// was narrowed in between, `trg_allocation_validate_insert` would ABORT the whole tx
+    /// (losing every AI allocation, not just the now-out-of-window one). So we re-read the
+    /// current task start/end and resource available_from/to INSIDE the write tx (a consistent
+    /// snapshot) and SKIP any assignment that no longer fits its window, rather than letting
+    /// the trigger abort the batch. The returned count reflects only the assignments actually
+    /// written; the run is still marked applied (a partial accept is friendlier than total loss).
     pub async fn apply(pool: &SqlitePool, run_id: i64) -> Result<i64, AppError> {
         let count = db::tx::with_write_tx(pool, |mut tx| {
             Box::pin(async move {
@@ -104,14 +123,36 @@ impl OptimizationService {
                 let assignments: Vec<ai_engine::ScoredAssignment> =
                     serde_json::from_str(plan_json.as_deref().unwrap_or("[]"))
                         .map_err(|e| db::DbError::Other(format!("invalid optimization plan json: {e}")))?;
-                let count = assignments.len() as i64;
+                // Re-read the current windows for every task/resource touched by this plan,
+                // inside the same tx, so apply() is robust against window changes made between
+                // run and apply (closes the trg_allocation_validate_insert TOCTOU).
+                let task_ids: Vec<i64> = assignments.iter().map(|a| a.task_id).collect();
+                let res_ids: Vec<i64> = assignments.iter().map(|a| a.resource_id).collect();
+                let task_windows: HashMap<i64, (Option<NaiveDate>, Option<NaiveDate>)> =
+                    current_windows(&mut *tx, "SELECT id, start_date, end_date FROM tasks WHERE id IN ", &task_ids).await?;
+                let res_windows: HashMap<i64, (Option<NaiveDate>, Option<NaiveDate>)> =
+                    current_windows(&mut *tx, "SELECT id, available_from, available_to FROM resources WHERE id IN ", &res_ids).await?;
+
+                let mut count = 0i64;
                 for a in &assignments {
+                    let in_window = match task_windows.get(&a.task_id) {
+                        Some((Some(s), Some(e))) => a.start >= *s && a.end <= *e,
+                        // NULL window ⇒ trigger skips that check (0001_init.sql guard).
+                        _ => true,
+                    } && match res_windows.get(&a.resource_id) {
+                        Some((Some(s), Some(e))) => a.start >= *s && a.end <= *e,
+                        _ => true,
+                    };
+                    if !in_window {
+                        continue; // skip rather than abort the whole batch
+                    }
                     sqlx::query(
                         "INSERT INTO allocations (resource_id, task_id, start_date, end_date, percent, source, run_id) \
                          VALUES (?,?,?,?,?,?,?)")
                         .bind(a.resource_id).bind(a.task_id).bind(a.start).bind(a.end)
                         .bind(a.percent).bind("ai").bind(run_id)
                         .execute(&mut *tx).await?;
+                    count += 1;
                 }
                 sqlx::query("UPDATE ai_optimization_runs SET applied=1, status='accepted' WHERE id=?")
                     .bind(run_id).execute(&mut *tx).await?;
@@ -143,6 +184,31 @@ pub struct RunRow {
     pub applied: i64,
     pub score_overall: Option<f64>,
     pub created_at: String,
+}
+
+/// Re-read the current (start, end) window for each id in `ids`, inside the given tx, so apply()
+/// is robust against window changes made between run and apply. `prefix` must be a SELECT that
+/// yields (id, start_col, end_col) with a trailing `IN ` — the placeholders are appended here.
+/// Used for both tasks (start_date/end_date) and resources (available_from/available_to).
+async fn current_windows(
+    tx: &mut sqlx::SqliteConnection,
+    prefix: &str,
+    ids: &[i64],
+) -> Result<HashMap<i64, (Option<NaiveDate>, Option<NaiveDate>)>, db::DbError> {
+    let mut map = HashMap::new();
+    if ids.is_empty() {
+        return Ok(map);
+    }
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!("{prefix} ({placeholders})");
+    let mut q = sqlx::query_as::<_, (i64, Option<NaiveDate>, Option<NaiveDate>)>(&sql);
+    for id in ids {
+        q = q.bind(id);
+    }
+    for row in q.fetch_all(tx).await? {
+        map.insert(row.0, (row.1, row.2));
+    }
+    Ok(map)
 }
 
 async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationProblem, AppError> {
@@ -317,4 +383,73 @@ fn select_scorer(
     }
     let _ = ai; // silence unused when llm feature off
     Arc::new(FallbackScorer { w_jaccard, w_proficiency })
+}
+
+/// Pick the explainer based on AI settings. When the `llm` feature is compiled in AND the
+/// `KANBAN_USE_LLM_EXPLAINER` env var is set (opt-in), use `LlmExplainer` (local Ollama
+/// chat); otherwise the deterministic `TemplateExplainer`. `LlmExplainer` itself falls back
+/// to `TemplateExplainer` on any provider error (explainer.rs graceful degradation).
+fn select_explainer(ai: &db::AiSettings) -> Arc<dyn ai_engine::explainer::Explainer> {
+    #[cfg(feature = "llm")]
+    if std::env::var("KANBAN_USE_LLM_EXPLAINER").as_deref() == Ok("1") {
+        return Arc::new(ai_engine::explainer::llm::LlmExplainer {
+            model: ai.chat_model.clone(),
+            base_url: ai.base_url.clone(),
+        });
+    }
+    let _ = ai; // silence unused when llm feature off
+    Arc::new(ai_engine::explainer::TemplateExplainer)
+}
+
+/// Pick the solver based on AI settings. When the `milp` feature is compiled in AND
+/// `solver_backend == "good_lp"`, use `MilpSolver` (good_lp + HiGHS); otherwise the
+/// deterministic `GreedySolver`. `MilpSolver` self-gates by a feasible-pair threshold and
+/// returns `SolverStatus::Error` when exceeded, which `solve_with_fallback` turns into a
+/// greedy run.
+fn select_solver(ai: &db::AiSettings) -> Arc<dyn Solver> {
+    #[cfg(feature = "milp")]
+    if ai.solver_backend == "good_lp" {
+        return Arc::new(ai_engine::solver::milp::MilpSolver {
+            timeout_ms: ai.solver_timeout_ms,
+            var_threshold: 20_000,
+        });
+    }
+    let _ = ai; // silence unused when milp feature off
+    Arc::new(GreedySolver)
+}
+
+/// Run the chosen solver. The greedy path is cheap and runs inline; the MILP path (good_lp +
+/// HiGHS, only when the `milp` feature is on and `solver_backend=="good_lp"`) is synchronous
+/// and CPU-bound, so it runs on a blocking thread under an outer `tokio::time::timeout`
+/// (= solver_timeout_ms + 2s slack) as a hard backstop beyond HiGHS's own `set_time_limit`.
+/// If MILP returns Infeasible/Timeout/Error, or the outer timeout/join fails, fall back to
+/// `GreedySolver` and stamp the final status `Feasible` — never an empty/panic solution
+/// (design §5.8.4: infeasible ⇒ relax/degrade to greedy, never return empty).
+async fn solve_with_fallback(
+    ai: &db::AiSettings,
+    problem: &AllocationProblem,
+    scores: &ScoreMatrix,
+) -> Solution {
+    let solver = select_solver(ai);
+    let needs_blocking = cfg!(feature = "milp") && ai.solver_backend == "good_lp";
+    if !needs_blocking {
+        return solver.solve(problem, scores);
+    }
+    let p = problem.clone();
+    let s = scores.clone();
+    let solver_clone = solver.clone();
+    let timeout = std::time::Duration::from_millis(ai.solver_timeout_ms.saturating_add(2000));
+    match tokio::time::timeout(
+        timeout,
+        tokio::task::spawn_blocking(move || solver_clone.solve(&p, &s)),
+    )
+    .await
+    {
+        Ok(Ok(sol)) if matches!(sol.status, SolverStatus::Optimal | SolverStatus::Feasible) => sol,
+        _ => {
+            let mut g = GreedySolver.solve(problem, scores);
+            g.status = SolverStatus::Feasible;
+            g
+        }
+    }
 }

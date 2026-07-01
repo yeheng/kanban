@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { ref } from "vue";
-import { NForm, NFormItem, NInput, NButton } from "naive-ui";
-import { useResourcesStore } from "../stores/resources";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useResourcesStore } from "@/stores/resources";
+
 const resources = useResourcesStore();
 const name = ref("");
 const email = ref("");
+
 async function submit() {
   if (!name.value.trim()) return;
   await resources.create(name.value, email.value || null);
@@ -14,15 +18,29 @@ async function submit() {
 </script>
 
 <template>
-  <n-form inline>
-    <n-form-item label="姓名">
-      <n-input v-model:value="name" placeholder="姓名" @keyup.enter="submit" />
-    </n-form-item>
-    <n-form-item label="邮箱">
-      <n-input v-model:value="email" placeholder="email (可选)" @keyup.enter="submit" />
-    </n-form-item>
-    <n-form-item>
-      <n-button type="primary" @click="submit">新建资源</n-button>
-    </n-form-item>
-  </n-form>
+  <div class="flex flex-wrap items-end gap-4">
+    <div class="grid gap-2">
+      <Label for="resource-name">姓名</Label>
+      <Input
+        id="resource-name"
+        v-model="name"
+        placeholder="姓名"
+        class="w-48"
+        @keyup.enter="submit"
+      />
+    </div>
+    <div class="grid gap-2">
+      <Label for="resource-email">邮箱</Label>
+      <Input
+        id="resource-email"
+        v-model="email"
+        placeholder="email (可选)"
+        class="w-64"
+        @keyup.enter="submit"
+      />
+    </div>
+    <div class="flex items-end">
+      <Button @click="submit">新建资源</Button>
+    </div>
+  </div>
 </template>

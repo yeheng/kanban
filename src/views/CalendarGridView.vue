@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
-import { NH2, NSpace, NDatePicker, NButton } from "naive-ui";
-import { api } from "../api";
-import { useResourcesStore } from "../stores/resources";
-import { useWorkloadStore } from "../stores/workload";
-import { useRefreshStore } from "../stores/refresh";
-import OccupancyGrid from "../components/OccupancyGrid.vue";
-import { fmtDate, parseDateStrict } from "../utils/date";
-import type { DayOccupancy } from "../types";
+import { Button } from "@/components/ui/button";
+import DateRangePicker from "@/components/DateRangePicker.vue";
+import { api } from "@/api";
+import { useResourcesStore } from "@/stores/resources";
+import { useWorkloadStore } from "@/stores/workload";
+import { useRefreshStore } from "@/stores/refresh";
+import OccupancyGrid from "@/components/OccupancyGrid.vue";
+import { fmtDate, parseDateStrict } from "@/utils/date";
+import type { DayOccupancy } from "@/types";
 
 const resources = useResourcesStore();
 const wl = useWorkloadStore();
@@ -37,10 +38,10 @@ watch(() => refreshBus.version.calendar, () => { void refresh(); });
 </script>
 
 <template>
-  <n-h2 style="margin-top: 0">日历 / Calendar 占用</n-h2>
-  <n-space align="center" :size="8" style="margin-bottom: 12px">
-    <n-date-picker v-model:value="dateRange" type="daterange" clearable />
-    <n-button type="primary" @click="refresh">刷新</n-button>
-  </n-space>
+  <h2 class="text-2xl font-bold mt-0">日历 / Calendar 占用</h2>
+  <div class="flex items-center gap-2 mb-3">
+    <DateRangePicker v-model="dateRange" />
+    <Button @click="refresh">刷新</Button>
+  </div>
   <OccupancyGrid :items="items" :days="days" :resources="resources.items" />
 </template>

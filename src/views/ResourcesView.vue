@@ -1,18 +1,28 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { NH2, NList, NListItem, NThing, NText, NTag, NPopconfirm, NButton, NSpace, NModal, NForm, NFormItem, NInput, NDatePicker, NInputNumber, NEmpty, NSelect } from "naive-ui";
-import ResourceForm from "../components/ResourceForm.vue";
-import { useResourcesStore } from "../stores/resources";
-import { useCatalogStore } from "../stores/catalog";
-import { onMounted } from "vue";
-import { fmtDate, parseDate } from "../utils/date";
-import type { Resource, ResourceSkill, ResourceTag } from "../types";
+import { computed, onMounted, ref } from "vue";
+import { CalendarIcon } from "@lucide/vue";
+import { CalendarDate, type DateValue } from "@internationalized/date";
+import { Button } from "@/components/ui/button";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { NumberField, NumberFieldContent, NumberFieldDecrement, NumberFieldIncrement, NumberFieldInput } from "@/components/ui/number-field";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import ResourceForm from "@/components/ResourceForm.vue";
+import { useResourcesStore } from "@/stores/resources";
+import { useCatalogStore } from "@/stores/catalog";
+import { fmtDate, parseDate } from "@/utils/date";
+import type { Resource, ResourceSkill, ResourceTag } from "@/types";
 
 const resources = useResourcesStore();
 const catalog = useCatalogStore();
 onMounted(() => { resources.load(); catalog.load(); });
 
-// Edit modal state
+// Edit dialog state
 const editVisible = ref(false);
 const editingId = ref<number | null>(null);
 const editName = ref("");
@@ -29,11 +39,50 @@ const editTags = ref<number[]>([]);
 const skillOptions = () => catalog.skills.map(s => ({ label: s.name, value: s.id }));
 const tagOptions = () => catalog.tags.map(t => ({ label: t.name, value: t.id }));
 
+function toDateValue(ms: number | null): DateValue | undefined {
+  if (ms == null) return undefined;
+  const s = fmtDate(ms);
+  const [year, month, day] = s.split("-").map(Number);
+  return new CalendarDate(year, month, day);
+}
+
+function fromDateValue(dv: DateValue): number {
+  return parseDate(`${dv.year}-${String(dv.month).padStart(2, "0")}-${String(dv.day).padStart(2, "0")}`) ?? Date.now();
+}
+
+const editAvailFromDate = computed<DateValue | undefined>({
+  get: () => toDateValue(editAvailFrom.value),
+  set: (dv) => { editAvailFrom.value = dv ? fromDateValue(dv) : null; }
+});
+
+const editAvailToDate = computed<DateValue | undefined>({
+  get: () => toDateValue(editAvailTo.value),
+  set: (dv) => { editAvailTo.value = dv ? fromDateValue(dv) : null; }
+});
+
+const editCapacityModel = computed<number | undefined>({
+  get: () => editCapacity.value ?? undefined,
+  set: (v) => { editCapacity.value = v ?? null; }
+});
+
+const editRateModel = computed<number | undefined>({
+  get: () => editRate.value ?? undefined,
+  set: (v) => { editRate.value = v ?? null; }
+});
+
 function updateSelectedSkills(ids: number[]) {
   editSkills.value = ids.map((id) => {
     const existing = editSkills.value.find((s) => s.skillId === id);
     return existing ?? { skillId: id, proficiency: 3 };
   });
+}
+
+function onSkillSelect(value: unknown) {
+  updateSelectedSkills(value as number[]);
+}
+
+function onTagSelect(value: unknown) {
+  editTags.value = value as number[];
 }
 
 // Display: per-resource skills/tags fetched lazily for the list.
@@ -76,111 +125,193 @@ async function saveEdit() {
   delete tagCache.value[editingId.value];
   editVisible.value = false;
 }
+
+// Delete confirmation dialog state
+const deleteDialogOpen = ref(false);
+const deletingId = ref<number | null>(null);
+const deletingName = ref("");
+
+function openDelete(r: Resource) {
+  deletingId.value = r.id;
+  deletingName.value = r.name;
+  deleteDialogOpen.value = true;
+}
+
+async function confirmDelete() {
+  if (deletingId.value == null) return;
+  await resources.remove(deletingId.value);
+  deleteDialogOpen.value = false;
+  deletingId.value = null;
+  deletingName.value = "";
+}
 </script>
 
 <template>
-  <n-h2>资源 / Resources</n-h2>
+  <h2 class="text-2xl font-bold">资源 / Resources</h2>
   <ResourceForm />
-  <n-list v-if="resources.items.length" bordered hoverable>
-    <n-list-item v-for="r in resources.items" :key="r.id" @mouseenter="loadDisplay(r)">
-      <n-thing :title="r.name">
-        <template #description>
-          <n-space :size="4" align="center">
-            <n-text v-if="r.email" depth="3" style="font-size: 12px">{{ r.email }}</n-text>
-            <n-tag v-if="r.daily_capacity_pd" size="tiny" :bordered="false">{{ r.daily_capacity_pd }} PD/天</n-tag>
-            <n-tag v-if="r.daily_rate_pd" size="tiny" :bordered="false" type="info">{{ r.daily_rate_pd }}/天</n-tag>
-            <n-text v-if="r.available_from" depth="3" style="font-size: 12px">从 {{ r.available_from }}</n-text>
-            <n-tag
-              v-for="s in (skillCache[r.id] || [])"
-              :key="'sk' + s.skill_id"
-              size="tiny"
-              :bordered="false"
-              type="success"
-            >{{ s.skill_name }} {{ s.proficiency }}</n-tag>
-            <n-tag
-              v-for="t in (tagCache[r.id] || [])"
-              :key="'tg' + t.tag_id"
-              size="tiny"
-              :bordered="false"
-              :color="{ color: t.color || undefined }"
-            >{{ t.tag_name }}</n-tag>
-          </n-space>
-        </template>
-        <template #action>
-          <n-space :size="4">
-            <n-button size="small" @click="openEdit(r)">编辑</n-button>
-            <n-popconfirm @positive-click="resources.remove(r.id)">
-              <template #trigger>
-                <n-button size="small" type="error" quaternary>删除</n-button>
-              </template>
-              确定删除资源 "{{ r.name }}" 吗？
-            </n-popconfirm>
-          </n-space>
-        </template>
-      </n-thing>
-    </n-list-item>
-  </n-list>
-  <n-empty v-else description="暂无资源" />
+  <div v-if="resources.items.length" class="flex flex-col gap-2 mt-4">
+    <Card
+      v-for="r in resources.items"
+      :key="r.id"
+      class="transition-colors hover:bg-muted/50"
+      @mouseenter="loadDisplay(r)"
+    >
+      <CardHeader>
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <CardTitle>{{ r.name }}</CardTitle>
+            <div class="flex flex-wrap items-center gap-2 mt-1">
+              <span v-if="r.email" class="text-xs text-muted-foreground">{{ r.email }}</span>
+              <Badge v-if="r.daily_capacity_pd" variant="secondary">{{ r.daily_capacity_pd }} PD/天</Badge>
+              <Badge v-if="r.daily_rate_pd" variant="outline">{{ r.daily_rate_pd }}/天</Badge>
+              <span v-if="r.available_from" class="text-xs text-muted-foreground">从 {{ r.available_from }}</span>
+              <Badge
+                v-for="s in (skillCache[r.id] || [])"
+                :key="'sk' + s.skill_id"
+                variant="secondary"
+              >{{ s.skill_name }} {{ s.proficiency }}</Badge>
+              <Badge
+                v-for="t in (tagCache[r.id] || [])"
+                :key="'tg' + t.tag_id"
+                :style="t.color ? { backgroundColor: t.color, color: '#fff' } : undefined"
+              >{{ t.tag_name }}</Badge>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <Button size="sm" @click="openEdit(r)">编辑</Button>
+            <Button size="sm" variant="destructive" @click="openDelete(r)">删除</Button>
+          </div>
+        </div>
+      </CardHeader>
+    </Card>
+  </div>
+  <div v-else class="text-muted-foreground text-sm mt-4">暂无资源</div>
 
-  <n-modal v-model:show="editVisible" preset="card" title="编辑资源" style="width: 520px">
-    <n-form>
-      <n-form-item label="姓名">
-        <n-input v-model:value="editName" />
-      </n-form-item>
-      <n-form-item label="邮箱">
-        <n-input v-model:value="editEmail" placeholder="email (可选)" />
-      </n-form-item>
-      <n-form-item label="可用起始日">
-        <n-date-picker v-model:value="editAvailFrom" type="date" clearable />
-      </n-form-item>
-      <n-form-item label="可用截止日">
-        <n-date-picker v-model:value="editAvailTo" type="date" clearable />
-      </n-form-item>
-      <n-form-item label="日容量 (PD)">
-        <n-input-number v-model:value="editCapacity" :min="0" :step="0.5" placeholder="如 1.0" />
-      </n-form-item>
-      <n-form-item label="日费率">
-        <n-input-number v-model:value="editRate" :min="0" :step="100" placeholder="如 800" />
-      </n-form-item>
-      <n-form-item label="技能">
-        <n-space vertical style="width: 100%">
-          <n-select
-            multiple
-            :options="skillOptions()"
-            :value="editSkills.map(s => s.skillId)"
-            placeholder="选择技能"
-            @update:value="updateSelectedSkills"
-          />
-          <n-space v-if="editSkills.length" :size="4" vertical>
-            <n-space v-for="s in editSkills" :key="s.skillId" align="center" :size="8">
-              <n-text style="width: 90px; font-size: 12px">
-                {{ catalog.skills.find(sk => sk.id === s.skillId)?.name ?? s.skillId }}
-              </n-text>
-              <n-input-number
-                v-model:value="s.proficiency"
-                :min="1"
-                :max="5"
-                :step="1"
-                size="small"
-                style="width: 90px"
-              />
-              <n-text depth="3" style="font-size: 11px">熟练度 1-5</n-text>
-            </n-space>
-          </n-space>
-        </n-space>
-      </n-form-item>
-      <n-form-item label="标签">
-        <n-select
-          multiple
-          :options="tagOptions()"
-          v-model:value="editTags"
-          placeholder="选择标签"
-        />
-      </n-form-item>
-      <n-space justify="end">
-        <n-button @click="editVisible = false">取消</n-button>
-        <n-button type="primary" @click="saveEdit">保存</n-button>
-      </n-space>
-    </n-form>
-  </n-modal>
+  <Dialog v-model:open="editVisible">
+    <DialogContent class="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>编辑资源</DialogTitle>
+      </DialogHeader>
+      <div class="grid gap-4 py-4">
+        <div class="grid gap-2">
+          <Label for="edit-name">姓名</Label>
+          <Input id="edit-name" v-model="editName" />
+        </div>
+        <div class="grid gap-2">
+          <Label for="edit-email">邮箱</Label>
+          <Input id="edit-email" v-model="editEmail" placeholder="email (可选)" />
+        </div>
+        <div class="grid gap-2">
+          <Label>可用起始日</Label>
+          <Popover>
+            <PopoverTrigger as-child>
+              <Button variant="outline" class="w-full justify-start text-left font-normal">
+                <CalendarIcon class="mr-2 size-4" />
+                {{ editAvailFrom != null ? fmtDate(editAvailFrom) : '选择日期' }}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent class="w-auto p-2">
+              <Calendar v-model="editAvailFromDate" initial-focus />
+              <div class="mt-2 flex justify-end">
+                <Button variant="ghost" size="sm" @click="editAvailFrom = null">清除</Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+        <div class="grid gap-2">
+          <Label>可用截止日</Label>
+          <Popover>
+            <PopoverTrigger as-child>
+              <Button variant="outline" class="w-full justify-start text-left font-normal">
+                <CalendarIcon class="mr-2 size-4" />
+                {{ editAvailTo != null ? fmtDate(editAvailTo) : '选择日期' }}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent class="w-auto p-2">
+              <Calendar v-model="editAvailToDate" initial-focus />
+              <div class="mt-2 flex justify-end">
+                <Button variant="ghost" size="sm" @click="editAvailTo = null">清除</Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+        <div class="grid gap-2">
+          <Label for="edit-capacity">日容量 (PD)</Label>
+          <NumberField v-model="editCapacityModel" :min="0" :step="0.5">
+            <NumberFieldContent>
+              <NumberFieldDecrement />
+              <NumberFieldInput id="edit-capacity" placeholder="如 1.0" />
+              <NumberFieldIncrement />
+            </NumberFieldContent>
+          </NumberField>
+        </div>
+        <div class="grid gap-2">
+          <Label for="edit-rate">日费率</Label>
+          <NumberField v-model="editRateModel" :min="0" :step="100">
+            <NumberFieldContent>
+              <NumberFieldDecrement />
+              <NumberFieldInput id="edit-rate" placeholder="如 800" />
+              <NumberFieldIncrement />
+            </NumberFieldContent>
+          </NumberField>
+        </div>
+        <div class="grid gap-2">
+          <Label>技能</Label>
+          <div class="grid gap-2">
+            <Select multiple :model-value="editSkills.map(s => s.skillId)" @update:model-value="onSkillSelect">
+              <SelectTrigger>
+                <SelectValue placeholder="选择技能" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="opt in skillOptions()" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
+              </SelectContent>
+            </Select>
+            <div v-if="editSkills.length" class="flex flex-col gap-2">
+              <div v-for="s in editSkills" :key="s.skillId" class="flex items-center gap-2">
+                <span class="text-xs w-24 truncate">
+                  {{ catalog.skills.find(sk => sk.id === s.skillId)?.name ?? s.skillId }}
+                </span>
+                <NumberField v-model="s.proficiency" :min="1" :max="5" :step="1" class="w-28">
+                  <NumberFieldContent>
+                    <NumberFieldDecrement />
+                    <NumberFieldInput />
+                    <NumberFieldIncrement />
+                  </NumberFieldContent>
+                </NumberField>
+                <span class="text-xs text-muted-foreground">熟练度 1-5</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="grid gap-2">
+          <Label>标签</Label>
+          <Select multiple :model-value="editTags" @update:model-value="onTagSelect">
+            <SelectTrigger>
+              <SelectValue placeholder="选择标签" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="opt in tagOptions()" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" @click="editVisible = false">取消</Button>
+        <Button @click="saveEdit">保存</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+
+  <Dialog v-model:open="deleteDialogOpen">
+    <DialogContent class="sm:max-w-sm">
+      <DialogHeader>
+        <DialogTitle>确认删除</DialogTitle>
+        <DialogDescription>确定删除资源 "{{ deletingName }}" 吗？</DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button variant="outline" @click="deleteDialogOpen = false">取消</Button>
+        <Button variant="destructive" @click="confirmDelete">删除</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>

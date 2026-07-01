@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { computed, h, onMounted, ref, watchEffect } from "vue";
-import { NDataTable, NH2, NButton, NPopconfirm, NModal, NForm, NFormItem, NDatePicker, NInputNumber, NSpace } from "naive-ui";
-import type { DataTableColumns } from "naive-ui";
-import { useAllocationsStore } from "../stores/allocations";
-import { useResourcesStore } from "../stores/resources";
-import { useProjectsStore } from "../stores/projects";
-import { useRefreshStore } from "../stores/refresh";
-import AllocationForm from "../components/AllocationForm.vue";
-import { fmtDate, parseDateStrict } from "../utils/date";
-import type { AllocationView } from "../types";
+import { computed, onMounted, ref, watchEffect } from "vue";
+import { useAllocationsStore } from "@/stores/allocations";
+import { useResourcesStore } from "@/stores/resources";
+import { useProjectsStore } from "@/stores/projects";
+import { useRefreshStore } from "@/stores/refresh";
+import AllocationForm from "@/components/AllocationForm.vue";
+import DateRangePicker from "@/components/DateRangePicker.vue";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { NumberField, NumberFieldContent, NumberFieldDecrement, NumberFieldIncrement, NumberFieldInput } from "@/components/ui/number-field";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { fmtDate, parseDateStrict } from "@/utils/date";
+import type { AllocationView } from "@/types";
 
 const allocations = useAllocationsStore();
 const resources = useResourcesStore();
@@ -47,44 +51,99 @@ async function saveEdit() {
   editVisible.value = false;
 }
 
-const columns = computed<DataTableColumns<AllocationView>>(() => [
-  { title: "资源", key: "resource_name" },
-  { title: "任务", key: "task_title" },
-  { title: "区间", key: "range", render: (row) => `${row.start_date} → ${row.end_date}` },
-  { title: "投入", key: "percent", render: (row) => `${Math.round(row.percent * 100)}%` },
-  { title: "来源", key: "source" },
-  {
-    title: "操作",
-    key: "actions",
-    width: 120,
-    render: (row) => h(NSpace, { size: 4 }, () => [
-      h(NButton, { size: "small", onClick: () => openEdit(row) }, { default: () => "编辑" }),
-      h(NPopconfirm, { onPositiveClick: () => allocations.remove(row.id, projects.current!) }, {
-        trigger: () => h(NButton, { size: "small", type: "error", quaternary: true }, { default: () => "删除" }),
-        default: () => "确定删除此分配吗？",
-      }),
-    ]),
-  },
-]);
+// Delete confirmation state
+const deleteVisible = ref(false);
+const deleteTargetId = ref<number | null>(null);
+
+function openDelete(row: AllocationView) {
+  deleteTargetId.value = row.id;
+  deleteVisible.value = true;
+}
+
+async function confirmDelete() {
+  if (deleteTargetId.value == null || projects.current == null) return;
+  await allocations.remove(deleteTargetId.value, projects.current);
+  deleteVisible.value = false;
+  deleteTargetId.value = null;
+}
+
+const tableData = computed(() => allocations.items);
 </script>
 
 <template>
-  <n-h2>分配 / Allocations</n-h2>
+  <h2 class="text-2xl font-bold">分配 / Allocations</h2>
   <AllocationForm />
-  <n-data-table :columns="columns" :data="allocations.items" :bordered="true" style="margin-top: 12px" />
+  <Table class="mt-3">
+    <TableHeader>
+      <TableRow>
+        <TableHead>资源</TableHead>
+        <TableHead>任务</TableHead>
+        <TableHead>区间</TableHead>
+        <TableHead>投入</TableHead>
+        <TableHead>来源</TableHead>
+        <TableHead class="w-[120px]">操作</TableHead>
+      </TableRow>
+    </TableHeader>
+    <TableBody>
+      <TableRow v-for="row in tableData" :key="row.id">
+        <TableCell>{{ row.resource_name }}</TableCell>
+        <TableCell>{{ row.task_title }}</TableCell>
+        <TableCell>{{ row.start_date }} → {{ row.end_date }}</TableCell>
+        <TableCell>{{ Math.round(row.percent * 100) }}%</TableCell>
+        <TableCell>{{ row.source }}</TableCell>
+        <TableCell>
+          <div class="flex items-center gap-2">
+            <Button size="sm" variant="outline" @click="openEdit(row)">编辑</Button>
+            <Button size="sm" variant="destructive" @click="openDelete(row)">删除</Button>
+          </div>
+        </TableCell>
+      </TableRow>
+      <TableRow v-if="tableData.length === 0">
+        <TableCell colspan="6" class="text-center text-muted-foreground py-8">
+          暂无数据
+        </TableCell>
+      </TableRow>
+    </TableBody>
+  </Table>
 
-  <n-modal v-model:show="editVisible" preset="card" title="编辑分配" style="width: 480px">
-    <n-form>
-      <n-form-item label="区间">
-        <n-date-picker v-model:value="editDateRange" type="daterange" clearable />
-      </n-form-item>
-      <n-form-item label="投入比例">
-        <n-input-number v-model:value="editPercent" :min="0.01" :max="1" :step="0.05" />
-      </n-form-item>
-      <n-space justify="end">
-        <n-button @click="editVisible = false">取消</n-button>
-        <n-button type="primary" @click="saveEdit">保存</n-button>
-      </n-space>
-    </n-form>
-  </n-modal>
+  <Dialog v-model:open="editVisible">
+    <DialogContent class="sm:max-w-[480px]">
+      <DialogHeader>
+        <DialogTitle>编辑分配</DialogTitle>
+      </DialogHeader>
+      <div class="grid gap-4 py-4">
+        <div class="grid gap-2">
+          <Label>区间</Label>
+          <DateRangePicker v-model="editDateRange" />
+        </div>
+        <div class="grid gap-2">
+          <Label>投入比例</Label>
+          <NumberField v-model="editPercent" :min="0.01" :max="1" :step="0.05">
+            <NumberFieldContent>
+              <NumberFieldDecrement />
+              <NumberFieldInput />
+              <NumberFieldIncrement />
+            </NumberFieldContent>
+          </NumberField>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="outline" @click="editVisible = false">取消</Button>
+        <Button @click="saveEdit">保存</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+
+  <Dialog v-model:open="deleteVisible">
+    <DialogContent class="sm:max-w-[360px]">
+      <DialogHeader>
+        <DialogTitle>确认删除</DialogTitle>
+        <DialogDescription>确定删除此分配吗？</DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button variant="outline" @click="deleteVisible = false">取消</Button>
+        <Button variant="destructive" @click="confirmDelete">确定</Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>

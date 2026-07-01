@@ -163,11 +163,11 @@ impl SettingsRepo {
     /// Used by the optimization pipeline to pick the scorer/explainer and to persist the
     /// actual provider/backend used in each run row (instead of hardcoded literals).
     pub async fn ai_settings(pool: &SqlitePool) -> Result<AiSettings, DbError> {
-        let (provider, base_url, chat_model, embed_model, solver_backend): (
-            Option<String>, Option<String>, Option<String>, Option<String>, Option<String>,
+        let (provider, base_url, chat_model, embed_model, solver_backend, solver_timeout_ms): (
+            Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>,
         ) = sqlx::query_as(
-            "SELECT ai_provider, ai_base_url, ai_chat_model, ai_embed_model, solver_backend \
-             FROM settings WHERE id = 1",
+            "SELECT ai_provider, ai_base_url, ai_chat_model, ai_embed_model, solver_backend, \
+             solver_timeout_ms FROM settings WHERE id = 1",
         )
         .fetch_one(pool)
         .await?;
@@ -177,6 +177,7 @@ impl SettingsRepo {
             chat_model: chat_model.unwrap_or_else(|| "qwen2.5:7b".into()),
             embed_model: embed_model.unwrap_or_else(|| "nomic-embed-text".into()),
             solver_backend: solver_backend.unwrap_or_else(|| "greedy".into()),
+            solver_timeout_ms: solver_timeout_ms.unwrap_or(5000).max(0) as u64,
         })
     }
 }
@@ -188,4 +189,6 @@ pub struct AiSettings {
     pub chat_model: String,
     pub embed_model: String,
     pub solver_backend: String,
+    /// HiGHS time budget (ms) for the MILP solver; also the outer tokio::time::timeout budget.
+    pub solver_timeout_ms: u64,
 }

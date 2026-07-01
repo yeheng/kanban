@@ -1,5 +1,5 @@
 // Shared date helpers. The whole app stores dates as `YYYY-MM-DD` strings and feeds epoch-ms
-// timestamps to Naive UI date pickers (which operate in the LOCAL timezone). These two helpers
+// timestamps to shadcn-vue date pickers (which operate in the LOCAL timezone). These two helpers
 // are exact inverses in local time, so a date round-trips (backend string → picker → backend
 // string) without the off-by-one shift you get from `Date.parse("YYYY-MM-DD")`, which parses a
 // date-only string as UTC midnight and lands on the previous day in zones west of UTC.

@@ -1,10 +1,34 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NSwitch, NDatePicker } from "naive-ui";
-import { useTasksStore } from "../stores/tasks";
-import { useProjectsStore } from "../stores/projects";
-import { useCatalogStore } from "../stores/catalog";
-import { fmtDateOrNull } from "../utils/date";
+import { CalendarDate, type DateValue } from "@internationalized/date";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "@/components/ui/number-field";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { useTasksStore } from "@/stores/tasks";
+import { useProjectsStore } from "@/stores/projects";
+import { useCatalogStore } from "@/stores/catalog";
+import { fmtDate, fmtDateOrNull, parseDate } from "@/utils/date";
 
 const tasks = useTasksStore();
 const projects = useProjectsStore();
@@ -37,6 +61,43 @@ const segmentKindOptions = [
   { label: "分段 segment", value: "segment" },
 ];
 
+function toCalendarDate(ms: number): DateValue {
+  const [y, m, d] = fmtDate(ms).split("-").map(Number);
+  return new CalendarDate(y, m, d);
+}
+
+function dateValueToMs(v: DateValue | null | undefined): number | null {
+  if (!v) return null;
+  return parseDate(`${v.year}-${String(v.month).padStart(2, "0")}-${String(v.day).padStart(2, "0")}`);
+}
+
+const startDate = computed<DateValue | undefined>({
+  get: () => (startMs.value ? toCalendarDate(startMs.value) : undefined),
+  set: (v) => { startMs.value = dateValueToMs(v); },
+});
+
+const endDate = computed<DateValue | undefined>({
+  get: () => (endMs.value ? toCalendarDate(endMs.value) : undefined),
+  set: (v) => { endMs.value = dateValueToMs(v); },
+});
+
+function handleSkillUpdate(v: unknown) {
+  selectedSkills.value = (v as number[] | undefined) ?? [];
+}
+
+function handleTagUpdate(v: unknown) {
+  selectedTags.value = (v as number[] | undefined) ?? [];
+}
+
+function handleSegmentKindUpdate(v: unknown) {
+  segmentKind.value = (v as string | undefined) || null;
+  if (!segmentKind.value) parentTaskId.value = null;
+}
+
+function handleParentUpdate(v: unknown) {
+  parentTaskId.value = (v as number | undefined) ?? null;
+}
+
 async function submit() {
   if (!title.value.trim() || !projects.current) return;
   const skillReqs = selectedSkills.value.map((id) => [id, 3, true, 1] as [number, number, boolean, number]);
@@ -65,45 +126,115 @@ async function submit() {
 </script>
 
 <template>
-  <n-form inline>
-    <n-form-item label="标题">
-      <n-input v-model:value="title" placeholder="任务标题" @keyup.enter="submit" />
-    </n-form-item>
-    <n-form-item label="PD">
-      <n-input-number v-model:value="estimate" :min="0" />
-    </n-form-item>
-    <n-form-item label="起始日">
-      <n-date-picker v-model:value="startMs" type="date" clearable />
-    </n-form-item>
-    <n-form-item label="截止日">
-      <n-date-picker v-model:value="endMs" type="date" clearable />
-    </n-form-item>
-    <n-form-item label="技能">
-      <n-select v-model:value="selectedSkills" multiple :options="skillOptions" placeholder="选择技能" />
-    </n-form-item>
-    <n-form-item label="标签">
-      <n-select v-model:value="selectedTags" multiple :options="tagOptions" placeholder="选择标签" />
-    </n-form-item>
-    <n-form-item label="长期任务">
-      <n-switch v-model:value="isLongTerm" />
-    </n-form-item>
-    <n-form-item label="分段类型">
-      <n-select
-        v-model:value="segmentKind"
-        :options="segmentKindOptions"
-        clearable
-        placeholder="无"
-      />
-    </n-form-item>
-    <n-form-item v-if="segmentKind" label="父任务">
-      <n-select
-        v-model:value="parentTaskId"
-        :options="parentOptions"
-        placeholder="选择父任务"
-      />
-    </n-form-item>
-    <n-form-item>
-      <n-button type="primary" @click="submit">新建任务</n-button>
-    </n-form-item>
-  </n-form>
+  <div class="flex flex-wrap items-end gap-4">
+    <div class="grid gap-2">
+      <Label for="task-title">标题</Label>
+      <Input id="task-title" v-model="title" placeholder="任务标题" @keyup.enter="submit" />
+    </div>
+
+    <div class="grid gap-2">
+      <Label for="task-estimate">PD</Label>
+      <NumberField id="task-estimate" v-model="estimate" :min="0">
+        <NumberFieldContent>
+          <NumberFieldDecrement />
+          <NumberFieldInput />
+          <NumberFieldIncrement />
+        </NumberFieldContent>
+      </NumberField>
+    </div>
+
+    <div class="grid gap-2">
+      <Label>起始日</Label>
+      <Popover>
+        <PopoverTrigger as-child>
+          <Button variant="outline" class="w-[140px] justify-start text-left font-normal">
+            {{ fmtDateOrNull(startMs) ?? "选择起始日" }}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent class="w-auto p-0">
+          <Calendar v-model="startDate" />
+        </PopoverContent>
+      </Popover>
+    </div>
+
+    <div class="grid gap-2">
+      <Label>截止日</Label>
+      <Popover>
+        <PopoverTrigger as-child>
+          <Button variant="outline" class="w-[140px] justify-start text-left font-normal">
+            {{ fmtDateOrNull(endMs) ?? "选择截止日" }}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent class="w-auto p-0">
+          <Calendar v-model="endDate" />
+        </PopoverContent>
+      </Popover>
+    </div>
+
+    <div class="grid gap-2">
+      <Label for="task-skills">技能</Label>
+      <Select :model-value="selectedSkills" multiple @update:model-value="handleSkillUpdate">
+        <SelectTrigger id="task-skills" class="w-[180px]">
+          <SelectValue placeholder="选择技能" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="opt in skillOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+
+    <div class="grid gap-2">
+      <Label for="task-tags">标签</Label>
+      <Select :model-value="selectedTags" multiple @update:model-value="handleTagUpdate">
+        <SelectTrigger id="task-tags" class="w-[180px]">
+          <SelectValue placeholder="选择标签" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="opt in tagOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+
+    <div class="grid gap-2">
+      <Label for="task-longterm" class="cursor-pointer">长期任务</Label>
+      <Switch id="task-longterm" v-model="isLongTerm" />
+    </div>
+
+    <div class="grid gap-2">
+      <Label for="task-segment-kind">分段类型</Label>
+      <Select :model-value="segmentKind" @update:model-value="handleSegmentKindUpdate">
+        <SelectTrigger id="task-segment-kind" class="w-[180px]">
+          <SelectValue placeholder="无" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="opt in segmentKindOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+
+    <div v-if="segmentKind" class="grid gap-2">
+      <Label for="task-parent">父任务</Label>
+      <Select :model-value="parentTaskId" @update:model-value="handleParentUpdate">
+        <SelectTrigger id="task-parent" class="w-[180px]">
+          <SelectValue placeholder="选择父任务" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem v-for="opt in parentOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+
+    <div class="grid gap-2">
+      <Label class="invisible">操作</Label>
+      <Button @click="submit">新建任务</Button>
+    </div>
+  </div>
 </template>

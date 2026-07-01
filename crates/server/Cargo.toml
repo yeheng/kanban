@@ -20,3 +20,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tokio = { workspace = true }
+
+[features]
+default = []
+# Opt-in features forwarded to `app` (and through to ai-engine). The shipped server binary
+# is deterministic by default (greedy solver, keyword scorer, template explainer, no PDF).
+llm = ["app/llm"]
+milp = ["app/milp"]
+pdf = ["app/pdf"]

@@ -216,3 +216,58 @@ async fn fairness_nonzero_when_load_balanced() {
         sol.metrics.fairness
     );
 }
+
+/// Two resources, two tasks each 2.0 PD on a 5-day window. R1 scores 0.80 on BOTH tasks;
+/// R2 scores 0.79 on both. With balance weight ≈ 0, greedy (score desc, load-asc tiebreak)
+/// ships both tasks to R1 (0.80 > 0.79, no tie to break) ⇒ R1 load 0.8, R2 load 0.0, fairness
+/// low. With balance weight dominant, the fairness-aware rank_score must pull one task to R2
+/// ⇒ fairness rises sharply. This is the case the pure score-sort greedy provably misses.
+#[test]
+fn balance_weight_raises_fairness_above_score_only() {
+    let p = AllocationProblem {
+        resources: vec![
+            CandidateResource {
+                id: 1, name: "R1".into(), skills: HashMap::new(), tags: vec![],
+                daily_capacity_pd: 1.0, available_from: None, available_to: None,
+            },
+            CandidateResource {
+                id: 2, name: "R2".into(), skills: HashMap::new(), tags: vec![],
+                daily_capacity_pd: 1.0, available_from: None, available_to: None,
+            },
+        ],
+        tasks: vec![
+            CandidateTask {
+                id: 1, project_id: 1, title: "A".into(), estimate_pd: 2.0,
+                start: d("2026-07-01"), end: d("2026-07-05"), priority: 1, skill_reqs: vec![],
+            },
+            CandidateTask {
+                id: 2, project_id: 1, title: "B".into(), estimate_pd: 2.0,
+                start: d("2026-07-01"), end: d("2026-07-05"), priority: 2, skill_reqs: vec![],
+            },
+        ],
+        ..Default::default()
+    };
+    let m: HashMap<(i64, i64), f64> = HashMap::from([
+        ((1, 1), 0.80), ((1, 2), 0.80),
+        ((2, 1), 0.79), ((2, 2), 0.79),
+    ]);
+
+    // Balance weight = 0 ⇒ pure score sort ⇒ both on R1 (0.80 > 0.79), R2 idle.
+    let mut p_off = p.clone();
+    p_off.weights = ObjectiveWeights { skill_fit: 1.0, balance: 0.0, budget: 0.0 };
+    let sol_off = GreedySolver.solve(&p_off, &m);
+    let rids_off: Vec<i64> = { let mut v: Vec<i64> = sol_off.assignments.iter().map(|a| a.resource_id).collect(); v.sort(); v };
+    assert_eq!(rids_off, vec![1, 1], "w_balance=0 must match the old score-only behavior (both on R1)");
+
+    // Balance weight dominant ⇒ one task each ⇒ fairness jumps.
+    let mut p_on = p.clone();
+    p_on.weights = ObjectiveWeights { skill_fit: 0.1, balance: 0.9, budget: 0.0 };
+    let sol_on = GreedySolver.solve(&p_on, &m);
+    let rids_on: Vec<i64> = { let mut v: Vec<i64> = sol_on.assignments.iter().map(|a| a.resource_id).collect(); v.sort(); v };
+    assert_eq!(rids_on, vec![1, 2], "w_balance dominant must split tasks across R1/R2");
+    assert!(
+        sol_on.metrics.fairness > sol_off.metrics.fairness + 1.0,
+        "balance-dominant fairness {} must exceed score-only {}",
+        sol_on.metrics.fairness, sol_off.metrics.fairness
+    );
+}

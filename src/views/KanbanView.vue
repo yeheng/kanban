@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from "vue";
-import { NH2, NSpace, NModal, NForm, NFormItem, NInput, NInputNumber, NDatePicker, NButton, NSelect, NEmpty, NText, NTag } from "naive-ui";
-import { useTasksStore } from "../stores/tasks";
-import { useProjectsStore } from "../stores/projects";
-import { useRefreshStore } from "../stores/refresh";
-import KanbanColumn from "../components/KanbanColumn.vue";
-import { fmtDate, parseDate } from "../utils/date";
-import type { KanbanTask, TaskStatus } from "../types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { NumberField, NumberFieldContent, NumberFieldDecrement, NumberFieldIncrement, NumberFieldInput } from "@/components/ui/number-field";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useTasksStore } from "@/stores/tasks";
+import { useProjectsStore } from "@/stores/projects";
+import { useRefreshStore } from "@/stores/refresh";
+import KanbanColumn from "@/components/KanbanColumn.vue";
+import DateRangePicker from "@/components/DateRangePicker.vue";
+import { fmtDate, parseDate } from "@/utils/date";
+import type { KanbanTask, TaskStatus } from "@/types";
 
 const tasks = useTasksStore();
 const projects = useProjectsStore();
@@ -92,12 +100,16 @@ async function onDelete(id: number) {
   if (!projects.current) return;
   await tasks.remove(id, projects.current);
 }
+
+function onPredecessorChange(value: unknown) {
+  depPredecessor.value = value == null ? null : (value as number);
+}
 </script>
 
 <template>
-  <div>
-    <n-h2 style="margin-top: 0">看板 / Kanban</n-h2>
-    <n-space v-if="tasks.tasks.length" :size="12" align="start">
+  <div class="h-full flex flex-col">
+    <h2 class="text-2xl font-bold mt-0 mb-4">看板 / Kanban</h2>
+    <div v-if="tasks.tasks.length" class="flex-1 flex items-start gap-3 min-h-0 overflow-x-auto pb-2">
       <KanbanColumn
         v-for="col in tasks.columns"
         :key="col"
@@ -108,54 +120,78 @@ async function onDelete(id: number) {
         @delete-card="onDelete"
         @edit-card="onEdit"
       />
-    </n-space>
-    <n-empty v-else description="暂无任务，请到项目页面创建任务">
-      <template #extra>
-        <n-button @click="$router.push('/projects')">去创建任务</n-button>
-      </template>
-    </n-empty>
+    </div>
+    <div v-else class="text-muted-foreground">
+      暂无任务，请到项目页面创建任务
+      <div class="mt-4">
+        <Button @click="$router.push('/projects')">去创建任务</Button>
+      </div>
+    </div>
 
-    <n-modal
-      v-model:show="editVisible"
-      preset="card"
-      title="编辑任务"
-      style="width: 520px"
-    >
-      <n-form v-if="editing">
-        <n-form-item label="标题">
-          <n-input v-model:value="editTitle" />
-        </n-form-item>
-        <n-form-item label="描述">
-          <n-input v-model:value="editDescription" type="textarea" :rows="2" placeholder="任务描述 (可选)" />
-        </n-form-item>
-        <n-form-item label="估时 (PD)">
-          <n-input-number v-model:value="editEstimate" :min="0" />
-        </n-form-item>
-        <n-form-item label="区间">
-          <n-date-picker v-model:value="editDateRange" type="daterange" clearable />
-        </n-form-item>
-        <n-form-item label="前置任务">
-          <n-space align="center">
-            <n-select
-              v-model:value="depPredecessor"
-              :options="predecessorOptions"
-              placeholder="选择前置任务 (可选)"
-              style="width: 240px"
-              clearable
-            />
-            <n-text>延迟</n-text>
-            <n-input-number v-model:value="depLag" :step="1" style="width: 100px" />
-            <n-text>天</n-text>
-          </n-space>
-        </n-form-item>
-        <n-form-item v-if="editError">
-          <n-tag type="error">{{ editError }}</n-tag>
-        </n-form-item>
-        <n-space justify="end">
-          <n-button @click="editVisible = false">取消</n-button>
-          <n-button type="primary" @click="saveEdit">保存</n-button>
-        </n-space>
-      </n-form>
-    </n-modal>
+    <Dialog v-model:open="editVisible">
+      <DialogContent class="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>编辑任务</DialogTitle>
+          <DialogDescription />
+        </DialogHeader>
+        <div v-if="editing" class="grid gap-4">
+          <div class="grid gap-2">
+            <Label>标题</Label>
+            <Input v-model="editTitle" />
+          </div>
+          <div class="grid gap-2">
+            <Label>描述</Label>
+            <Textarea v-model="editDescription" :rows="2" placeholder="任务描述 (可选)" />
+          </div>
+          <div class="grid gap-2">
+            <Label>估时 (PD)</Label>
+            <NumberField v-model="editEstimate" :min="0">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
+          </div>
+          <div v-if="editDateRange" class="grid gap-2">
+            <Label>区间</Label>
+            <DateRangePicker v-model="editDateRange" />
+          </div>
+          <div v-else class="grid gap-2">
+            <Label>区间</Label>
+            <div class="text-sm text-muted-foreground">未设置日期</div>
+          </div>
+          <div class="grid gap-2">
+            <Label>前置任务</Label>
+            <div class="flex items-center gap-2 flex-wrap">
+              <Select :model-value="depPredecessor ?? undefined" @update:model-value="onPredecessorChange">
+                <SelectTrigger class="w-60">
+                  <SelectValue placeholder="选择前置任务 (可选)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="opt in predecessorOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</SelectItem>
+                </SelectContent>
+              </Select>
+              <span class="text-muted-foreground">延迟</span>
+              <NumberField v-model="depLag" :step="1" class="w-24">
+                <NumberFieldContent>
+                  <NumberFieldDecrement />
+                  <NumberFieldInput />
+                  <NumberFieldIncrement />
+                </NumberFieldContent>
+              </NumberField>
+              <span class="text-muted-foreground">天</span>
+            </div>
+          </div>
+          <Alert v-if="editError" variant="destructive">
+            <AlertDescription>{{ editError }}</AlertDescription>
+          </Alert>
+          <div class="flex justify-end gap-2">
+            <Button variant="outline" @click="editVisible = false">取消</Button>
+            <Button @click="saveEdit">保存</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

@@ -14,6 +14,11 @@ tokio = { workspace = true }
 [features]
 default = []
 llm = ["rig"]
+# Exact MILP solver (good_lp modeler + HiGHS backend). The binary generalized-assignment
+# model in solver::milp needs only linear constraints + binary vars; HiGHS supports both
+# and is statically linked (no runtime lib on Linux; needs a C/C++ toolchain at build).
+# default-features=false drops coin_cbc (which requires a separate Cbc install).
+milp = ["dep:good_lp"]
 
 # Production impls (behind features). The package is `rig-core` but its lib is `rig`
 # (verified against the locked 0.36 source: package name "rig-core", lib name "rig").
@@ -23,3 +28,15 @@ llm = ["rig"]
 version = "0.36"
 optional = true
 package = "rig-core"
+
+# good_lp is a MILP *modeler* (not a solver); it forwards to a backend crate. We pin the
+# `highs` backend (best open-source MIP solver, MIT, multi-core, statically linked via the
+# `highs` crate which vendors HiGHS source). HighsProblem implements SolverModel and is Send,
+# so it is safe to drive from tokio::task::spawn_blocking in the app layer.
+# API surface relied on: variables!/ProblemVariables::add, constraint!, .maximise(..).using(highs),
+# HighsProblem::{set_time_limit, set_threads}, Solution::value. (docs.rs good_lp 1.8.x.)
+[dependencies.good_lp]
+version = "1"
+default-features = false
+features = ["highs"]
+optional = true

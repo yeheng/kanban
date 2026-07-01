@@ -1,9 +1,36 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { NH2, NH3, NSpace, NForm, NFormItem, NInput, NInputNumber, NButton, NSelect, NList, NListItem, NThing, NTag, NPopconfirm, NText, NDivider } from "naive-ui";
-import { useTeamsStore } from "../stores/teams";
-import { useResourcesStore } from "../stores/resources";
-import type { TeamOverride } from "../types";
+import { useTeamsStore } from "@/stores/teams";
+import { useResourcesStore } from "@/stores/resources";
+import type { TeamOverride } from "@/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  NumberField,
+  NumberFieldContent,
+  NumberFieldDecrement,
+  NumberFieldIncrement,
+  NumberFieldInput,
+} from "@/components/ui/number-field";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const teams = useTeamsStore();
 const resources = useResourcesStore();
@@ -19,6 +46,14 @@ const overrideGreen = ref<number | null>(null);
 const overrideYellow = ref<number | null>(null);
 const overridePdHours = ref<number | null>(null);
 const overridePmWorkdays = ref<number | null>(null);
+
+// Confirm dialog state
+const deleteDialogOpen = ref(false);
+const deleteTargetId = ref<number | null>(null);
+const deleteTargetName = computed(() => teams.items.find((t) => t.id === deleteTargetId.value)?.name ?? "");
+const removeDialogOpen = ref(false);
+const removeTargetId = ref<number | null>(null);
+const removeTargetName = computed(() => resourceName(removeTargetId.value ?? 0));
 
 const resourceOptions = computed(() =>
   resources.items.map((r) => ({ label: r.name, value: r.id })),
@@ -89,113 +124,242 @@ async function saveOverride() {
 function resourceName(id: number): string {
   return resources.items.find((r) => r.id === id)?.name ?? `#${id}`;
 }
+
+function openDeleteDialog(id: number) {
+  deleteTargetId.value = id;
+  deleteDialogOpen.value = true;
+}
+
+async function confirmDelete() {
+  if (deleteTargetId.value == null) return;
+  await teams.remove(deleteTargetId.value);
+  deleteDialogOpen.value = false;
+  deleteTargetId.value = null;
+}
+
+function openRemoveDialog(resourceId: number) {
+  removeTargetId.value = resourceId;
+  removeDialogOpen.value = true;
+}
+
+async function confirmRemove() {
+  if (removeTargetId.value == null) return;
+  await removeMember(removeTargetId.value);
+  removeDialogOpen.value = false;
+  removeTargetId.value = null;
+}
 </script>
 
 <template>
-  <n-h2 style="margin-top: 0">团队 / Teams</n-h2>
+  <h2 class="text-2xl font-bold tracking-tight">团队 / Teams</h2>
 
-  <n-h3>创建团队</n-h3>
-  <n-form inline>
-    <n-form-item label="团队名">
-      <n-input v-model:value="teamName" placeholder="团队名" @keyup.enter="createTeam" />
-    </n-form-item>
-    <n-form-item>
-      <n-button type="primary" @click="createTeam">创建团队</n-button>
-    </n-form-item>
-  </n-form>
+  <h3 class="mt-6 text-xl font-semibold tracking-tight">创建团队</h3>
+  <div class="mt-2 flex flex-wrap items-end gap-4">
+    <div class="grid gap-2">
+      <Label>团队名</Label>
+      <Input v-model="teamName" placeholder="团队名" class="w-64" @keyup.enter="createTeam" />
+    </div>
+    <div class="grid gap-2">
+      <Button @click="createTeam">创建团队</Button>
+    </div>
+  </div>
 
-  <n-h3>团队列表</n-h3>
-  <n-list bordered>
-    <n-list-item v-for="t in teams.items" :key="t.id">
-      <n-thing :title="t.name" :description="t.description ?? ''">
-        <template #action>
-          <n-space :size="8">
-            <n-button
-              size="small"
-              :type="selectedTeam === t.id ? 'primary' : 'default'"
-              @click="selectedTeam = t.id"
-            >
-              {{ selectedTeam === t.id ? "已选中" : "管理" }}
-            </n-button>
-            <n-popconfirm @positive-click="teams.remove(t.id)">
-              <template #trigger>
-                <n-button size="small" type="error" quaternary>删除</n-button>
-              </template>
-              确定删除团队 "{{ t.name }}" 吗？
-            </n-popconfirm>
-          </n-space>
-        </template>
-      </n-thing>
-    </n-list-item>
-  </n-list>
+  <h3 class="mt-6 text-xl font-semibold tracking-tight">团队列表</h3>
+  <div class="mt-2 divide-y rounded-lg border">
+    <div v-for="t in teams.items" :key="t.id" class="p-4">
+      <div class="flex items-start justify-between gap-4">
+        <div class="grid gap-1">
+          <div class="font-medium">{{ t.name }}</div>
+          <div class="text-sm text-muted-foreground">{{ t.description ?? "" }}</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button
+            size="sm"
+            :variant="selectedTeam === t.id ? 'default' : 'outline'"
+            @click="selectedTeam = t.id"
+          >
+            {{ selectedTeam === t.id ? "已选中" : "管理" }}
+          </Button>
+          <Dialog v-model:open="deleteDialogOpen">
+            <DialogTrigger as-child>
+              <Button size="sm" variant="destructive" @click="openDeleteDialog(t.id)">删除</Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>删除团队</DialogTitle>
+                <DialogDescription>确定删除团队 "{{ deleteTargetName }}" 吗？</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button variant="outline" @click="deleteDialogOpen = false">取消</Button>
+                <Button variant="destructive" @click="confirmDelete">确定</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <template v-if="selectedTeam != null">
-    <n-divider />
-    <n-h3>{{ selectedTeamName }} — 成员管理</n-h3>
-    <n-form inline>
-      <n-form-item label="资源">
-        <n-select
-          v-model:value="memberResource"
-          :options="resourceOptions"
-          placeholder="选择资源"
-          style="width: 200px"
-        />
-      </n-form-item>
-      <n-form-item label="角色">
-        <n-input v-model:value="memberRole" placeholder="角色 (可选)" style="width: 150px" />
-      </n-form-item>
-      <n-form-item>
-        <n-button type="primary" @click="addMember">添加成员</n-button>
-      </n-form-item>
-    </n-form>
+    <Separator class="my-6" />
 
-    <n-list bordered>
-      <n-list-item v-for="m in teams.members" :key="`${m.team_id}-${m.resource_id}`">
-        <n-thing :title="resourceName(m.resource_id)">
-          <template #description>
-            <n-tag v-if="m.role" size="small" :bordered="false">{{ m.role }}</n-tag>
-            <n-text v-else depth="3" style="font-size: 12px">无角色</n-text>
-          </template>
-          <template #header-extra>
-            <n-popconfirm @positive-click="removeMember(m.resource_id)">
-              <template #trigger>
-                <n-button size="small" type="error" quaternary>移除</n-button>
-              </template>
-              确定将 "{{ resourceName(m.resource_id) }}" 移出团队吗？
-            </n-popconfirm>
-          </template>
-        </n-thing>
-      </n-list-item>
-    </n-list>
-    <n-text v-if="!teams.members.length" depth="3">暂无成员。</n-text>
+    <h3 class="text-xl font-semibold tracking-tight">{{ selectedTeamName }} — 成员管理</h3>
+    <div class="mt-2 flex flex-wrap items-end gap-4">
+      <div class="grid gap-2">
+        <Label>资源</Label>
+        <Select
+          :model-value="memberResource ?? undefined"
+          @update:model-value="(v) => memberResource = (v as number | undefined) ?? null"
+        >
+          <SelectTrigger class="w-52">
+            <SelectValue placeholder="选择资源" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="o in resourceOptions" :key="o.value" :value="o.value">
+              {{ o.label }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div class="grid gap-2">
+        <Label>角色</Label>
+        <Input v-model="memberRole" placeholder="角色 (可选)" class="w-40" />
+      </div>
+      <div class="grid gap-2">
+        <Button @click="addMember">添加成员</Button>
+      </div>
+    </div>
 
-    <n-divider />
-    <n-h3>团队阈值覆盖</n-h3>
-    <n-text depth="3" style="font-size: 12px; margin-bottom: 8px; display: block">
+    <div class="mt-4 divide-y rounded-lg border">
+      <div v-for="m in teams.members" :key="`${m.team_id}-${m.resource_id}`" class="p-4">
+        <div class="flex items-center justify-between gap-4">
+          <div class="font-medium">{{ resourceName(m.resource_id) }}</div>
+          <div class="flex items-center gap-2">
+            <Badge v-if="m.role" variant="secondary">{{ m.role }}</Badge>
+            <span v-else class="text-xs text-muted-foreground">无角色</span>
+            <Dialog v-model:open="removeDialogOpen">
+              <DialogTrigger as-child>
+                <Button size="sm" variant="destructive" @click="openRemoveDialog(m.resource_id)">移除</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>移除成员</DialogTitle>
+                  <DialogDescription>确定将 "{{ removeTargetName }}" 移出团队吗？</DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <Button variant="outline" @click="removeDialogOpen = false">取消</Button>
+                  <Button variant="destructive" @click="confirmRemove">确定</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p v-if="!teams.members.length" class="mt-2 text-sm text-muted-foreground">暂无成员。</p>
+
+    <Separator class="my-6" />
+
+    <h3 class="text-xl font-semibold tracking-tight">团队阈值覆盖</h3>
+    <p class="mt-2 text-xs text-muted-foreground">
       设置后该团队使用自己的阈值，覆盖全局设置。留空则不覆盖（使用全局值）。
-    </n-text>
-    <n-form inline>
-      <n-form-item label="每 PD 小时">
-        <n-input-number v-model:value="overridePdHours" :step="0.5" :min="0.5" placeholder="如 8" />
-      </n-form-item>
-      <n-form-item label="每 PM 人日">
-        <n-input-number v-model:value="overridePmWorkdays" :step="1" :min="1" placeholder="如 20" />
-      </n-form-item>
-      <n-form-item label="过载阈值">
-        <n-input-number v-model:value="overrideOverload" :step="0.05" :min="0" placeholder="如 1.10" />
-      </n-form-item>
-      <n-form-item label="低载阈值">
-        <n-input-number v-model:value="overrideUnderload" :step="0.05" :min="0" placeholder="如 0.70" />
-      </n-form-item>
-      <n-form-item label="绿灯利用率">
-        <n-input-number v-model:value="overrideGreen" :step="0.05" :min="0" :max="1" placeholder="如 0.80" />
-      </n-form-item>
-      <n-form-item label="黄灯利用率">
-        <n-input-number v-model:value="overrideYellow" :step="0.05" :min="0" :max="1" placeholder="如 0.95" />
-      </n-form-item>
-      <n-form-item>
-        <n-button type="primary" @click="saveOverride">保存覆盖</n-button>
-      </n-form-item>
-    </n-form>
+    </p>
+    <div class="mt-4 flex flex-wrap items-end gap-4">
+      <div class="grid gap-2">
+        <Label>每 PD 小时</Label>
+        <NumberField
+          :model-value="overridePdHours ?? undefined"
+          :step="0.5"
+          :min="0.5"
+          @update:model-value="(v) => overridePdHours = (v as number | undefined) ?? null"
+        >
+          <NumberFieldContent>
+            <NumberFieldDecrement />
+            <NumberFieldInput />
+            <NumberFieldIncrement />
+          </NumberFieldContent>
+        </NumberField>
+      </div>
+      <div class="grid gap-2">
+        <Label>每 PM 人日</Label>
+        <NumberField
+          :model-value="overridePmWorkdays ?? undefined"
+          :step="1"
+          :min="1"
+          @update:model-value="(v) => overridePmWorkdays = (v as number | undefined) ?? null"
+        >
+          <NumberFieldContent>
+            <NumberFieldDecrement />
+            <NumberFieldInput />
+            <NumberFieldIncrement />
+          </NumberFieldContent>
+        </NumberField>
+      </div>
+      <div class="grid gap-2">
+        <Label>过载阈值</Label>
+        <NumberField
+          :model-value="overrideOverload ?? undefined"
+          :step="0.05"
+          :min="0"
+          @update:model-value="(v) => overrideOverload = (v as number | undefined) ?? null"
+        >
+          <NumberFieldContent>
+            <NumberFieldDecrement />
+            <NumberFieldInput />
+            <NumberFieldIncrement />
+          </NumberFieldContent>
+        </NumberField>
+      </div>
+      <div class="grid gap-2">
+        <Label>低载阈值</Label>
+        <NumberField
+          :model-value="overrideUnderload ?? undefined"
+          :step="0.05"
+          :min="0"
+          @update:model-value="(v) => overrideUnderload = (v as number | undefined) ?? null"
+        >
+          <NumberFieldContent>
+            <NumberFieldDecrement />
+            <NumberFieldInput />
+            <NumberFieldIncrement />
+          </NumberFieldContent>
+        </NumberField>
+      </div>
+      <div class="grid gap-2">
+        <Label>绿灯利用率</Label>
+        <NumberField
+          :model-value="overrideGreen ?? undefined"
+          :step="0.05"
+          :min="0"
+          :max="1"
+          @update:model-value="(v) => overrideGreen = (v as number | undefined) ?? null"
+        >
+          <NumberFieldContent>
+            <NumberFieldDecrement />
+            <NumberFieldInput />
+            <NumberFieldIncrement />
+          </NumberFieldContent>
+        </NumberField>
+      </div>
+      <div class="grid gap-2">
+        <Label>黄灯利用率</Label>
+        <NumberField
+          :model-value="overrideYellow ?? undefined"
+          :step="0.05"
+          :min="0"
+          :max="1"
+          @update:model-value="(v) => overrideYellow = (v as number | undefined) ?? null"
+        >
+          <NumberFieldContent>
+            <NumberFieldDecrement />
+            <NumberFieldInput />
+            <NumberFieldIncrement />
+          </NumberFieldContent>
+        </NumberField>
+      </div>
+      <div class="grid gap-2">
+        <Button @click="saveOverride">保存覆盖</Button>
+      </div>
+    </div>
   </template>
 </template>

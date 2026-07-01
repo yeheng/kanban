@@ -1,57 +1,99 @@
 <script setup lang="ts">
-import { computed, h } from "vue";
-import { NH3, NH4, NDataTable, NAlert, NButton, NSpace, NText, NStatistic } from "naive-ui";
-import type { DataTableColumns } from "naive-ui";
-import { useOptimizationStore } from "../stores/optimization";
-import type { ScoredAssignment } from "../types";
+import { computed } from "vue";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useOptimizationStore } from "@/stores/optimization";
+import type { ScoredAssignment } from "@/types";
 
 const opt = useOptimizationStore();
 function pct(v: number) { return Math.round(v) + "%"; }
 
-const assignmentColumns = computed<DataTableColumns<ScoredAssignment>>(() => [
-  { title: "资源", key: "resource_id", render: (a) => `#${a.resource_id}`, width: 80 },
-  { title: "任务", key: "task_id", render: (a) => `#${a.task_id}`, width: 80 },
-  { title: "区间", key: "range", render: (a) => `${a.start} → ${a.end}` },
-  { title: "投入", key: "percent", render: (a) => `${Math.round(a.percent * 100)}%`, width: 80 },
-  { title: "匹配分", key: "score", render: (a) => `${Math.round(a.score * 100)}`, width: 80 },
+interface StatItem { label: string; value: string; }
+const stats = computed<StatItem[]>(() => [
+  { label: "综合评分", value: pct(opt.current!.plan.solution.metrics.overall) },
+  { label: "技能", value: pct(opt.current!.plan.solution.metrics.skill_fit) },
+  { label: "排期覆盖", value: pct(opt.current!.plan.solution.metrics.scheduled_ratio) },
 ]);
+
+function assignmentKey(a: ScoredAssignment, i: number) {
+  return `${a.resource_id}-${a.task_id}-${a.start}-${a.end}-${i}`;
+}
 </script>
 
 <template>
-  <div v-if="opt.current">
-    <n-h3>方案 #{{ opt.current.run_id }}</n-h3>
-    <n-space :size="24">
-      <n-statistic label="综合评分" :value="pct(opt.current.plan.solution.metrics.overall)" />
-      <n-statistic label="技能" :value="pct(opt.current.plan.solution.metrics.skill_fit)" />
-      <n-statistic label="排期覆盖" :value="pct(opt.current.plan.solution.metrics.scheduled_ratio)" />
-    </n-space>
+  <div v-if="opt.current" class="space-y-4">
+    <h3 class="text-2xl font-semibold tracking-tight">
+      方案 #{{ opt.current.run_id }}
+    </h3>
 
-    <n-h4>已分配 ({{ opt.current.plan.solution.assignments.length }})</n-h4>
-    <n-data-table
-      :columns="assignmentColumns"
-      :data="opt.current.plan.solution.assignments"
-      :bordered="true"
-      size="small"
-    />
+    <div class="flex flex-wrap gap-4">
+      <Card v-for="stat in stats" :key="stat.label" class="min-w-[120px]">
+        <CardHeader class="pb-2">
+          <div class="text-sm text-muted-foreground">{{ stat.label }}</div>
+        </CardHeader>
+        <CardContent>
+          <div class="text-2xl font-bold">{{ stat.value }}</div>
+        </CardContent>
+      </Card>
+    </div>
 
-    <n-alert
+    <h4 class="text-lg font-semibold tracking-tight">
+      已分配 ({{ opt.current.plan.solution.assignments.length }})
+    </h4>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead class="w-20">资源</TableHead>
+          <TableHead class="w-20">任务</TableHead>
+          <TableHead>区间</TableHead>
+          <TableHead class="w-20">投入</TableHead>
+          <TableHead class="w-20">匹配分</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        <TableRow
+          v-for="(a, i) in opt.current.plan.solution.assignments"
+          :key="assignmentKey(a, i)"
+        >
+          <TableCell>#{{ a.resource_id }}</TableCell>
+          <TableCell>#{{ a.task_id }}</TableCell>
+          <TableCell>{{ a.start }} → {{ a.end }}</TableCell>
+          <TableCell>{{ Math.round(a.percent * 100) }}%</TableCell>
+          <TableCell>{{ Math.round(a.score * 100) }}</TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
+
+    <Alert
       v-if="opt.current.plan.solution.unscheduled.length"
-      type="warning"
-      show-icon
-      style="margin-top: 8px"
+      variant="default"
+      class="border-yellow-200 bg-yellow-50 text-yellow-800"
     >
-      ⚠ 未排期任务：{{ opt.current.plan.solution.unscheduled.join(", ") }}
-    </n-alert>
+      <AlertDescription class="text-yellow-800">
+        ⚠ 未排期任务：{{ opt.current.plan.solution.unscheduled.join(", ") }}
+      </AlertDescription>
+    </Alert>
 
-    <n-h4>解释</n-h4>
-    <n-text depth="3" class="plan-review__explanation">
+    <h4 class="text-lg font-semibold tracking-tight">解释</h4>
+    <span class="text-muted-foreground plan-review__explanation block">
       {{ opt.current.plan.explanation_md }}
-    </n-text>
+    </span>
 
-    <n-space style="margin-top: 12px" :size="8">
-      <n-button type="success" @click="opt.accept(opt.current!.run_id)">✓ 采纳（写入分配）</n-button>
-      <n-button type="error" @click="opt.reject(opt.current!.run_id)">✗ 拒绝</n-button>
-    </n-space>
+    <div class="flex flex-wrap gap-2">
+      <Button @click="opt.accept(opt.current!.run_id)">✓ 采纳（写入分配）</Button>
+      <Button variant="destructive" @click="opt.reject(opt.current!.run_id)">
+        ✗ 拒绝
+      </Button>
+    </div>
   </div>
 </template>
 

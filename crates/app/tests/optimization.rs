@@ -171,3 +171,48 @@ async fn concurrent_apply_writes_allocations_once() {
     assert_eq!(total, 1);
     assert_eq!(cnt, 1);
 }
+
+/// TOCTOU: `run` snapshots task windows; `apply` inserts later. If a task's window is
+/// narrowed between the two, the trigger would ABORT the whole batch (losing every AI
+/// allocation, not just the now-out-of-window one). apply() must re-read the current windows
+/// inside its write tx and SKIP out-of-window assignments instead of aborting.
+#[tokio::test]
+async fn apply_skips_out_of_window_after_task_window_narrowed() {
+    let pool = connect("sqlite::memory:").await.unwrap();
+    sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+    let pid = ProjectsService::create(&pool, "P", None, None, None, 5, 100.0).await.unwrap();
+    let rust = CatalogService::ensure_skill(&pool, "Rust").await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resource_skills (resource_id,skill_id,proficiency) VALUES (1,?,4)")
+        .bind(rust).execute(&pool).await.unwrap();
+    // Two tasks, both 1 PD, distinct days so both schedule to Alice.
+    let t1 = TasksService::create(
+        &pool, pid, "T1", None, 1.0, Some("2026-07-01"), Some("2026-07-01"),
+        false, None, None, 0, &[], &[],
+    ).await.unwrap();
+    let _t2 = TasksService::create(
+        &pool, pid, "T2", None, 1.0, Some("2026-07-02"), Some("2026-07-02"),
+        false, None, None, 0, &[], &[],
+    ).await.unwrap();
+
+    let res = OptimizationService::run_for_project(&pool, pid, None).await.unwrap();
+    assert_eq!(res.plan.solution.assignments.len(), 2);
+
+    // Narrow T1's window to 2026-07-05 so its allocation (2026-07-01) is now out of range
+    // (still satisfies the tasks CHECK: end_date >= start_date).
+    sqlx::query("UPDATE tasks SET start_date='2026-07-05', end_date='2026-07-05' WHERE id=?")
+        .bind(t1).execute(&pool).await.unwrap();
+
+    // apply() must NOT abort — it skips the out-of-window T1 and writes T2.
+    let n = OptimizationService::apply(&pool, res.run_id).await.unwrap();
+    assert_eq!(n, 1, "the in-window T2 should still be written; T1 skipped");
+    let (cnt,): (i64,) = sqlx::query_as("SELECT count(*) FROM allocations WHERE source='ai' AND run_id=?")
+        .bind(res.run_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(cnt, 1);
+    // The run is still marked applied (idempotent no-op on re-apply).
+    let (applied,): (i64,) = sqlx::query_as("SELECT applied FROM ai_optimization_runs WHERE id=?")
+        .bind(res.run_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(applied, 1);
+    let again = OptimizationService::apply(&pool, res.run_id).await.unwrap();
+    assert_eq!(again, 0, "re-apply is idempotent");
+}

@@ -2,6 +2,9 @@ use crate::types::*;
 use chrono::{Days, NaiveDate};
 use std::collections::HashMap;
 
+#[cfg(feature = "milp")]
+pub mod milp;
+
 pub trait Solver: Send + Sync {
     fn solve(&self, problem: &AllocationProblem, scores: &ScoreMatrix) -> Solution;
 }
@@ -22,7 +25,7 @@ pub struct GreedySolver;
 
 /// Walk every calendar day in [start, end] inclusive. Panics on a pathological
 /// range (chrono's checked_add_days returning None); real task windows never hit it.
-fn each_day<F: FnMut(NaiveDate)>(start: NaiveDate, end: NaiveDate, mut f: F) {
+pub(crate) fn each_day<F: FnMut(NaiveDate)>(start: NaiveDate, end: NaiveDate, mut f: F) {
     let mut d = start;
     while d <= end {
         f(d);
@@ -31,12 +34,12 @@ fn each_day<F: FnMut(NaiveDate)>(start: NaiveDate, end: NaiveDate, mut f: F) {
 }
 
 /// Per-day capacity factor for (resource, day). Missing ⇒ full day (1.0).
-fn day_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, day: NaiveDate) -> f64 {
+pub(crate) fn day_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, day: NaiveDate) -> f64 {
     caps.get(&(r, day)).copied().unwrap_or(1.0)
 }
 
 /// Σ capacity factor over [start, end] for resource r.
-fn sum_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, start: NaiveDate, end: NaiveDate) -> f64 {
+pub(crate) fn sum_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, start: NaiveDate, end: NaiveDate) -> f64 {
     let mut s = 0.0;
     each_day(start, end, |d| s += day_capacity(caps, r, d));
     s
@@ -62,7 +65,7 @@ fn window_load(
 /// Uniform daily percent needed to deliver `estimate_pd` over a window whose
 /// capacity sum is `capacity_sum`. `None` if even an empty schedule can't fit it
 /// (would need >100%/day) or the window has no capacity.
-fn needed_percent(estimate_pd: f64, capacity_sum: f64, daily_capacity_pd: f64) -> Option<f64> {
+pub(crate) fn needed_percent(estimate_pd: f64, capacity_sum: f64, daily_capacity_pd: f64) -> Option<f64> {
     if capacity_sum <= 0.0 {
         return None;
     }
@@ -224,39 +227,65 @@ impl Solver for GreedySolver {
             }
         }
 
-        let n = assignments.len() as f64;
-        let skill_fit = if n > 0.0 { (score_sum / n) * 100.0 } else { 0.0 };
-        let scheduled_ratio = if problem.tasks.is_empty() {
-            100.0
-        } else {
-            n / problem.tasks.len() as f64 * 100.0
-        };
-        let budget_score = match budget_cap {
-            Some(budget) if planned_pd > budget => {
-                ((budget / planned_pd) * 100.0).clamp(0.0, 100.0)
-            }
-            Some(_) => 100.0,
-            None => 100.0,
-        };
+        let n = assignments.len();
         let loads: Vec<f64> = problem
             .resources
             .iter()
             .map(|r| total_load.get(&r.id).copied().unwrap_or(0.0))
             .collect();
-        let fairness = jain(&loads) * 100.0;
 
         Solution {
             run_id: problem.run_id,
             assignments,
             unscheduled,
-            metrics: SolutionMetrics {
-                overall: skill_fit * problem.weights.skill_fit
-                    + scheduled_ratio * problem.weights.balance
-                    + budget_score * problem.weights.budget,
-                skill_fit,
-                scheduled_ratio,
-                fairness,
-            },
+            metrics: compute_metrics(
+                problem,
+                &score_sum,
+                planned_pd,
+                &loads,
+                budget_cap,
+                n,
+            ),
+            status: SolverStatus::Feasible,
         }
+    }
+}
+
+/// Build `SolutionMetrics` shared by both solvers so the greedy and MILP paths report
+/// identical aggregate numbers for the same assignment set.
+/// - `score_sum`  : Σ of chosen assignment scores.
+/// - `planned_pd` : Σ of chosen task estimates.
+/// - `loads`      : per-resource total committed ratio-days (for the Jain fairness index).
+/// - `budget_cap` : resolved hard budget cap, if any.
+/// - `chosen`     : number of assignments placed (denominator of skill_fit & scheduled_ratio;
+///   passed explicitly because two assignments may share a resource, so `loads`'s non-zero
+///   count would undercount vs. `assignments.len()`).
+pub(crate) fn compute_metrics(
+    problem: &AllocationProblem,
+    score_sum: &f64,
+    planned_pd: f64,
+    loads: &[f64],
+    budget_cap: Option<f64>,
+    chosen: usize,
+) -> SolutionMetrics {
+    let nc = chosen as f64;
+    let nt = problem.tasks.len() as f64;
+    let skill_fit = if nc > 0.0 { (score_sum / nc) * 100.0 } else { 0.0 };
+    let scheduled_ratio = if nt == 0.0 { 100.0 } else { nc / nt * 100.0 };
+    let budget_score = match budget_cap {
+        Some(budget) if planned_pd > budget => {
+            ((budget / planned_pd) * 100.0).clamp(0.0, 100.0)
+        }
+        Some(_) => 100.0,
+        None => 100.0,
+    };
+    let fairness = jain(loads) * 100.0;
+    SolutionMetrics {
+        overall: skill_fit * problem.weights.skill_fit
+            + scheduled_ratio * problem.weights.balance
+            + budget_score * problem.weights.budget,
+        skill_fit,
+        scheduled_ratio,
+        fairness,
     }
 }

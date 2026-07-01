@@ -1,14 +1,33 @@
 <script setup lang="ts">
-import { NText, NTag, NButton, NPopconfirm } from "naive-ui";
-import type { KanbanTask } from "../types";
-import { useUnitStore } from "../stores/unit";
+import { ref } from "vue";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import type { KanbanTask } from "@/types";
+import { useUnitStore } from "@/stores/unit";
+
 defineProps<{ task: KanbanTask }>();
 const emit = defineEmits<{
   (e: "dragstart", id: number): void;
   (e: "delete", id: number): void;
   (e: "edit", task: KanbanTask): void;
 }>();
+
 const unit = useUnitStore();
+const confirmOpen = ref(false);
+
+function onConfirmDelete(id: number) {
+  emit("delete", id);
+  confirmOpen.value = false;
+}
 </script>
 
 <template>
@@ -21,32 +40,47 @@ const unit = useUnitStore();
     @click="emit('edit', task)"
   >
     <div class="task-card__header">
-      <n-text strong class="task-card__title">{{ task.title }}</n-text>
-      <n-popconfirm @positive-click="emit('delete', task.id)">
-        <template #trigger>
-          <n-button
-            size="tiny"
-            type="error"
-            quaternary
-            circle
+      <span class="task-card__title font-medium">{{ task.title }}</span>
+      <Dialog v-model:open="confirmOpen">
+        <DialogTrigger as-child>
+          <Button
+            variant="destructive"
+            size="icon-xs"
             class="task-card__delete"
-            @click.stop
-          >×</n-button>
-        </template>
-        确定删除此任务吗？
-      </n-popconfirm>
+            @click.stop="confirmOpen = true"
+          >
+            ×
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>删除任务</DialogTitle>
+            <DialogDescription>确定删除此任务吗？</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" @click="confirmOpen = false">
+              取消
+            </Button>
+            <Button variant="destructive" @click="onConfirmDelete(task.id)">
+              确定
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
     <div class="task-card__meta">
-      <n-tag size="tiny" :bordered="false">{{ unit.formatPd(task.estimate_pd) }}</n-tag>
-      <n-tag v-if="task.skill_count" size="tiny" :bordered="false" type="info">
+      <Badge variant="default">{{ unit.formatPd(task.estimate_pd) }}</Badge>
+      <Badge v-if="task.skill_count" variant="secondary">
         {{ task.skill_count }} skill(s)
-      </n-tag>
-      <n-tag v-if="task.is_long_term" size="tiny" :bordered="false" type="warning">长期</n-tag>
-      <n-tag v-if="task.segment_kind" size="tiny" :bordered="false" type="warning">{{ task.segment_kind }}</n-tag>
+      </Badge>
+      <Badge v-if="task.is_long_term" variant="outline">长期</Badge>
+      <Badge v-if="task.segment_kind" variant="outline">
+        {{ task.segment_kind }}
+      </Badge>
     </div>
-    <n-text v-if="task.assignee" depth="3" class="task-card__assignee">
+    <span v-if="task.assignee" class="task-card__assignee text-muted-foreground">
       @{{ task.assignee }}
-    </n-text>
+    </span>
   </div>
 </template>
 

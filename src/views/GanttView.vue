@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import { computed, ref, watchEffect } from "vue";
-import { NH2, NSpace, NButton, NSelect, NText, NAlert } from "naive-ui";
-import { useGanttStore } from "../stores/gantt";
-import { useProjectsStore } from "../stores/projects";
-import { useResourcesStore } from "../stores/resources";
-import { useRefreshStore } from "../stores/refresh";
-import GanttTimeline from "../components/GanttTimeline.vue";
+import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useGanttStore } from "@/stores/gantt";
+import { useProjectsStore } from "@/stores/projects";
+import { useResourcesStore } from "@/stores/resources";
+import { useRefreshStore } from "@/stores/refresh";
+import GanttTimeline from "@/components/GanttTimeline.vue";
 
 const gantt = useGanttStore();
 const projects = useProjectsStore();
@@ -34,11 +42,13 @@ watchEffect(async () => {
 async function safeLoad() {
   try { err.value = null; await gantt.load(); } catch (e: unknown) { err.value = e instanceof Error ? e.message : String(e); }
 }
-async function onProjectChange(id: number | null) {
+async function onProjectChange(value: unknown) {
+  const id = value as number | undefined;
   if (id != null) projects.select(id);
   await safeLoad();
 }
-async function onResource(id: number | null) {
+async function onResource(value: unknown) {
+  const id = value as number | undefined;
   if (id == null) return;
   gantt.mode = "resource";
   gantt.focusId = id;
@@ -48,27 +58,49 @@ async function toProjectMode() { gantt.mode = "project"; await safeLoad(); }
 </script>
 
 <template>
-  <n-h2 style="margin-top: 0">Gantt</n-h2>
-  <n-space align="center" :size="8" style="margin-bottom: 8px">
+  <h2 class="text-2xl font-bold mt-0">Gantt</h2>
+  <div class="flex items-center gap-2 mb-2">
     <span>模式：</span>
-    <n-button :disabled="gantt.mode === 'project'" @click="toProjectMode">项目</n-button>
-    <n-select
-      :value="projects.current"
-      :options="projectOptions"
+    <Button :disabled="gantt.mode === 'project'" @click="toProjectMode">项目</Button>
+    <Select
+      :model-value="projects.current ?? undefined"
       :disabled="gantt.mode !== 'project'"
-      placeholder="选择项目"
-      style="width: 200px"
-      @update:value="onProjectChange"
-    />
+      @update:model-value="onProjectChange"
+    >
+      <SelectTrigger class="w-[200px]">
+        <SelectValue placeholder="选择项目" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem
+          v-for="opt in projectOptions"
+          :key="opt.value"
+          :value="opt.value"
+        >
+          {{ opt.label }}
+        </SelectItem>
+      </SelectContent>
+    </Select>
     <span>或资源视角：</span>
-    <n-select
-      v-model:value="resourceSelect"
-      :options="resourceOptions"
-      placeholder="选择资源"
-      style="width: 200px"
-      @update:value="onResource"
-    />
-    <n-text v-if="err" type="error">⚠ {{ err }}（可能越出任务/资源时间窗）</n-text>
-  </n-space>
+    <Select
+      :model-value="resourceSelect ?? undefined"
+      @update:model-value="onResource"
+    >
+      <SelectTrigger class="w-[200px]">
+        <SelectValue placeholder="选择资源" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem
+          v-for="opt in resourceOptions"
+          :key="opt.value"
+          :value="opt.value"
+        >
+          {{ opt.label }}
+        </SelectItem>
+      </SelectContent>
+    </Select>
+    <Alert v-if="err" variant="destructive" class="py-1 px-2 w-auto">
+      <AlertDescription>⚠ {{ err }}（可能越出任务/资源时间窗）</AlertDescription>
+    </Alert>
+  </div>
   <GanttTimeline :start="start" :end="end" />
 </template>

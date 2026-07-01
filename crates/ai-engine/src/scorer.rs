@@ -154,18 +154,18 @@ pub mod semantic {
     #[async_trait]
     impl super::Scorer for SemanticScorer {
         async fn score(&self, r: &CandidateResource, t: &CandidateTask) -> f64 {
-            if !Self::mandatory_skills_met(r, t) {
+            if !mandatory_skills_met(r, t) {
                 return 0.0;
             }
             let Some(client) = self.client() else {
                 return 0.0;
             };
             let model = client.embedding_model(&self.model);
-            let er = match model.embed_text(&Self::resource_text(r)).await {
+            let er = match model.embed_text(&resource_text(r)).await {
                 Ok(e) => e,
                 Err(_) => return 0.0,
             };
-            let et = match model.embed_text(&Self::task_text(t)).await {
+            let et = match model.embed_text(&task_text(t)).await {
                 Ok(e) => e,
                 Err(_) => return 0.0,
             };
@@ -186,13 +186,13 @@ pub mod semantic {
 
             let mut er: HashMap<i64, Vec<f64>> = HashMap::new();
             for r in &problem.resources {
-                if let Ok(e) = model.embed_text(&Self::resource_text(r)).await {
+                if let Ok(e) = model.embed_text(&resource_text(r)).await {
                     er.insert(r.id, e.vec);
                 }
             }
             let mut et: HashMap<i64, Vec<f64>> = HashMap::new();
             for t in &problem.tasks {
-                if let Ok(e) = model.embed_text(&Self::task_text(t)).await {
+                if let Ok(e) = model.embed_text(&task_text(t)).await {
                     et.insert(t.id, e.vec);
                 }
             }
@@ -200,7 +200,7 @@ pub mod semantic {
                 let Some(vr) = er.get(&r.id) else { continue };
                 for t in &problem.tasks {
                     let Some(vt) = et.get(&t.id) else { continue };
-                    let sc = if Self::mandatory_skills_met(r, t) {
+                    let sc = if mandatory_skills_met(r, t) {
                         cosine(vr, vt).max(0.0)
                     } else {
                         0.0
