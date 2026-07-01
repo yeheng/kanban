@@ -4,7 +4,8 @@ use app::service::tasks::TasksService;
 use app::service::catalog::CatalogService;
 use app::service::calendar::CalendarService;
 use app::service::resources::ResourcesService;
-use ai_engine::types::ObjectiveWeights;
+use ai_engine::types::{ObjectiveWeights, Suggestion};
+use chrono::NaiveDate;
 use db::pool::connect;
 
 #[tokio::test]
@@ -270,4 +271,55 @@ async fn run_persists_dependency_edges_in_constraints_json() {
     let cons = cons.unwrap_or_default();
     assert!(cons.contains("\"task_id\""), "constraints_json should serialize dependency edges, got: {cons}");
     assert!(cons.contains("\"predecessor_id\""), "constraints_json missing predecessor_id, got: {cons}");
+}
+
+#[tokio::test]
+async fn rerun_inserts_new_run_with_parent_and_applies_widen_window() {
+    let pool = connect("sqlite::memory:").await.unwrap();
+    sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+    let pid = ProjectsService::create(&pool, "P", None, None, None, 5, 0.0).await.unwrap();
+    let rust = CatalogService::ensure_skill(&pool, "Rust").await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resource_skills (resource_id,skill_id,proficiency) VALUES (1,?,4)").bind(rust).execute(&pool).await.unwrap();
+    // T1 窗口 7/3–7/5 太窄（3天）装不下 5PD → 父 run 应 unscheduled T1。
+    TasksService::create(&pool, pid, "T1", None, 5.0, Some("2026-07-03"), Some("2026-07-05"), false, None, None, 0, &[(rust, 3, true, 1.0)], &[]).await.unwrap();
+
+    let parent = OptimizationService::run_for_project(&pool, pid, None).await.unwrap();
+    let task_id: i64 = parent.plan.solution.assignments.first().map(|a| a.task_id).unwrap_or(1);
+
+    let sug = Suggestion::WidenWindow {
+        task_id, new_start: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+        new_end: NaiveDate::from_ymd_opt(2026, 7, 10).unwrap(),
+    };
+    let payload = serde_json::to_string(&sug).unwrap();
+    let (sug_id,): (i64,) = sqlx::query_as(
+        "INSERT INTO ai_optimization_suggestions (run_id, kind, target_task_id, payload_json, rationale_md, status) \
+         VALUES (?,?,?,?,?,'accepted') RETURNING id")
+        .bind(parent.run_id).bind("widen_window").bind(task_id).bind(payload).bind("放宽窗口")
+        .fetch_one(&pool).await.unwrap();
+
+    let rerun = OptimizationService::rerun(&pool, parent.run_id, vec![sug_id]).await.unwrap();
+    assert_ne!(rerun.run_id, parent.run_id);
+    let (parent_id,): (Option<i64>,) = sqlx::query_as("SELECT parent_run_id FROM ai_optimization_runs WHERE id=?")
+        .bind(rerun.run_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(parent_id, Some(parent.run_id));
+    let (st,): (String,) = sqlx::query_as("SELECT status FROM ai_optimization_suggestions WHERE id=?")
+        .bind(sug_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(st, "applied");
+    assert!(!rerun.plan.solution.assignments.is_empty(), "after widening, T1 should be schedulable");
+}
+
+#[tokio::test]
+async fn rerun_ignores_suggestion_ids_not_in_run() {
+    let pool = connect("sqlite::memory:").await.unwrap();
+    sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+    let pid = ProjectsService::create(&pool, "P", None, None, None, 5, 0.0).await.unwrap();
+    let rust = CatalogService::ensure_skill(&pool, "Rust").await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resource_skills (resource_id,skill_id,proficiency) VALUES (1,?,4)").bind(rust).execute(&pool).await.unwrap();
+    TasksService::create(&pool, pid, "T1", None, 3.0, Some("2026-07-01"), Some("2026-07-07"), false, None, None, 0, &[(rust, 3, true, 1.0)], &[]).await.unwrap();
+    let parent = OptimizationService::run_for_project(&pool, pid, None).await.unwrap();
+    // accepted_ids 含一个不属于该 run 的 id（99999）→ 不报错，rerun 仍成功。
+    let rerun = OptimizationService::rerun(&pool, parent.run_id, vec![99999]).await.unwrap();
+    assert_ne!(rerun.run_id, parent.run_id);
 }
