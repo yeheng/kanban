@@ -151,6 +151,10 @@ pub struct TaskDependency {
 pub struct ScoredAssignment {
     pub resource_id: i64,
     pub task_id: i64,
+    #[serde(default)]
+    pub resource_name: String,
+    #[serde(default)]
+    pub task_title: String,
     pub start: NaiveDate,
     pub end: NaiveDate,
     pub percent: f64,

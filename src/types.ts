@@ -90,7 +90,9 @@ export interface DayOccupancy {
 // Phase 4: AI optimization
 export interface ObjectiveWeights { skill_fit: number; balance: number; budget: number; }
 export interface ScoredAssignment {
-  resource_id: number; task_id: number; start: string; end: string;
+  resource_id: number; task_id: number;
+  resource_name: string; task_title: string;
+  start: string; end: string;
   percent: number; score: number; rationale: string;
 }
 export interface SolutionMetrics { overall: number; skill_fit: number; scheduled_ratio: number; fairness: number; }
@@ -116,6 +118,10 @@ export interface Settings {
   solver_backend: "good_lp" | "greedy" | "hungarian";
   solver_timeout_ms: number;
   locale: string;
+  use_semantic_scorer: boolean;
+  use_llm_explainer: boolean;
+  ai_explanation_prompt: string;
+  ai_explanation_preamble: string;
   overload_threshold: number;
   underload_threshold: number;
   utilization_green: number;

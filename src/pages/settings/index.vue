@@ -22,6 +22,9 @@ import {
   NumberFieldInput,
 } from "@/components/ui/number-field";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2Icon } from "@lucide/vue";
 
 const settings = useSettingsStore();
 const draft = ref<Settings | null>(null);
@@ -237,6 +240,12 @@ function updateNullableString(
             <Input v-model="draft.ai_chat_model" />
           </div>
           <div class="grid gap-2">
+            <Label>启用 LLM 解释</Label>
+            <div class="flex h-9 items-center">
+              <Switch v-model:checked="draft.use_llm_explainer" />
+            </div>
+          </div>
+          <div class="grid gap-2">
             <Label>密钥存储</Label>
             <Select v-model="draft.secret_store">
               <SelectTrigger>
@@ -248,6 +257,24 @@ function updateNullableString(
                 </SelectItem>
               </SelectContent>
             </Select>
+          </div>
+        </CardContent>
+        <CardContent class="grid gap-6">
+          <div class="grid gap-2">
+            <Label>解释器系统提示词 (Preamble)</Label>
+            <Textarea v-model="draft.ai_explanation_preamble" :rows="3" />
+            <p class="text-muted-foreground text-xs">设定 LLM 的角色与全局要求。</p>
+          </div>
+          <div class="grid gap-2">
+            <Label>解释器用户提示词模板 (Prompt Template)</Label>
+            <Textarea v-model="draft.ai_explanation_prompt" :rows="12" />
+            <p class="text-muted-foreground text-xs">
+              可用占位符：{solver_backend}, {solver_status}, {weights_skill_fit}, {weights_balance},
+              {weights_budget}, {budget_pd}, {resource_count}, {task_count}, {assignment_count},
+              {unscheduled_count}, {resources}, {tasks}, {existing_allocs}, {assignments},
+              {unscheduled}, {metrics_overall}, {metrics_skill_fit}, {metrics_scheduled_ratio},
+              {metrics_fairness}, {full_context}
+            </p>
           </div>
         </CardContent>
       </Card>
@@ -291,6 +318,12 @@ function updateNullableString(
           <div class="grid gap-2">
             <Label>Embed Model</Label>
             <Input v-model="draft.embed_model" />
+          </div>
+          <div class="grid gap-2">
+            <Label>启用语义匹配</Label>
+            <div class="flex h-9 items-center">
+              <Switch v-model:checked="draft.use_semantic_scorer" />
+            </div>
           </div>
           <div class="grid gap-2">
             <Label>Embed 维度</Label>
@@ -348,9 +381,17 @@ function updateNullableString(
         </CardContent>
       </Card>
 
-      <div class="flex gap-2">
-        <Button type="button" :loading="settings.saving" @click="save">保存设置</Button>
-        <Button type="button" variant="outline" @click="reset">重置</Button>
+      <div class="flex items-center gap-4">
+        <div class="flex gap-2">
+          <Button type="button" :disabled="settings.saving || !draft" @click="save">
+            <Loader2Icon v-if="settings.saving" class="mr-2 h-4 w-4 animate-spin" />
+            {{ settings.saving ? "保存中..." : "保存设置" }}
+          </Button>
+          <Button type="button" variant="outline" :disabled="settings.saving || !draft" @click="reset">
+            重置
+          </Button>
+        </div>
+        <p v-if="settings.saving" class="text-muted-foreground text-sm">正在保存设置...</p>
       </div>
     </div>
   </div>

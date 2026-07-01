@@ -16,6 +16,10 @@ async fn get_settings_returns_defaults() {
     assert_eq!(s.secret_store, "keychain");
     assert_eq!(s.solver_backend, "good_lp");
     assert_eq!(s.locale, "zh-CN");
+    assert!(s.use_semantic_scorer);
+    assert!(s.use_llm_explainer);
+    assert!(!s.ai_explanation_prompt.is_empty());
+    assert!(!s.ai_explanation_preamble.is_empty());
     assert!((s.overload_threshold - 1.10).abs() < 1e-9);
     assert!((s.underload_threshold - 0.50).abs() < 1e-9);
     assert!((s.utilization_green - 0.70).abs() < 1e-9);
@@ -46,6 +50,10 @@ async fn update_settings_persists_and_affects_readers() {
         solver_backend: "greedy".into(),
         solver_timeout_ms: 10000,
         locale: "en-US".into(),
+        use_semantic_scorer: false,
+        use_llm_explainer: false,
+        ai_explanation_prompt: "custom prompt {resource_count}".into(),
+        ai_explanation_preamble: "custom preamble".into(),
         overload_threshold: 1.20,
         underload_threshold: 0.60,
         utilization_green: 0.75,

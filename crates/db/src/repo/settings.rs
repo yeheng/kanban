@@ -40,6 +40,10 @@ pub struct SettingsRow {
     pub solver_backend: String,
     pub solver_timeout_ms: i64,
     pub locale: String,
+    pub use_semantic_scorer: i64,
+    pub use_llm_explainer: i64,
+    pub ai_explanation_prompt: String,
+    pub ai_explanation_preamble: String,
     pub overload_threshold: Option<f64>,
     pub underload_threshold: Option<f64>,
     pub utilization_green: Option<f64>,
@@ -66,6 +70,10 @@ pub struct SettingsUpdate {
     pub solver_backend: Option<String>,
     pub solver_timeout_ms: Option<i64>,
     pub locale: Option<String>,
+    pub use_semantic_scorer: Option<i64>,
+    pub use_llm_explainer: Option<i64>,
+    pub ai_explanation_prompt: Option<String>,
+    pub ai_explanation_preamble: Option<String>,
     pub overload_threshold: Option<f64>,
     pub underload_threshold: Option<f64>,
     pub utilization_green: Option<f64>,
@@ -81,6 +89,7 @@ impl SettingsRepo {
             "SELECT id, default_unit, pd_hours, pm_workdays, ai_provider, ai_base_url, \
              ai_api_key_enc, secret_store, ai_chat_model, embed_provider, embed_base_url, \
              embed_api_key_enc, embed_model, embed_dim, solver_backend, solver_timeout_ms, locale, \
+             use_semantic_scorer, use_llm_explainer, ai_explanation_prompt, ai_explanation_preamble, \
              overload_threshold, underload_threshold, utilization_green, utilization_yellow \
              FROM settings WHERE id = 1",
         )
@@ -108,6 +117,10 @@ impl SettingsRepo {
         if update.solver_backend.is_some() { sets.push("solver_backend = ?"); }
         if update.solver_timeout_ms.is_some() { sets.push("solver_timeout_ms = ?"); }
         if update.locale.is_some() { sets.push("locale = ?"); }
+        if update.use_semantic_scorer.is_some() { sets.push("use_semantic_scorer = ?"); }
+        if update.use_llm_explainer.is_some() { sets.push("use_llm_explainer = ?"); }
+        if update.ai_explanation_prompt.is_some() { sets.push("ai_explanation_prompt = ?"); }
+        if update.ai_explanation_preamble.is_some() { sets.push("ai_explanation_preamble = ?"); }
         if update.overload_threshold.is_some() { sets.push("overload_threshold = ?"); }
         if update.underload_threshold.is_some() { sets.push("underload_threshold = ?"); }
         if update.utilization_green.is_some() { sets.push("utilization_green = ?"); }
@@ -139,6 +152,10 @@ impl SettingsRepo {
         if let Some(v) = &update.solver_backend { q = q.bind(v); }
         if let Some(v) = &update.solver_timeout_ms { q = q.bind(v); }
         if let Some(v) = &update.locale { q = q.bind(v); }
+        if let Some(v) = &update.use_semantic_scorer { q = q.bind(v); }
+        if let Some(v) = &update.use_llm_explainer { q = q.bind(v); }
+        if let Some(v) = &update.ai_explanation_prompt { q = q.bind(v); }
+        if let Some(v) = &update.ai_explanation_preamble { q = q.bind(v); }
         if let Some(v) = &update.overload_threshold { q = q.bind(v); }
         if let Some(v) = &update.underload_threshold { q = q.bind(v); }
         if let Some(v) = &update.utilization_green { q = q.bind(v); }
@@ -185,7 +202,8 @@ impl SettingsRepo {
         let row: AiSettingsRow = sqlx::query_as(
             "SELECT ai_provider, ai_base_url, ai_api_key_enc, ai_chat_model, embed_provider, \
              embed_base_url, embed_api_key_enc, embed_model, embed_dim, solver_backend, \
-             solver_timeout_ms FROM settings WHERE id = 1",
+             solver_timeout_ms, use_semantic_scorer, use_llm_explainer, ai_explanation_prompt, \
+             ai_explanation_preamble FROM settings WHERE id = 1",
         )
         .fetch_one(pool)
         .await?;
@@ -205,6 +223,10 @@ impl SettingsRepo {
             },
             solver_backend: row.solver_backend.unwrap_or_else(|| "greedy".into()),
             solver_timeout_ms: row.solver_timeout_ms.unwrap_or(5000).max(0) as u64,
+            use_semantic_scorer: row.use_semantic_scorer.unwrap_or(1) != 0,
+            use_llm_explainer: row.use_llm_explainer.unwrap_or(1) != 0,
+            explanation_prompt: row.ai_explanation_prompt,
+            explanation_preamble: row.ai_explanation_preamble,
         })
     }
 }
@@ -222,6 +244,10 @@ struct AiSettingsRow {
     embed_dim: Option<i64>,
     solver_backend: Option<String>,
     solver_timeout_ms: Option<i64>,
+    use_semantic_scorer: Option<i64>,
+    use_llm_explainer: Option<i64>,
+    ai_explanation_prompt: Option<String>,
+    ai_explanation_preamble: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -231,6 +257,14 @@ pub struct AiSettings {
     pub solver_backend: String,
     /// HiGHS time budget (ms) for the MILP solver; also the outer tokio::time::timeout budget.
     pub solver_timeout_ms: u64,
+    /// Whether to use the LLM-based semantic scorer (embedding similarity) for resource-task fit.
+    pub use_semantic_scorer: bool,
+    /// Whether to use the LLM-based explainer for optimization result summaries.
+    pub use_llm_explainer: bool,
+    /// User-defined prompt template for the LLM explainer.
+    pub explanation_prompt: Option<String>,
+    /// User-defined system preamble for the LLM explainer.
+    pub explanation_preamble: Option<String>,
 }
 
 #[derive(Debug, Clone)]

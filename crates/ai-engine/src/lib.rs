@@ -4,6 +4,9 @@ pub mod scorer;
 pub mod solver;
 pub mod types;
 
+#[cfg(feature = "llm")]
+pub mod llm_client;
+
 pub use engine::OptimizationEngine;
 pub use explainer::Explainer;
 pub use scorer::Scorer;

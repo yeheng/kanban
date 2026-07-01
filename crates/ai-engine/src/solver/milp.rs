@@ -326,11 +326,18 @@ impl Solver for MilpSolver {
         let mut score_sum = 0.0;
         let mut planned_pd = 0.0;
         let mut total_load: HashMap<i64, f64> = HashMap::new();
+        let resource_name: HashMap<i64, &str> = problem
+            .resources
+            .iter()
+            .map(|r| (r.id, r.name.as_str()))
+            .collect();
         for f in &chosen {
             let t = &problem.tasks[f.t_idx];
             assignments.push(ScoredAssignment {
                 resource_id: f.r_id,
                 task_id: f.t_id,
+                resource_name: resource_name.get(&f.r_id).unwrap_or(&"?").to_string(),
+                task_title: t.title.clone(),
                 start: t.start,
                 end: t.end,
                 percent: f.percent,

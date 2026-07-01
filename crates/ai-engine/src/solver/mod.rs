@@ -240,6 +240,8 @@ impl Solver for GreedySolver {
                     assignments.push(ScoredAssignment {
                         resource_id: r.id,
                         task_id: t.id,
+                        resource_name: r.name.clone(),
+                        task_title: t.title.clone(),
                         start: t.start,
                         end: t.end,
                         percent: needed,

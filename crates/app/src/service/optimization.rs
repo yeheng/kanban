@@ -40,7 +40,10 @@ impl OptimizationService {
         let explainer: Arc<dyn ai_engine::explainer::Explainer> = select_explainer(&ai);
         let (solver, effective_backend) = select_solver(&ai);
         // `effective_backend` is what ACTUALLY ran (greedy if good_lp was requested but the milp
-        // feature isn't compiled in). Persisted to the run row so it never mislabels the backend.
+        // feature isn't compiled in). Persist it into the problem snapshot so the explainer prompt
+        // and the persisted run row both reflect reality.
+        problem.config.backend = effective_backend.to_string();
+        problem.config.timeout_ms = ai.solver_timeout_ms;
         let milp_active = cfg!(feature = "milp") && ai.solver_backend == "good_lp";
         let started = chrono::Utc::now();
         // Score → solve (spawn_blocking + timeout + greedy fallback for the MILP path) → explain.
@@ -415,9 +418,9 @@ fn horizon_end(tasks: &[CandidateTask]) -> Option<NaiveDate> {
     tasks.iter().map(|t| t.end).max()
 }
 
-/// Pick the scorer based on AI settings. When the `llm` feature is compiled in AND the
-/// `KANBAN_USE_SEMANTIC` env var is set (opt-in), use `SemanticScorer` (local Ollama
-/// embeddings); otherwise fall back to the deterministic `FallbackScorer`.
+/// Pick the scorer based on AI settings. When the `llm` feature is compiled in AND
+/// `use_semantic_scorer` is true, use `SemanticScorer` (local Ollama embeddings);
+/// otherwise fall back to the deterministic `FallbackScorer`.
 /// `SemanticScorer` itself returns 0.0 on any provider error (graceful degradation, design
 /// §2.8/#8), so a misconfigured/unreachable provider degrades to score-0 rather than
 /// panicking. The FallbackScorer weights mirror the objective weights.
@@ -427,26 +430,33 @@ fn select_scorer(
     w_proficiency: f64,
 ) -> Arc<dyn ai_engine::scorer::Scorer> {
     #[cfg(feature = "llm")]
-    if std::env::var("KANBAN_USE_SEMANTIC").as_deref() == Ok("1") {
+    if ai.use_semantic_scorer {
         return Arc::new(ai_engine::scorer::semantic::SemanticScorer {
+            provider: ai.embed.provider.clone(),
             model: ai.embed.model.clone(),
             base_url: ai.embed.base_url.clone(),
+            api_key: ai.embed.api_key_enc.clone(),
+            fallback: FallbackScorer { w_jaccard, w_proficiency },
         });
     }
     let _ = ai; // silence unused when llm feature off
     Arc::new(FallbackScorer { w_jaccard, w_proficiency })
 }
 
-/// Pick the explainer based on AI settings. When the `llm` feature is compiled in AND the
-/// `KANBAN_USE_LLM_EXPLAINER` env var is set (opt-in), use `LlmExplainer` (local Ollama
-/// chat); otherwise the deterministic `TemplateExplainer`. `LlmExplainer` itself falls back
-/// to `TemplateExplainer` on any provider error (explainer.rs graceful degradation).
+/// Pick the explainer based on AI settings. When the `llm` feature is compiled in AND
+/// `use_llm_explainer` is true, use `LlmExplainer` (local Ollama chat); otherwise the
+/// deterministic `TemplateExplainer`. `LlmExplainer` itself falls back to
+/// `TemplateExplainer` on any provider error (explainer.rs graceful degradation).
 fn select_explainer(ai: &db::AiSettings) -> Arc<dyn ai_engine::explainer::Explainer> {
     #[cfg(feature = "llm")]
-    if std::env::var("KANBAN_USE_LLM_EXPLAINER").as_deref() == Ok("1") {
+    if ai.use_llm_explainer {
         return Arc::new(ai_engine::explainer::llm::LlmExplainer {
+            provider: ai.chat.provider.clone(),
             model: ai.chat.model.clone(),
             base_url: ai.chat.base_url.clone(),
+            api_key: ai.chat.api_key_enc.clone(),
+            prompt_template: ai.explanation_prompt.clone(),
+            preamble: ai.explanation_preamble.clone(),
         });
     }
     let _ = ai; // silence unused when llm feature off

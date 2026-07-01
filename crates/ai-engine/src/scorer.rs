@@ -110,30 +110,32 @@ impl FallbackScorer {
     }
 }
 
-/// Production semantic scorer via `rig` embeddings (local Ollama default, design §5).
-/// Cosine similarity over embeddings of resource skill/tag text vs task requirement text.
-/// Mandatory skills unmet ⇒ 0 (consistent with FallbackScorer). Returns 0.0 on any provider
-/// error so the engine degrades gracefully (confirmed #8 degradation).
+/// Production semantic scorer via `rig` embeddings. Cosine similarity over embeddings
+/// of resource skill/tag text vs task requirement text. Supports Ollama and OpenAI
+/// embedding providers; any unsupported provider or configuration error degrades to 0.0
+/// so the engine never panics (design §2.8 graceful degradation).
 #[cfg(feature = "llm")]
 pub mod semantic {
+    use crate::llm_client::{embed_text, LlmClientConfig};
     use crate::types::*;
     use async_trait::async_trait;
-    use rig::client::EmbeddingsClient;
-    use rig::client::ProviderClient;
-    use rig::embeddings::EmbeddingModel;
-    use rig::providers::ollama;
 
     pub struct SemanticScorer {
+        pub provider: String,
         pub model: String,
         pub base_url: Option<String>,
+        pub api_key: Option<String>,
+        /// Fallback scorer used when the embedding provider is unreachable or returns no
+        /// embeddings, so the optimization pipeline still produces deterministic scores.
+        pub fallback: super::FallbackScorer,
     }
 
-    impl SemanticScorer {
-        fn client(&self) -> Option<ollama::Client> {
-            // from_env reads OLLAMA_API_BASE_URL (default http://localhost:11434). An explicit
-            // base_url override would use the builder; from_env is the documented config knob.
-            let _ = &self.base_url; // reserved for a future builder() override
-            ollama::Client::from_env().ok()
+    fn cfg(s: &SemanticScorer) -> LlmClientConfig {
+        LlmClientConfig {
+            provider: s.provider.clone(),
+            base_url: s.base_url.clone(),
+            api_key: s.api_key.clone(),
+            model: s.model.clone(),
         }
     }
 
@@ -157,52 +159,59 @@ pub mod semantic {
 
     #[async_trait]
     impl super::Scorer for SemanticScorer {
-        #[tracing::instrument(skip(self, r, t), fields(resource_id = r.id, task_id = t.id, model = %self.model))]
+        #[tracing::instrument(skip(self, r, t), fields(resource_id = r.id, task_id = t.id, provider = %self.provider, model = %self.model))]
         async fn score(&self, r: &CandidateResource, t: &CandidateTask) -> f64 {
             if !mandatory_skills_met(r, t) {
                 return 0.0;
             }
-            let Some(client) = self.client() else {
-                return 0.0;
+            let cfg = cfg(self);
+            let er = match embed_text(&cfg, &resource_text(r)).await {
+                Some(e) => e,
+                None => return 0.0,
             };
-            let model = client.embedding_model(&self.model);
-            let er = match model.embed_text(&resource_text(r)).await {
-                Ok(e) => e,
-                Err(_) => return 0.0,
+            let et = match embed_text(&cfg, &task_text(t)).await {
+                Some(e) => e,
+                None => return 0.0,
             };
-            let et = match model.embed_text(&task_text(t)).await {
-                Ok(e) => e,
-                Err(_) => return 0.0,
-            };
-            cosine(&er.vec, &et.vec).max(0.0)
+            cosine(&er, &et).max(0.0)
         }
 
         /// Pre-embed each resource and each task ONCE (R+T embeds), then cosine every
         /// pair. The default impl would call `score` R·T times and re-embed resources
-        /// for every task — O(R·T) round-trips instead of O(R+T). On any provider error
-        /// the whole matrix degrades to 0.0 (design §2.8 graceful degradation).
-        #[tracing::instrument(skip(self, problem), fields(resources = problem.resources.len(), tasks = problem.tasks.len(), model = %self.model))]
+        /// for every task — O(R·T) round-trips instead of O(R+T). If the provider is
+        /// unreachable or returns no embeddings, fall back to the deterministic
+        /// `FallbackScorer` so the optimization pipeline still produces usable scores
+        /// instead of an all-zero matrix (design §2.8 graceful degradation).
+        #[tracing::instrument(skip(self, problem), fields(resources = problem.resources.len(), tasks = problem.tasks.len(), provider = %self.provider, model = %self.model))]
         async fn matrix(&self, problem: &AllocationProblem) -> ScoreMatrix {
             use std::collections::HashMap;
             let mut m = ScoreMatrix::with_capacity(problem.resources.len() * problem.tasks.len());
-            let Some(client) = self.client() else {
-                return m; // provider unavailable ⇒ all-zero (degrades gracefully)
-            };
-            let model = client.embedding_model(&self.model);
+            let cfg = cfg(self);
 
             tracing::debug!("building semantic score matrix");
             let mut er: HashMap<i64, Vec<f64>> = HashMap::new();
             for r in &problem.resources {
-                if let Ok(e) = model.embed_text(&resource_text(r)).await {
-                    er.insert(r.id, e.vec);
+                if let Some(e) = embed_text(&cfg, &resource_text(r)).await {
+                    er.insert(r.id, e);
                 }
             }
             let mut et: HashMap<i64, Vec<f64>> = HashMap::new();
             for t in &problem.tasks {
-                if let Ok(e) = model.embed_text(&task_text(t)).await {
-                    et.insert(t.id, e.vec);
+                if let Some(e) = embed_text(&cfg, &task_text(t)).await {
+                    et.insert(t.id, e);
                 }
             }
+
+            let provider_failed = (problem.resources.is_empty() || er.is_empty())
+                && (problem.tasks.is_empty() || et.is_empty());
+            if provider_failed {
+                tracing::warn!(
+                    provider = %self.provider,
+                    "semantic provider returned no embeddings; falling back to FallbackScorer"
+                );
+                return self.fallback.matrix(problem).await;
+            }
+
             for r in &problem.resources {
                 let Some(vr) = er.get(&r.id) else { continue };
                 for t in &problem.tasks {
@@ -235,11 +244,14 @@ pub mod semantic {
         use super::*;
         use crate::scorer::Scorer;
         #[tokio::test]
-        #[ignore = "needs Ollama running with the embed model"]
+        #[ignore = "needs LLM provider running with the embed model"]
         async fn smoke_semantic() {
             let s = SemanticScorer {
+                provider: "ollama".into(),
                 model: "nomic-embed-text".into(),
                 base_url: None,
+                api_key: None,
+                fallback: super::super::FallbackScorer::default(),
             };
             let _ = s
                 .score(

@@ -8,6 +8,8 @@ async fn explains_counts_and_scores() {
         assignments: vec![ScoredAssignment {
             resource_id: 1,
             task_id: 10,
+            resource_name: "Alice".into(),
+            task_title: "Backend Task".into(),
             start: chrono::NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
             end: chrono::NaiveDate::from_ymd_opt(2026, 7, 5).unwrap(),
             percent: 1.0,
@@ -36,8 +38,7 @@ async fn explains_counts_and_scores() {
 #[tokio::test]
 async fn llm_explainer_falls_back_to_template_without_provider() {
     use ai_engine::explainer::{Explainer, TemplateExplainer, llm::LlmExplainer};
-    // Point Ollama at a dead port so from_env / the prompt can't succeed.
-    std::env::set_var("OLLAMA_API_BASE_URL", "http://127.0.0.1:1");
+    // Point Ollama at a dead port so the prompt can't succeed.
     let sol = Solution {
         run_id: 1,
         assignments: vec![],
@@ -50,9 +51,16 @@ async fn llm_explainer_falls_back_to_template_without_provider() {
         },
         status: SolverStatus::Feasible,
     };
-    let md = LlmExplainer { model: "qwen2.5:7b".into(), base_url: None }
-        .explain(&AllocationProblem::default(), &sol)
-        .await;
+    let md = LlmExplainer {
+        provider: "ollama".into(),
+        model: "qwen2.5:7b".into(),
+        base_url: Some("http://127.0.0.1:1".into()),
+        api_key: None,
+        prompt_template: None,
+        preamble: None,
+    }
+    .explain(&AllocationProblem::default(), &sol)
+    .await;
     let fallback = TemplateExplainer
         .explain(&AllocationProblem::default(), &sol)
         .await;
@@ -63,5 +71,4 @@ async fn llm_explainer_falls_back_to_template_without_provider() {
         md.contains("优化方案说明") || md == fallback,
         "expected template fallback, got: {md}"
     );
-    std::env::remove_var("OLLAMA_API_BASE_URL");
 }

@@ -64,8 +64,14 @@ function assignmentKey(a: ScoredAssignment, i: number) {
           v-for="(a, i) in opt.current.plan.solution.assignments"
           :key="assignmentKey(a, i)"
         >
-          <TableCell>#{{ a.resource_id }}</TableCell>
-          <TableCell>#{{ a.task_id }}</TableCell>
+          <TableCell>
+            <div class="font-medium">{{ a.resource_name || `资源 #${a.resource_id}` }}</div>
+            <div v-if="a.resource_name" class="text-muted-foreground text-xs">#{{ a.resource_id }}</div>
+          </TableCell>
+          <TableCell>
+            <div class="font-medium">{{ a.task_title || `任务 #${a.task_id}` }}</div>
+            <div v-if="a.task_title" class="text-muted-foreground text-xs">#{{ a.task_id }}</div>
+          </TableCell>
           <TableCell>{{ a.start }} → {{ a.end }}</TableCell>
           <TableCell>{{ Math.round(a.percent * 100) }}%</TableCell>
           <TableCell>{{ Math.round(a.score * 100) }}</TableCell>
