@@ -1,18 +1,12 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
-import { api } from "../api";
-import type { Project } from "../types";
 
 export const useProjectsStore = defineStore("projects", () => {
-  const items = ref<Project[]>([]);
   const current = ref<number | null>(null);
 
-  async function load() { items.value = await api.listProjects(); if (!current.value && items.value.length) current.value = items.value[0].id; }
-  async function create(name: string, priority: number, budgetPd: number) { await api.createProject(name, priority, budgetPd); await load(); }
-  async function update(id: number, args: { name: string; priority: number; budgetPd: number; description?: string | null; start?: string | null; end?: string | null }) { await api.updateProject(id, args); await load(); }
-  async function setStatus(id: number, status: string) { await api.setProjectStatus(id, status); await load(); }
-  async function remove(id: number) { await api.deleteProject(id); if (current.value === id) current.value = null; await load(); }
-  function select(id: number) { current.value = id; }
+  function select(id: number) {
+    current.value = id;
+  }
 
-  return { items, current, load, create, update, setStatus, remove, select };
+  return { current, select };
 });
