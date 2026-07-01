@@ -20,6 +20,7 @@ declare module 'vue' {
     ListRowActions: typeof import('./../components/list/ListRowActions.vue')['default']
     ListToolbar: typeof import('./../components/list/ListToolbar.vue')['default']
     OccupancyGrid: typeof import('./../components/OccupancyGrid.vue')['default']
+    PlanCompare: typeof import('./../components/PlanCompare.vue')['default']
     PlanReview: typeof import('./../components/PlanReview.vue')['default']
     ProjectForm: typeof import('./../components/ProjectForm.vue')['default']
     ResourceForm: typeof import('./../components/ResourceForm.vue')['default']
