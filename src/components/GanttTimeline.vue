@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { useGanttStore } from "../stores/gantt";
 import { fmtDate, parseDateStrict } from "../utils/date";
-import type { GanttBar } from "../types";
+import type { GanttBar, DepEdge } from "../types";
 
 const DAY_W = 28; // px per day
-const props = defineProps<{ start: string; end: string }>();
-const gantt = useGanttStore();
+const props = defineProps<{ start: string; end: string; bars: GanttBar[]; deps: DepEdge[] }>();
+const emit = defineEmits<{
+  (e: "update", id: number, start: string, end: string, percent: number): void;
+}>();
 
-// Parse/format consistently in local time (see utils/date): mixing UTC `Date.parse` with a
-// local formatter shifted dates by a day in zones west of UTC, corrupting drag/resize writes.
 const startMs = computed(() => parseDateStrict(props.start));
 const totalDays = computed(() => Math.max(1, Math.round((parseDateStrict(props.end) - startMs.value) / 86400000) + 1));
 const days = computed(() => {
@@ -25,7 +24,7 @@ function barWidth(b: GanttBar) { return (dayIndexOf(b.end_date) - dayIndexOf(b.s
 
 const rows = computed(() => {
   const m = new Map<number, { resource_id: number; resource_name: string; bars: GanttBar[] }>();
-  for (const b of gantt.bars) {
+  for (const b of props.bars) {
     if (!m.has(b.resource_id)) m.set(b.resource_id, { resource_id: b.resource_id, resource_name: b.resource_name, bars: [] });
     m.get(b.resource_id)!.bars.push(b);
   }
@@ -55,7 +54,7 @@ function onUp() {
   const newEnd = toStr(parseDateStrict(d.origEnd) + deltaMs);
   drag.value = null; previewDelta.value = 0;
   if ((newStart !== d.origStart || newEnd !== d.origEnd) && newStart <= newEnd) {
-    gantt.moveOrResize(d.id, newStart, newEnd, d.percent);
+    emit("update", d.id, newStart, newEnd, d.percent);
   }
 }
 
@@ -75,7 +74,7 @@ const arrows = computed<Arrow[]>(() => {
     rowIdx++;
   }
   const out: Arrow[] = [];
-  for (const e of gantt.deps) {
+  for (const e of props.deps) {
     const p = pos.get(e.predecessor_id); const s = pos.get(e.task_id);
     if (p && s) out.push({ x1: p.endX, y1: p.y, x2: s.startX, y2: s.y });
   }

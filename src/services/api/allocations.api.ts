@@ -1,14 +1,17 @@
+import { type MaybeRef, computed, toValue } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { AllocationView } from "@/types";
 
 import { invalidateAllocationDerivedViews } from "./invalidate";
 
-export function useListAllocationsQuery(projectId: number) {
+export function useListAllocationsQuery(projectId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(projectId));
   return useQuery<AllocationView[]>({
-    queryKey: ["allocations", projectId],
-    queryFn: () => apiFetch<AllocationView[]>(`/api/projects/${projectId}/allocations`),
+    queryKey: computed(() => ["allocations", id.value]),
+    queryFn: () => apiFetch<AllocationView[]>(`/api/projects/${id.value}/allocations`),
+    enabled: () => id.value != null,
   });
 }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import { toast } from "vue-sonner";
-import { useSettingsStore } from "@/stores/settings";
+import { useGetSettingsQuery, useUpdateSettingsMutation } from "@/services/api/config.api";
 import type { Settings } from "@/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,11 +26,12 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2Icon } from "@lucide/vue";
 
-const settings = useSettingsStore();
+const settingsQuery = useGetSettingsQuery();
+const updateSettings = useUpdateSettingsMutation();
 const draft = ref<Settings | null>(null);
 
 watch(
-  () => settings.settings,
+  () => settingsQuery.data.value,
   (s) => {
     if (s && !draft.value) {
       draft.value = { ...s };
@@ -38,13 +39,6 @@ watch(
   },
   { immediate: true },
 );
-
-onMounted(async () => {
-  await settings.load();
-  if (settings.settings && !draft.value) {
-    draft.value = { ...settings.settings };
-  }
-});
 
 const unitOptions = [
   { label: "PD (人日)", value: "PD" },
@@ -72,7 +66,7 @@ const solverOptions = [
 async function save() {
   if (!draft.value) return;
   try {
-    await settings.save(draft.value);
+    await updateSettings.mutateAsync(draft.value);
     toast.success("设置已保存");
   } catch (e) {
     toast.error(`保存失败: ${e instanceof Error ? e.message : String(e)}`);
@@ -80,8 +74,8 @@ async function save() {
 }
 
 function reset() {
-  if (settings.settings) {
-    draft.value = { ...settings.settings };
+  if (settingsQuery.data.value) {
+    draft.value = { ...settingsQuery.data.value };
   }
 }
 
@@ -101,7 +95,7 @@ function updateNullableString(
       <p class="text-muted-foreground">全局配置与偏好</p>
     </div>
 
-    <div v-if="settings.loading || !draft" class="space-y-4">
+    <div v-if="settingsQuery.isLoading || !draft" class="space-y-4">
       <Skeleton class="h-32 w-full" />
       <Skeleton class="h-32 w-full" />
       <Skeleton class="h-32 w-full" />
@@ -383,15 +377,15 @@ function updateNullableString(
 
       <div class="flex items-center gap-4">
         <div class="flex gap-2">
-          <Button type="button" :disabled="settings.saving || !draft" @click="save">
-            <Loader2Icon v-if="settings.saving" class="mr-2 h-4 w-4 animate-spin" />
-            {{ settings.saving ? "保存中..." : "保存设置" }}
+          <Button type="button" :disabled="updateSettings.isPending || !draft" @click="save">
+            <Loader2Icon v-if="updateSettings.isPending" class="mr-2 h-4 w-4 animate-spin" />
+            {{ updateSettings.isPending ? "保存中..." : "保存设置" }}
           </Button>
-          <Button type="button" variant="outline" :disabled="settings.saving || !draft" @click="reset">
+          <Button type="button" variant="outline" :disabled="updateSettings.isPending || !draft" @click="reset">
             重置
           </Button>
         </div>
-        <p v-if="settings.saving" class="text-muted-foreground text-sm">正在保存设置...</p>
+        <p v-if="updateSettings.isPending" class="text-muted-foreground text-sm">正在保存设置...</p>
       </div>
     </div>
   </div>

@@ -10,17 +10,19 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "@/components/ui/number-field";
-import { useProjectsStore } from "@/stores/projects";
+import { useCreateProjectMutation } from "@/services/api/projects.api";
 
-const projects = useProjectsStore();
+const createProject = useCreateProjectMutation();
 const name = ref("");
 const priority = ref(5);
 const budget = ref(0);
 
 async function submit() {
   if (!name.value.trim()) return;
-  await projects.create(name.value, priority.value, budget.value);
+  await createProject.mutateAsync({ name: name.value, priority: priority.value, budgetPd: budget.value });
   name.value = "";
+  priority.value = 5;
+  budget.value = 0;
 }
 </script>
 

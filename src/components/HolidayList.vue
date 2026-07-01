@@ -4,15 +4,19 @@ import { CalendarDate, getLocalTimeZone } from "@internationalized/date";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useCalendarStore } from "@/stores/calendar";
+import { useListHolidaysQuery, useAddHolidayMutation, useDeleteHolidayMutation } from "@/services/api/calendar.api";
 import { fmtDate } from "@/utils/date";
 import type { DateValue } from "@internationalized/date";
 
-const cal = useCalendarStore();
+const holidaysQuery = useListHolidaysQuery();
+const addHoliday = useAddHolidayMutation();
+const deleteHoliday = useDeleteHolidayMutation();
+
 const day = ref<number | null>(null);
 const frac = ref(1);
 const name = ref("");
@@ -37,11 +41,28 @@ function onSelectFrac(value: unknown) {
   frac.value = Number(value);
 }
 
+const error = ref<string | null>(null);
+
 async function add() {
   if (day.value == null) return;
-  await cal.addHoliday(fmtDate(day.value), frac.value, name.value || null);
-  day.value = null;
-  name.value = "";
+  error.value = null;
+  try {
+    await addHoliday.mutateAsync({ projectId: null, day: fmtDate(day.value), fraction: frac.value, name: name.value || null });
+    day.value = null;
+    name.value = "";
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function removeHoliday(id: number) {
+  error.value = null;
+  try {
+    await deleteHoliday.mutateAsync(id);
+    confirmOpen.value[id] = false;
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
 const confirmOpen = ref<Record<number, boolean>>({});
@@ -80,11 +101,15 @@ const confirmOpen = ref<Record<number, boolean>>({});
         <Label>名称</Label>
         <Input v-model="name" placeholder="节假日名称" class="w-[200px]" />
       </div>
-      <Button @click="add">添加节假日</Button>
+      <Button :disabled="addHoliday.isPending" @click="add">添加节假日</Button>
     </div>
 
+    <Alert v-if="error" variant="destructive" class="mb-2">
+      <AlertDescription>{{ error }}</AlertDescription>
+    </Alert>
+
     <div class="border rounded-lg divide-y">
-      <div v-for="h in cal.holidays" :key="h.id" class="flex items-center justify-between p-3">
+      <div v-for="h in holidaysQuery.data.value ?? []" :key="h.id" class="flex items-center justify-between p-3">
         <div>
           <div class="font-medium">{{ h.day }}</div>
           <div class="text-sm text-muted-foreground">
@@ -102,7 +127,7 @@ const confirmOpen = ref<Record<number, boolean>>({});
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" @click="confirmOpen[h.id] = false">取消</Button>
-              <Button variant="destructive" @click="cal.removeHoliday(h.id); confirmOpen[h.id] = false">删除</Button>
+              <Button variant="destructive" :disabled="deleteHoliday.isPending" @click="removeHoliday(h.id)">删除</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
