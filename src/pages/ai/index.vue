@@ -13,6 +13,7 @@ import { useOptimizationStore } from "@/stores/optimization";
 import { useProjectsStore } from "@/stores/projects";
 import WeightsPanel from "@/components/WeightsPanel.vue";
 import PlanReview from "@/components/PlanReview.vue";
+import PlanCompare from "@/components/PlanCompare.vue";
 
 const opt = useOptimizationStore();
 const projects = useProjectsStore();
@@ -41,6 +42,7 @@ const totalPages = computed(() =>
     <div class="flex-1">
       <PlanReview v-if="opt.current" />
       <span v-else class="text-muted-foreground">运行优化后在此查看建议方案。</span>
+      <PlanCompare />
     </div>
   </div>
 
