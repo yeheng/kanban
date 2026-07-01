@@ -91,7 +91,4 @@ declare global {
   // @ts-ignore
   export type { RefreshScope } from '../stores/refresh'
   import('../stores/refresh')
-  // @ts-ignore
-  export type { DisplayUnit } from '../stores/unit'
-  import('../stores/unit')
 }
