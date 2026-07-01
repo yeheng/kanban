@@ -327,22 +327,15 @@ git mv src/views/SettingsView.vue     src/pages/settings/index.vue
 ```
 Expected: 13 个文件移动成功。`git status` 显示 13 个 rename。
 
-- [ ] **Step 2: 创建 pages/index.vue（根重定向）**
+- [ ] **Step 2: 根路径重定向（在 router/index.ts 顶层 routes 前置，见 Task 3）**
 
-Create `src/pages/index.vue`:
-```vue
-<script setup lang="ts">
-// 根路径重定向到看板（文件路由用 <route> 块声明 redirect）
-</script>
-
-<template>
-  <div />
-</template>
-
-<route lang="yaml">
-redirect: /kanban
-</route>
-```
+> **执行修正（已实现，2026-07-01）**：原计划用 `pages/index.vue` + `<route lang="yaml">` 块声明 `redirect: /kanban`，**但 vue-router@5 的 VueRouter 插件并未解析该块**（生成的 routes 无 redirect 字段，运行时 `/` 渲染空 div 而非重定向 —— 行为回归）。`definePage({ redirect })` 对根 `pages/index.vue` 同样无效。
+>
+> **正确做法**（已落地）：删掉 `pages/index.vue`（不创建），在 `router/index.ts` 的 `createRouter` 里把 redirect 记录作为顶层 routes 数组的第一个元素，且**必须放在 `setupLayouts(...)` 之外**——`setupLayouts` 会给每个 top-level route 套上 layout 组件并降为 child，对无 `component` 的 redirect 记录会破坏其语义：
+> ```ts
+> routes: [{ path: "/", redirect: "/kanban" }, ...setupLayouts(routes)]
+> ```
+> 见 Task 3 的 router/index.ts 修正版。新增 `src/router/redirect.test.ts` 覆盖运行时行为（`/` → `/kanban` 且 `redirectedFrom` 正确），防止回归。
 
 - [ ] **Step 3: 删除空的 src/views/ 目录**
 
