@@ -271,3 +271,45 @@ fn balance_weight_raises_fairness_above_score_only() {
         sol_on.metrics.fairness, sol_off.metrics.fairness
     );
 }
+
+/// Dependency cascade (greedy): T2 depends on T1. When T1 is infeasible (mandatory skill
+/// unmet), T1 is unscheduled ⇒ T2 must ALSO be unscheduled (it can't be scheduled without its
+/// predecessor). When T1 is feasible, both schedule.
+#[test]
+fn dependency_cascades_unscheduled_when_predecessor_infeasible() {
+    let skill = 1i64;
+    let make = |alice_has_skill: bool| {
+        AllocationProblem {
+            resources: vec![CandidateResource {
+                id: 1, name: "Alice".into(),
+                skills: if alice_has_skill { HashMap::from([(skill, 4)]) } else { HashMap::new() },
+                tags: vec![], daily_capacity_pd: 1.0, available_from: None, available_to: None,
+            }],
+            tasks: vec![
+                CandidateTask {
+                    id: 1, project_id: 1, title: "T1".into(), estimate_pd: 1.0,
+                    start: d("2026-07-01"), end: d("2026-07-01"), priority: 1,
+                    skill_reqs: vec![SkillReq { skill_id: skill, min_proficiency: 3, is_mandatory: true, weight: 1.0 }],
+                },
+                CandidateTask {
+                    id: 2, project_id: 1, title: "T2".into(), estimate_pd: 1.0,
+                    start: d("2026-07-02"), end: d("2026-07-02"), priority: 2, skill_reqs: vec![],
+                },
+            ],
+            dependencies: vec![TaskDependency { task_id: 2, predecessor_id: 1 }],
+            ..Default::default()
+        }
+    };
+    let m: HashMap<(i64, i64), f64> = HashMap::from([((1, 1), 0.5), ((1, 2), 0.5)]);
+
+    // Predecessor infeasible ⇒ both unscheduled (cascade).
+    let sol = GreedySolver.solve(&make(false), &m);
+    let mut unsched = sol.unscheduled.clone(); unsched.sort();
+    assert_eq!(unsched, vec![1, 2], "T2 must cascade-unschedule when T1 is infeasible");
+
+    // Predecessor feasible ⇒ both scheduled.
+    let sol = GreedySolver.solve(&make(true), &m);
+    assert_eq!(sol.assignments.len(), 2, "both schedule when the predecessor is feasible");
+    let mut sched: Vec<i64> = sol.assignments.iter().map(|a| a.task_id).collect(); sched.sort();
+    assert_eq!(sched, vec![1, 2]);
+}

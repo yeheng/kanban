@@ -162,35 +162,29 @@ impl Solver for MilpSolver {
             })
             .sum();
         let total_priority: f64 = problem.tasks.iter().map(|t| priority_w(t.priority)).sum();
-        // Worst-case load on a single resource = Σ over its feasible tasks of percent.
-        let worst_load: f64 = problem
-            .resources
-            .iter()
-            .map(|r| {
-                feasible
-                    .iter()
-                    .filter(|f| f.r_id == r.id)
-                    .map(|f| f.percent)
-                    .sum::<f64>()
-            })
-            .fold(0.0_f64, f64::max);
 
         let eps = 1e-9;
         let mut obj = good_lp::Expression::default();
         for (f, &x) in feasible.iter().zip(xs.iter()) {
             let skill_term = if max_skill > eps { f.score / max_skill } else { 0.0 };
+            // Coverage reward: scheduling a task is a core objective, weighted by
+            // (skill_fit + balance) so it is always positive — never cancelled to zero by the
+            // balance penalty (which uses w_balance alone). Without this, two zero-score tasks
+            // on distinct days had reward == penalty ⇒ MILP chose to assign nothing.
             let cov_term = if total_priority > eps {
                 priority_w(f.priority) / total_priority
             } else {
                 0.0
             };
-            obj = obj + (problem.weights.skill_fit * skill_term
-                + problem.weights.balance * cov_term)
-                * x;
+            let cov_w = problem.weights.skill_fit + problem.weights.balance;
+            obj += (problem.weights.skill_fit * skill_term + cov_w * cov_term) * x;
         }
-        if worst_load > eps {
-            obj = obj - problem.weights.balance * (l_max / worst_load);
-        }
+        // Balance penalty: L_max is a per-resource committed ratio (≤ 1.0 = one full day's
+        // worth). Normalize against the fixed full-load reference (1.0), NOT against worst_load
+        // — normalizing against worst_load made a single assignment saturate the penalty to 1.0
+        // (cancelling the coverage reward), so MILP chose to assign nothing. Against 1.0,
+        // assigning a 0.5-load task costs only 0.5, leaving a positive net objective.
+        obj -= problem.weights.balance * l_max;
         let mut model = vars.maximise(obj).using(default_solver);
 
         // 4. Constraints.
@@ -215,16 +209,16 @@ impl Solver for MilpSolver {
                 }
             });
         }
-        for (r_id, mut days) in days_by_resource {
+        for (r_id, days) in &mut days_by_resource {
             days.sort();
             days.dedup();
-            for day in days {
-                let limit = day_capacity(&caps, r_id, day) - load.get(&(r_id, day)).copied().unwrap_or(0.0);
+            for &day in days.iter() {
+                let limit = day_capacity(&caps, *r_id, day) - load.get(&(*r_id, day)).copied().unwrap_or(0.0);
                 let row: good_lp::Expression = feasible
                     .iter()
                     .zip(xs.iter())
                     .filter(|(f, _)| {
-                        f.r_id == r_id
+                        f.r_id == *r_id
                             && day >= problem.tasks[f.t_idx].start
                             && day <= problem.tasks[f.t_idx].end
                     })
@@ -248,16 +242,48 @@ impl Solver for MilpSolver {
             model = model.with(constraint!(row <= budget));
         }
 
-        // 4d. Load-balance coupling: L_max ≥ Σ_t x·percent for each resource.
-        for (ri, _r) in problem.resources.iter().enumerate() {
-            let row: good_lp::Expression = feasible
-                .iter()
-                .zip(xs.iter())
-                .filter(|(f, _)| f.r_idx == ri)
-                .fold(good_lp::Expression::default(), |acc, (f, &x)| {
-                    acc + f.percent * x
-                });
-            model = model.with(constraint!(l_max >= row));
+        // 4c2. Dependency coupling: Σ_r x[r,task] ≤ Σ_r x[r,predecessor] for each edge among
+        //      candidate tasks. If the predecessor has no feasible (r,t) pair (e.g. mandatory
+        //      skill unmet), its LHS Σ is the constant 0 ⇒ the dependent's Σ ≤ 0 ⇒ it can't be
+        //      scheduled either (cascade). Edges referencing tasks outside this run are skipped.
+        let t_id_to_idx: HashMap<i64, usize> = problem.tasks.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
+        for d in &problem.dependencies {
+            let (Some(&ti), Some(&pi)) = (t_id_to_idx.get(&d.task_id), t_id_to_idx.get(&d.predecessor_id))
+            else { continue };
+            if ti == pi { continue; }
+            let dep_row: good_lp::Expression = feasible
+                .iter().zip(xs.iter())
+                .filter(|(f, _)| f.t_idx == ti)
+                .fold(good_lp::Expression::default(), |acc, (_, &x)| acc + x);
+            let pred_row: good_lp::Expression = feasible
+                .iter().zip(xs.iter())
+                .filter(|(f, _)| f.t_idx == pi)
+                .fold(good_lp::Expression::default(), |acc, (_, &x)| acc + x);
+            model = model.with(constraint!(dep_row <= pred_row));
+        }
+
+        // 4d. Load-balance coupling (per-day minimax): L_max ≥ Σ_{t: day∈window} x[r,t]·percent
+        //     for each (resource, day). This is the daily peak load — the right balance signal:
+        //     two tasks on *different* days do NOT pile onto the same day, so they should not
+        //     inflate the balance penalty. (A per-resource Σ-percent L_max wrongly penalized a
+        //     resource staffed across many days at a normal 100%/day, making MILP refuse to
+        //     assign anything.) `days_by_resource` (built in 4b) already enumerates the days.
+        for (ri, r) in problem.resources.iter().enumerate() {
+            let Some(days) = days_by_resource.get(&r.id) else { continue };
+            for &day in days {
+                let row: good_lp::Expression = feasible
+                    .iter()
+                    .zip(xs.iter())
+                    .filter(|(f, _)| {
+                        f.r_idx == ri
+                            && day >= problem.tasks[f.t_idx].start
+                            && day <= problem.tasks[f.t_idx].end
+                    })
+                    .fold(good_lp::Expression::default(), |acc, (f, &x)| {
+                        acc + f.percent * x
+                    });
+                model = model.with(constraint!(l_max >= row));
+            }
         }
 
         // 5. Solve with a time limit (HiGHS set_time_limit, in seconds).

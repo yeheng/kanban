@@ -124,6 +124,20 @@ impl TasksService {
 
         let outcome: Result<(), domain::DomainError> = db::tx::with_write_tx(pool, move |mut tx| {
             Box::pin(async move {
+                // Project-internal semantics (design §3.3.12, tasks.md T1): a dependency edge
+                // must connect two tasks in the SAME project. Cross-project scheduling order is
+                // not modeled by the solver, so reject it at write time rather than silently
+                // dropping the edge inside build_problem.
+                let (p1,): (Option<i64>,) = sqlx::query_as("SELECT project_id FROM tasks WHERE id=?")
+                    .bind(task_id).fetch_one(&mut *tx).await?;
+                let (p2,): (Option<i64>,) = sqlx::query_as("SELECT project_id FROM tasks WHERE id=?")
+                    .bind(predecessor_id).fetch_one(&mut *tx).await?;
+                if p1 != p2 {
+                    return Ok((tx, Err(domain::DomainError::DependencyViolation {
+                        task_id,
+                        related_task_id: predecessor_id,
+                    })));
+                }
                 let mut edges: Vec<(i64, i64)> =
                     sqlx::query_as("SELECT task_id, predecessor_id FROM task_dependencies")
                         .fetch_all(&mut *tx)

@@ -240,3 +240,107 @@ fn c2_balance_weight_drives_load_distribution() {
     assert_eq!(rids, vec![1, 2], "balance-dominant weights must split across resources");
     assert_eq!(sol.assignments.len(), 2);
 }
+
+/// Trap #1 (per-day L_max, not per-resource Σ-percent): one resource, two zero-score tasks on
+/// *different* days (each 1.0 PD, daily cap 1.0). A per-resource Σ-percent L_max would make
+/// assigning both ⇒ L_max = 2.0 ⇒ penalty 0.4·2.0 = 0.8 > reward ⇒ MILP refuses. The per-day
+/// L_max keeps the daily peak at 1.0 (one task/day, normal), so both schedule. This locks in
+/// the fix that was found while debugging the app `apply_skips_out_of_window` test.
+#[test]
+fn per_day_lmax_does_not_penalize_different_day_tasks() {
+    let p = AllocationProblem {
+        resources: vec![CandidateResource {
+            id: 1, name: "Alice".into(), skills: HashMap::new(), tags: vec![],
+            daily_capacity_pd: 1.0, available_from: None, available_to: None,
+        }],
+        tasks: vec![
+            CandidateTask {
+                id: 1, project_id: 1, title: "T1".into(), estimate_pd: 1.0,
+                start: d("2026-07-01"), end: d("2026-07-01"), priority: 5, skill_reqs: vec![],
+            },
+            CandidateTask {
+                id: 2, project_id: 1, title: "T2".into(), estimate_pd: 1.0,
+                start: d("2026-07-02"), end: d("2026-07-02"), priority: 5, skill_reqs: vec![],
+            },
+        ],
+        // Balanced weights (the app default). Coverage reward weighted by w_skill+w_balance.
+        weights: ObjectiveWeights { skill_fit: 0.4, balance: 0.4, budget: 0.2 },
+        ..Default::default()
+    };
+    // Zero scores (no skills/tags ⇒ FallbackScorer gives 0) — the trap condition.
+    let m: ScoreMatrix = HashMap::from([((1, 1), 0.0), ((1, 2), 0.0)]);
+    let sol = MilpSolver::default().solve(&p, &m);
+    assert_eq!(
+        sol.assignments.len(), 2,
+        "different-day tasks must both schedule (per-day L_max); got {} assignments",
+        sol.assignments.len()
+    );
+}
+
+/// Trap #2 (coverage reward not cancelled by balance penalty at zero scores): with all scores
+/// 0 and balance-dominant weights, the coverage reward (w_skill+w_balance) must strictly
+/// exceed the balance penalty so a feasible single task is still placed. Guards against the
+/// earlier `cov_w = w_balance`-only weighting where reward == penalty ⇒ MILP assigned nothing.
+#[test]
+fn coverage_reward_beats_balance_penalty_at_zero_scores() {
+    let p = AllocationProblem {
+        resources: vec![CandidateResource {
+            id: 1, name: "Alice".into(), skills: HashMap::new(), tags: vec![],
+            daily_capacity_pd: 1.0, available_from: None, available_to: None,
+        }],
+        tasks: vec![CandidateTask {
+            id: 1, project_id: 1, title: "T".into(), estimate_pd: 1.0,
+            start: d("2026-07-01"), end: d("2026-07-02"), priority: 5, skill_reqs: vec![],
+        }],
+        // Balance-dominant — the worst case for the cancellation trap.
+        weights: ObjectiveWeights { skill_fit: 0.1, balance: 0.9, budget: 0.0 },
+        ..Default::default()
+    };
+    let m: ScoreMatrix = HashMap::from([((1, 1), 0.0)]);
+    let sol = MilpSolver::default().solve(&p, &m);
+    assert!(
+        !sol.assignments.is_empty(),
+        "a feasible zero-score task must still be placed (coverage reward > balance penalty)"
+    );
+}
+
+/// Dependency coupling (MILP): T2 depends on T1. The constraint `Σ_r x[r,T2] ≤ Σ_r x[r,T1]`
+/// means T2 cannot be scheduled unless T1 is also scheduled. When T1 is infeasible (mandatory
+/// skill unmet, so no x[T1] variable exists), T1's RHS is 0 ⇒ T2's x must be 0 too. When both
+/// are feasible, both are placed.
+#[test]
+fn milp_dependency_coupling_cascades_when_predecessor_infeasible() {
+    let skill = 1i64;
+    let make = |alice_has_skill: bool| {
+        AllocationProblem {
+            resources: vec![CandidateResource {
+                id: 1, name: "Alice".into(),
+                skills: if alice_has_skill { HashMap::from([(skill, 4)]) } else { HashMap::new() },
+                tags: vec![], daily_capacity_pd: 1.0, available_from: None, available_to: None,
+            }],
+            tasks: vec![
+                CandidateTask {
+                    id: 1, project_id: 1, title: "T1".into(), estimate_pd: 1.0,
+                    start: d("2026-07-01"), end: d("2026-07-01"), priority: 1,
+                    skill_reqs: vec![SkillReq { skill_id: skill, min_proficiency: 3, is_mandatory: true, weight: 1.0 }],
+                },
+                CandidateTask {
+                    id: 2, project_id: 1, title: "T2".into(), estimate_pd: 1.0,
+                    start: d("2026-07-02"), end: d("2026-07-02"), priority: 2, skill_reqs: vec![],
+                },
+            ],
+            dependencies: vec![TaskDependency { task_id: 2, predecessor_id: 1 }],
+            weights: ObjectiveWeights { skill_fit: 0.4, balance: 0.4, budget: 0.2 },
+            ..Default::default()
+        }
+    };
+    let m: ScoreMatrix = HashMap::from([((1, 1), 0.5), ((1, 2), 0.5)]);
+
+    // Predecessor infeasible ⇒ both unscheduled (no x[T1] var ⇒ Σ x[T2] ≤ 0).
+    let sol = MilpSolver::default().solve(&make(false), &m);
+    assert!(sol.assignments.is_empty(), "T2 must be blocked when T1 is infeasible (MILP coupling)");
+
+    // Predecessor feasible ⇒ both scheduled.
+    let sol = MilpSolver::default().solve(&make(true), &m);
+    assert_eq!(sol.assignments.len(), 2, "both schedule when predecessor is feasible (MILP)");
+}

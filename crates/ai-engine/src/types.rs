@@ -129,6 +129,22 @@ pub struct AllocationProblem {
     pub budget_pd: Option<f64>,
     pub weights: ObjectiveWeights,
     pub config: SolverConfig,
+    /// Dependency edges among the candidate tasks (design §3.3.12). Direction matches the DB
+    /// `task_dependencies(task_id, predecessor_id)`: `task` depends on `predecessor` — the task
+    /// must not be scheduled unless its predecessor is also scheduled. Loaded by `build_problem`
+    /// for the solver to enforce (greedy: topological order + cascade-unschedule; MILP:
+    /// `Σ_r x[r,task] ≤ Σ_r x[r,predecessor]`). Edges only among the project's candidate tasks.
+    #[serde(default)]
+    pub dependencies: Vec<TaskDependency>,
+}
+
+/// A finish-to-start-ish ordering edge: `task_id` cannot be scheduled unless
+/// `predecessor_id` is also scheduled. (The DB `dep_type`/`lag_days` nuances are not yet
+/// modeled inside the solver — only the schedule/no-schedule coupling is enforced.)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct TaskDependency {
+    pub task_id: i64,
+    pub predecessor_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

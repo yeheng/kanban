@@ -216,3 +216,58 @@ async fn apply_skips_out_of_window_after_task_window_narrowed() {
     let again = OptimizationService::apply(&pool, res.run_id).await.unwrap();
     assert_eq!(again, 0, "re-apply is idempotent");
 }
+
+/// When the DB requests `good_lp` but the `milp` feature is NOT compiled in, the run must
+/// still succeed (greedy fallback) AND persist the backend that ACTUALLY ran (`greedy`), not
+/// the requested `good_lp` — so run rows never mislabel the backend. (Guards task F: the
+/// `effective_backend` returned by `select_solver` is what's persisted.)
+#[cfg(not(feature = "milp"))]
+#[tokio::test]
+async fn run_persists_effective_backend_when_feature_missing() {
+    let pool = connect("sqlite::memory:").await.unwrap();
+    sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+    // The schema default is solver_backend='good_lp', but this binary has no milp feature.
+    let (db_backend,): (String,) = sqlx::query_as("SELECT solver_backend FROM settings WHERE id=1")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(db_backend, "good_lp", "schema default is good_lp");
+    let pid = ProjectsService::create(&pool, "P", None, None, None, 5, 0.0).await.unwrap();
+    let rust = CatalogService::ensure_skill(&pool, "Rust").await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resource_skills (resource_id,skill_id,proficiency) VALUES (1,?,4)")
+        .bind(rust).execute(&pool).await.unwrap();
+    TasksService::create(&pool, pid, "T1", None, 5.0, Some("2026-07-01"), Some("2026-07-07"),
+        false, None, None, 0, &[(rust, 3, true, 1.0)], &[]).await.unwrap();
+
+    let res = OptimizationService::run_for_project(&pool, pid, None).await.unwrap();
+    let (persisted,): (String,) = sqlx::query_as("SELECT solver_backend FROM ai_optimization_runs WHERE id=?")
+        .bind(res.run_id).fetch_one(&pool).await.unwrap();
+    assert_eq!(persisted, "greedy",
+        "without the milp feature the run must record 'greedy' (the backend that actually ran), not the requested 'good_lp'");
+    assert!(!res.plan.solution.assignments.is_empty());
+}
+
+/// `constraints_json` is backfilled with the dependency edges the run honored (task F: the
+/// column was previously bound '' and left vestigial). With a dependency edge present, it must
+/// serialize that edge so the run is reproducible.
+#[tokio::test]
+async fn run_persists_dependency_edges_in_constraints_json() {
+    let pool = connect("sqlite::memory:").await.unwrap();
+    sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+    let pid = ProjectsService::create(&pool, "P", None, None, None, 5, 100.0).await.unwrap();
+    let rust = CatalogService::ensure_skill(&pool, "Rust").await.unwrap();
+    sqlx::query("INSERT INTO resources (id,name) VALUES (1,'Alice')").execute(&pool).await.unwrap();
+    sqlx::query("INSERT INTO resource_skills (resource_id,skill_id,proficiency) VALUES (1,?,4)")
+        .bind(rust).execute(&pool).await.unwrap();
+    let t1 = TasksService::create(&pool, pid, "T1", None, 1.0, Some("2026-07-01"), Some("2026-07-01"),
+        false, None, None, 0, &[(rust, 3, true, 1.0)], &[]).await.unwrap();
+    let t2 = TasksService::create(&pool, pid, "T2", None, 1.0, Some("2026-07-02"), Some("2026-07-02"),
+        false, None, None, 1, &[(rust, 3, true, 1.0)], &[]).await.unwrap();
+    TasksService::add_dependency(&pool, t2, t1, 0, "FS").await.unwrap();
+
+    let res = OptimizationService::run_for_project(&pool, pid, None).await.unwrap();
+    let (cons,): (Option<String>,) = sqlx::query_as("SELECT constraints_json FROM ai_optimization_runs WHERE id=?")
+        .bind(res.run_id).fetch_one(&pool).await.unwrap();
+    let cons = cons.unwrap_or_default();
+    assert!(cons.contains("\"task_id\""), "constraints_json should serialize dependency edges, got: {cons}");
+    assert!(cons.contains("\"predecessor_id\""), "constraints_json missing predecessor_id, got: {cons}");
+}

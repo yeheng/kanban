@@ -137,21 +137,31 @@ impl Solver for GreedySolver {
             });
         }
 
-        let mut order: Vec<&CandidateTask> = problem.tasks.iter().collect();
-        // total_cmp (not partial_cmp().unwrap()) so a NaN score can't panic the sort.
-        order.sort_by(|a, b| {
-            a.priority
-                .cmp(&b.priority)
-                .then_with(|| b.estimate_pd.total_cmp(&a.estimate_pd))
-        });
+        // Order tasks by dependency topology first (predecessors before dependents), then by
+        // (priority asc, estimate desc) within each layer. The topological order is what makes
+        // the cascade correct: a predecessor is decided (scheduled or unscheduled) before its
+        // dependent is considered, so the dependent can check the predecessor's outcome.
+        let order = topo_order(&problem.tasks, &problem.dependencies);
 
         let mut assignments = Vec::new();
         let mut unscheduled = Vec::new();
+        let mut scheduled: std::collections::HashSet<i64> = std::collections::HashSet::new();
         let mut score_sum = 0.0;
         let mut planned_pd = 0.0;
         let budget_cap = problem.budget_pd.filter(|b| *b > 0.0);
 
         for t in order {
+            // Dependency cascade: a task whose predecessor is NOT scheduled (infeasible, over
+            // budget, or itself cascade-unscheduled) cannot be scheduled either.
+            let preds_ok = problem
+                .dependencies
+                .iter()
+                .filter(|d| d.task_id == t.id)
+                .all(|d| scheduled.contains(&d.predecessor_id));
+            if !preds_ok {
+                unscheduled.push(t.id);
+                continue;
+            }
             // Hard budget gate (unconditional — not weight-gated).
             if let Some(budget) = budget_cap {
                 if planned_pd + t.estimate_pd > budget + 1e-9 {
@@ -179,7 +189,14 @@ impl Solver for GreedySolver {
                 .collect();
 
             // Score each candidate once: (score, window-committed-load) for the sort.
-            // Sort by score desc, then committed-load asc — the balance tiebreaker.
+            // Rank key = score − λ·(resource_total_load / n_resources), where λ = w_balance.
+            // This makes the fairness objective an ACTIVE driver (not just a tiebreaker): a
+            // less-loaded resource wins even when its raw score is slightly lower, with the
+            // strength of the pull set by the balance weight. At w_balance = 0 ⇒ λ = 0 ⇒ the
+            // key is pure score, and the `.then_with(load asc)` tiebreaker reproduces the
+            // original byte-identical behavior (verified by a snapshot test).
+            let lambda = problem.weights.balance;
+            let n_res = problem.resources.len().max(1) as f64;
             let mut ranked: Vec<(&CandidateResource, f64, f64)> = eligible
                 .into_iter()
                 .map(|r| {
@@ -188,7 +205,11 @@ impl Solver for GreedySolver {
                     (r, sc, wl)
                 })
                 .collect();
-            ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.2.total_cmp(&b.2)));
+            ranked.sort_by(|a, b| {
+                let ra = a.1 - lambda * (total_load.get(&a.0.id).copied().unwrap_or(0.0) / n_res);
+                let rb = b.1 - lambda * (total_load.get(&b.0.id).copied().unwrap_or(0.0) / n_res);
+                rb.total_cmp(&ra).then_with(|| a.2.total_cmp(&b.2))
+            });
 
             let mut chosen: Option<(&CandidateResource, f64, f64)> = None;
             for (r, sc, _wl) in ranked {
@@ -213,6 +234,7 @@ impl Solver for GreedySolver {
                     });
                     score_sum += sc;
                     planned_pd += t.estimate_pd;
+                    scheduled.insert(t.id);
                     assignments.push(ScoredAssignment {
                         resource_id: r.id,
                         task_id: t.id,
@@ -249,6 +271,60 @@ impl Solver for GreedySolver {
             status: SolverStatus::Feasible,
         }
     }
+}
+
+/// Topologically order the candidate tasks so every predecessor (per `dependencies`) comes
+/// before its dependent. Within each topological layer, break ties by (priority asc, estimate
+/// desc) — the same key the old plain sort used — so dependency-free problems produce the
+/// identical order as before. Edges referencing tasks not in `tasks` are ignored (they can't
+/// be enforced inside this run anyway). Cycles are impossible here: `add_dependency` rejects
+/// cycles at write time; a self-loop can't exist (CHECK constraint). If the unexpected happens,
+/// the offending edge is skipped (no infinite loop) rather than panicking.
+pub(crate) fn topo_order<'a>(
+    tasks: &'a [CandidateTask],
+    dependencies: &[TaskDependency],
+) -> Vec<&'a CandidateTask> {
+    use std::collections::{HashMap, HashSet};
+    let id_idx: HashMap<i64, usize> = tasks.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
+    // in-degree counts predecessors that are themselves candidate tasks.
+    let mut indeg: Vec<usize> = vec![0; tasks.len()];
+    let mut succ: HashMap<usize, Vec<usize>> = HashMap::new();
+    for d in dependencies {
+        let (Some(&ti), Some(&pi)) = (id_idx.get(&d.task_id), id_idx.get(&d.predecessor_id))
+        else { continue }; // edge references a task outside this run — ignore
+        if ti == pi { continue; } // defensive: self-edge (shouldn't exist)
+        indeg[ti] += 1;
+        succ.entry(pi).or_default().push(ti);
+    }
+    // Kahn's algorithm, seeded with all zero-in-degree tasks sorted by the greedy key.
+    let mut ready: Vec<usize> = (0..tasks.len()).filter(|&i| indeg[i] == 0).collect();
+    ready.sort_by(|&a, &b| tasks[a].priority.cmp(&tasks[b].priority)
+        .then_with(|| tasks[b].estimate_pd.total_cmp(&tasks[a].estimate_pd)));
+    let mut out: Vec<&CandidateTask> = Vec::with_capacity(tasks.len());
+    let mut emitted: HashSet<usize> = HashSet::new();
+    while let Some(i) = ready.first().copied() {
+        ready.remove(0);
+        emitted.insert(i);
+        out.push(&tasks[i]);
+        if let Some(next) = succ.get(&i) {
+            for &j in next {
+                indeg[j] -= 1;
+                if indeg[j] == 0 && !emitted.contains(&j) {
+                    // insert keeping the priority/estimate order
+                    let pos = ready.binary_search_by(|&k| {
+                        tasks[k].priority.cmp(&tasks[j].priority)
+                            .then_with(|| tasks[j].estimate_pd.total_cmp(&tasks[k].estimate_pd))
+                    }).unwrap_or_else(|e| e);
+                    ready.insert(pos, j);
+                }
+            }
+        }
+    }
+    // Any task still not emitted (defensive: a cycle slipped through) appended in stable order.
+    for (i, t) in tasks.iter().enumerate() {
+        if !emitted.contains(&i) { out.push(t); }
+    }
+    out
 }
 
 /// Build `SolutionMetrics` shared by both solvers so the greedy and MILP paths report

@@ -73,3 +73,22 @@ async fn dep_type_is_normalized_and_persisted() {
     let err = TasksService::add_dependency(&pool, b, a, 0, "bogus").await.unwrap_err();
     assert_eq!(err.code, "VALIDATION");
 }
+
+/// Cross-project dependency edges are rejected (project-internal semantics, design §3.3.12 /
+/// tasks.md T1). The solver only orders tasks within a project's candidate set, so a
+/// cross-project edge would be silently dropped by build_problem — reject at write time instead.
+#[tokio::test]
+async fn cross_project_dependency_rejected() {
+    let pool = connect("sqlite::memory:").await.unwrap();
+    sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+    let p1 = ProjectsService::create(&pool, "P1", None, None, None, 5, 0.0).await.unwrap();
+    let p2 = ProjectsService::create(&pool, "P2", None, None, None, 5, 0.0).await.unwrap();
+    let a = TasksService::create(&pool, p1, "A", None, 1.0, None, None, false, None, None, 0, &[], &[]).await.unwrap();
+    let b = TasksService::create(&pool, p2, "B", None, 1.0, None, None, false, None, None, 1, &[], &[]).await.unwrap();
+
+    let err = TasksService::add_dependency(&pool, b, a, 0, "FS").await.unwrap_err();
+    assert_eq!(err.code, "DOMAIN", "cross-project dep must be a DOMAIN (422) error, got {}", err.code);
+    // Same-project edge still works.
+    let a2 = TasksService::create(&pool, p1, "A2", None, 1.0, None, None, false, None, None, 0, &[], &[]).await.unwrap();
+    TasksService::add_dependency(&pool, a2, a, 0, "FS").await.unwrap();
+}
