@@ -1367,11 +1367,11 @@ import { useListResourcesQuery } from "@/services/api/resources.api";
 import { useListTeamsQuery } from "@/services/api/teams.api";
 import { useListProjectsQuery } from "@/services/api/projects.api";
 import {
-  useGetThresholdsQuery,
   useProjectBurnQuery,
   useTeamSummaryQuery,
   useOverloadsQuery,
 } from "@/services/api/workload.api";
+import { useGetThresholdsQuery } from "@/services/api/config.api";
 import { useGetTeamOverrideQuery } from "@/services/api/teams.api";
 import { useProjectsStore } from "@/stores/projects";
 import { useUnitStore } from "@/stores/unit";

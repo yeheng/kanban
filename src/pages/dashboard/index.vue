@@ -128,17 +128,22 @@ const loading = ref(false);
 async function refresh() {
   loading.value = true;
   try {
-    await Promise.all([
+    const promises: Promise<unknown>[] = [
       resourcesQuery.refetch(),
       projectsQuery.refetch(),
       teamsQuery.refetch(),
       thresholdsQuery.refetch(),
       overloadsQuery.refetch(),
-      projectBurnQuery.refetch(),
-      teamSummaryQuery.refetch(),
-      teamOverrideQuery.refetch(),
       ...resourceSummaryQueries.value.map((q) => q.refetch()),
-    ]);
+    ];
+    if (projects.current != null) {
+      promises.push(projectBurnQuery.refetch());
+    }
+    if (selectedTeam.value != null) {
+      promises.push(teamSummaryQuery.refetch());
+      promises.push(teamOverrideQuery.refetch());
+    }
+    await Promise.all(promises);
   } finally {
     loading.value = false;
   }
