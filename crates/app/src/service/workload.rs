@@ -211,10 +211,10 @@ impl WorkloadService {
     /// Project burn: allocated PD vs budget PD (design §8 R3).
     ///
     /// Allocated PD is computed dynamically with the Phase 0 pure `alloc_pd` over each
-    /// allocation's FULL span (capacity from the project's calendar), NOT read from the
-    /// `allocations.allocated_pd` cache column — that column defaults to 0 and is never
-    /// populated by the current write path, so SUM(allocated_pd) would always be 0.
-    /// A windowed burn (clipped to a reporting window) is a Phase 5 report concern.
+    /// allocation's FULL span (capacity from the project's calendar). There is no cached
+    /// per-allocation PD column — the old `allocations.allocated_pd` cache was always 0
+    /// (never written) and was dropped in migration 0004; this dynamic sum is the only
+    /// source of truth. A windowed burn (clipped to a reporting window) is a Phase 5 report concern.
     pub async fn project_burn(pool: &SqlitePool, project_id: i64) -> Result<ProjectBurn, AppError> {
         let project = ProjectsRepo::get(pool, project_id).await?;
         let cal = hydrate(pool).await?;

@@ -1,0 +1,12 @@
+-- Drop the dead `allocations.allocated_pd` cache column.
+--
+-- It was a denormalized cache that the write path never populated: the allocation
+-- INSERT lists columns explicitly and omits it, so every row held its DEFAULT 0.
+-- Nothing ever read it back — no SELECT names it, no FromRow struct maps it. Every
+-- allocated-PD figure (project burn, cost report, workload) is computed dynamically
+-- from `percent` over each allocation's calendar-aware span (domain::alloc_pd), so
+-- SUM(allocated_pd) was always 0 — a number that looked authoritative and was a lie.
+--
+-- SQLite >= 3.35 supports DROP COLUMN; the column-level CHECK is removed with it. No
+-- index, trigger, or generated column references the column, so the drop is clean.
+ALTER TABLE allocations DROP COLUMN allocated_pd;

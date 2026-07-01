@@ -124,8 +124,8 @@ impl ReportService {
     /// R7: cost = Σ allocated_pd × effective_daily_rate(resource, project).
     ///
     /// allocated_pd is computed DYNAMICALLY via the Phase 0 alloc_pd over each allocation's
-    /// full span (calendar-aware) — the `allocations.allocated_pd` cache column is never
-    /// populated (defaults 0), so SUM(allocated_pd) would always be 0. effective_daily_rate =
+    /// full span (calendar-aware). There is no cached PD column — the dead
+    /// `allocations.allocated_pd` (always 0) was dropped in migration 0004. effective_daily_rate =
     /// resource_project_rates (latest valid_from) → resources.daily_rate_pd → 0.
     async fn cost(pool: &SqlitePool, project_id: Option<i64>) -> Result<ReportTable, AppError> {
         let cal = db::repo::calendar::hydrate(pool).await?;

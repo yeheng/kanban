@@ -25,6 +25,25 @@ async fn team_members_and_override() {
 }
 
 #[tokio::test]
+async fn remove_member_drops_membership_and_404s_when_absent() {
+    let pool = connect("sqlite::memory:").await.unwrap();
+    sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
+
+    let rid = ResourcesRepo::create(&pool, "Alice", None).await.unwrap();
+    let tid = TeamsService::create(&pool, "Platform", None).await.unwrap();
+    TeamsService::add_member(&pool, tid, rid, Some("lead")).await.unwrap();
+    assert_eq!(TeamsService::members(&pool, tid).await.unwrap().len(), 1);
+
+    // Happy path: membership is gone afterwards.
+    TeamsService::remove_member(&pool, tid, rid).await.unwrap();
+    assert_eq!(TeamsService::members(&pool, tid).await.unwrap().len(), 0);
+
+    // Removing an absent membership is a 404, not a silent success.
+    let err = TeamsService::remove_member(&pool, tid, rid).await.unwrap_err();
+    assert_eq!(err.code, "NOT_FOUND");
+}
+
+#[tokio::test]
 async fn bad_override_rejected() {
     let pool = connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("../db/migrations").run(&pool).await.unwrap();
