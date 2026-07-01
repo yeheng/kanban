@@ -138,6 +138,7 @@ export interface Settings {
   locale: string;
   use_semantic_scorer: boolean;
   use_llm_explainer: boolean;
+  use_llm_advisor: boolean;
   ai_explanation_prompt: string;
   ai_explanation_preamble: string;
   overload_threshold: number;

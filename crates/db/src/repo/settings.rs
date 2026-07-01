@@ -42,6 +42,7 @@ pub struct SettingsRow {
     pub locale: String,
     pub use_semantic_scorer: i64,
     pub use_llm_explainer: i64,
+    pub use_llm_advisor: i64,
     pub ai_explanation_prompt: String,
     pub ai_explanation_preamble: String,
     pub overload_threshold: Option<f64>,
@@ -72,6 +73,7 @@ pub struct SettingsUpdate {
     pub locale: Option<String>,
     pub use_semantic_scorer: Option<i64>,
     pub use_llm_explainer: Option<i64>,
+    pub use_llm_advisor: Option<i64>,
     pub ai_explanation_prompt: Option<String>,
     pub ai_explanation_preamble: Option<String>,
     pub overload_threshold: Option<f64>,
@@ -89,7 +91,7 @@ impl SettingsRepo {
             "SELECT id, default_unit, pd_hours, pm_workdays, ai_provider, ai_base_url, \
              ai_api_key_enc, secret_store, ai_chat_model, embed_provider, embed_base_url, \
              embed_api_key_enc, embed_model, embed_dim, solver_backend, solver_timeout_ms, locale, \
-             use_semantic_scorer, use_llm_explainer, ai_explanation_prompt, ai_explanation_preamble, \
+             use_semantic_scorer, use_llm_explainer, use_llm_advisor, ai_explanation_prompt, ai_explanation_preamble, \
              overload_threshold, underload_threshold, utilization_green, utilization_yellow \
              FROM settings WHERE id = 1",
         )
@@ -119,6 +121,7 @@ impl SettingsRepo {
         if update.locale.is_some() { sets.push("locale = ?"); }
         if update.use_semantic_scorer.is_some() { sets.push("use_semantic_scorer = ?"); }
         if update.use_llm_explainer.is_some() { sets.push("use_llm_explainer = ?"); }
+        if update.use_llm_advisor.is_some() { sets.push("use_llm_advisor = ?"); }
         if update.ai_explanation_prompt.is_some() { sets.push("ai_explanation_prompt = ?"); }
         if update.ai_explanation_preamble.is_some() { sets.push("ai_explanation_preamble = ?"); }
         if update.overload_threshold.is_some() { sets.push("overload_threshold = ?"); }
@@ -154,6 +157,7 @@ impl SettingsRepo {
         if let Some(v) = &update.locale { q = q.bind(v); }
         if let Some(v) = &update.use_semantic_scorer { q = q.bind(v); }
         if let Some(v) = &update.use_llm_explainer { q = q.bind(v); }
+        if let Some(v) = &update.use_llm_advisor { q = q.bind(v); }
         if let Some(v) = &update.ai_explanation_prompt { q = q.bind(v); }
         if let Some(v) = &update.ai_explanation_preamble { q = q.bind(v); }
         if let Some(v) = &update.overload_threshold { q = q.bind(v); }
