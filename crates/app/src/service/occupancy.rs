@@ -14,6 +14,7 @@ impl CalendarOccupancyService {
     /// Reuses Phase 2 `hydrate()` + Phase 0 per-day math, so per-day values are
     /// consistent with the window aggregates in `WorkloadService`. Each day's color
     /// band uses the resource's EFFECTIVE (per-team) thresholds, batched once (no N+1).
+    #[tracing::instrument(skip(pool), fields(start = %start, end = %end))]
     pub async fn range(
         pool: &SqlitePool, start: &str, end: &str,
     ) -> Result<Vec<DayOccupancy>, AppError> {
@@ -50,6 +51,7 @@ impl CalendarOccupancyService {
                 d = d.succ_opt().unwrap();
             }
         }
+        tracing::info!(resource_count = ids.len(), day_count = out.len(), "computed daily occupancy");
         Ok(out)
     }
 }

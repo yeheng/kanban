@@ -37,6 +37,7 @@ impl WorkloadService {
     /// allocation PD) but not the denominator, so utilization reflects the override.
     /// `CalendarOccupancyService` follows the same global-denominator policy (see
     /// `occupancy.rs`), keeping dashboard/calendar/occupancy consistent.
+    #[tracing::instrument(skip(pool), fields(resource_id = resource_id))]
     pub async fn resource_summary(
         pool: &SqlitePool,
         resource_id: i64,
@@ -49,6 +50,7 @@ impl WorkloadService {
 
     /// Like `resource_summary` but reuses a pre-hydrated calendar to avoid the 3-query
     /// `hydrate()` call per resource when computing many summaries in one request.
+    #[tracing::instrument(skip(pool, cal), fields(resource_id = resource_id))]
     pub async fn resource_summary_with_cal(
         pool: &SqlitePool,
         cal: &domain::Calendar,
@@ -74,6 +76,7 @@ impl WorkloadService {
     /// All resources whose utilization exceeds their effective threshold (Dashboard alert list).
     /// The calendar and per-team thresholds are loaded ONCE (not per resource) to avoid the
     /// N+1 `team_of_resource`/override lookups at scale (design §4.9 <5ms target).
+    #[tracing::instrument(skip(pool))]
     pub async fn overloads(
         pool: &SqlitePool,
         start: &str,
@@ -95,6 +98,7 @@ impl WorkloadService {
                 out.push(s);
             }
         }
+        tracing::info!(overloaded_count = out.len(), "computed overloads");
         Ok(out)
     }
 
@@ -123,12 +127,14 @@ impl WorkloadService {
     }
 }
 
+#[tracing::instrument(fields(start = %start, end = %end))]
 fn parse_window(start: &str, end: &str) -> Result<Window, AppError> {
     let s = NaiveDate::parse_from_str(start, "%Y-%m-%d")
         .map_err(|_| domain::DomainError::InvalidDateWindow)?;
     let e = NaiveDate::parse_from_str(end, "%Y-%m-%d")
         .map_err(|_| domain::DomainError::InvalidDateWindow)?;
     if e < s {
+        tracing::warn!("invalid window: end before start");
         return Err(domain::DomainError::InvalidDateWindow.into());
     }
     Ok(Window { start: s, end: e })
@@ -158,6 +164,7 @@ pub struct ProjectBurn {
 impl WorkloadService {
     /// Team utilization = Σ workload / Σ capacity over members (design §4.9 team_utilization).
     /// Also lists members whose individual utilization exceeds their threshold.
+    #[tracing::instrument(skip(pool), fields(team_id = team_id))]
     pub async fn team_summary(
         pool: &SqlitePool,
         team_id: i64,
@@ -215,6 +222,7 @@ impl WorkloadService {
     /// per-allocation PD column — the old `allocations.allocated_pd` cache was always 0
     /// (never written) and was dropped in migration 0004; this dynamic sum is the only
     /// source of truth. A windowed burn (clipped to a reporting window) is a Phase 5 report concern.
+    #[tracing::instrument(skip(pool), fields(project_id = project_id))]
     pub async fn project_burn(pool: &SqlitePool, project_id: i64) -> Result<ProjectBurn, AppError> {
         let project = ProjectsRepo::get(pool, project_id).await?;
         let cal = hydrate(pool).await?;

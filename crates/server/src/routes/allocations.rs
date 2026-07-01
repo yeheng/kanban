@@ -22,6 +22,7 @@ struct CreateAllocation {
     percent: f64,
 }
 
+#[tracing::instrument(skip(state), fields(resource_id = body.resource_id, task_id = body.task_id))]
 async fn create_allocation(
     State(state): State<AppState>,
     Json(body): Json<CreateAllocation>,
@@ -35,13 +36,16 @@ async fn create_allocation(
         body.percent,
     )
     .await?;
+    tracing::info!(allocation_id = id, resource_id = body.resource_id, task_id = body.task_id, "created allocation");
     Ok((axum::http::StatusCode::CREATED, Json(id)))
 }
 
+#[tracing::instrument(skip(state), fields(project_id = project_id))]
 async fn list_allocations(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
 ) -> Result<Json<Vec<AllocationView>>, HttpError> {
+    tracing::debug!("listing allocations");
     Ok(Json(db::AllocationsRepo::list_by_project(&state.pool, project_id).await?))
 }
 
@@ -56,6 +60,7 @@ struct UpdateAllocation {
 /// `start`/`end` are ISO `YYYY-MM-DD`; lexicographic order == chronological for that
 /// format, so the window check is a plain string compare. The DB trigger additionally
 /// enforces the task/resource window intersection.
+#[tracing::instrument(skip(state), fields(allocation_id = id))]
 async fn update_allocation(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -69,13 +74,16 @@ async fn update_allocation(
         body.percent,
     )
     .await?;
+    tracing::info!(allocation_id = id, "updated allocation");
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+#[tracing::instrument(skip(state), fields(allocation_id = id))]
 async fn delete_allocation(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::allocations::AllocationsService::soft_delete(&state.pool, id).await?;
+    tracing::info!(allocation_id = id, "deleted allocation");
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

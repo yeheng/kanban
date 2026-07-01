@@ -34,6 +34,9 @@ use crate::types::*;
 use chrono::NaiveDate;
 use std::collections::HashMap;
 
+#[allow(unused_imports)]
+use tracing;
+
 /// Exact MILP solver (good_lp + HiGHS). Construct with a timeout (ms) and a variable-count
 /// threshold; `solve` is synchronous and CPU-bound — the app layer wraps it in
 /// `tokio::task::spawn_blocking` and an outer `tokio::time::timeout`.
@@ -66,7 +69,9 @@ struct Feasible {
 }
 
 impl Solver for MilpSolver {
+    #[tracing::instrument(skip(self, problem, scores), fields(run_id = problem.run_id, resources = problem.resources.len(), tasks = problem.tasks.len()))]
     fn solve(&self, problem: &AllocationProblem, scores: &ScoreMatrix) -> Solution {
+        tracing::info!("MILP solver started");
         use good_lp::constraint;
         use good_lp::variable::Variable;
         // `Solution` clashes with our domain `types::Solution`; alias the good_lp trait.
@@ -128,6 +133,7 @@ impl Solver for MilpSolver {
 
         // Variable-count guard: too large → signal the caller to fall back to greedy.
         if feasible.len() > self.var_threshold {
+            tracing::warn!(feasible_pairs = feasible.len(), threshold = self.var_threshold, "MILP variable threshold exceeded, falling back");
             return Solution {
                 run_id: problem.run_id,
                 assignments: vec![],
@@ -350,6 +356,13 @@ impl Solver for MilpSolver {
             .collect();
         let budget_cap = problem.budget_pd.filter(|b| *b > 0.0);
 
+        tracing::info!(
+            assignments = assignments.len(),
+            unscheduled = unscheduled.len(),
+            status = ?status,
+            overall = compute_metrics(problem, &score_sum, planned_pd, &loads, budget_cap, chosen.len()).overall,
+            "MILP solver completed"
+        );
         Solution {
             run_id: problem.run_id,
             assignments,

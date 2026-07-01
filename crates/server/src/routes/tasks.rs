@@ -14,10 +14,12 @@ pub fn router() -> Router<AppState> {
         .route("/api/projects/{id}/tasks", get(list_tasks))
 }
 
+#[tracing::instrument(skip(state), fields(project_id = project_id))]
 async fn list_tasks(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
 ) -> Result<Json<Vec<Task>>, HttpError> {
+    tracing::debug!("listing tasks");
     Ok(Json(app::service::tasks::TasksService::list_by_project(&state.pool, project_id).await?))
 }
 
@@ -37,6 +39,7 @@ struct CreateTask {
     tag_ids: Vec<i64>,
 }
 
+#[tracing::instrument(skip(state), fields(project_id = body.project_id, title = %body.title))]
 async fn create_task(
     State(state): State<AppState>,
     Json(body): Json<CreateTask>,
@@ -57,18 +60,21 @@ async fn create_task(
         &body.tag_ids,
     )
     .await?;
+    tracing::info!(task_id = id, project_id = body.project_id, "created task");
     Ok((axum::http::StatusCode::CREATED, Json(id)))
 }
 
 #[derive(Debug, Deserialize)]
 struct SetStatus { status: String }
 
+#[tracing::instrument(skip(state), fields(task_id = id, status = %body.status))]
 async fn set_status(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Json(body): Json<SetStatus>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::tasks::TasksService::set_status(&state.pool, id, &body.status).await?;
+    tracing::info!(task_id = id, status = %body.status, "set task status");
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
@@ -84,6 +90,7 @@ struct UpdateTask {
     segment_kind: Option<String>,
 }
 
+#[tracing::instrument(skip(state), fields(task_id = id, title = %body.title))]
 async fn update_task(
     State(state): State<AppState>,
     Path(id): Path<i64>,
@@ -95,13 +102,16 @@ async fn update_task(
         body.is_long_term.unwrap_or(false),
         body.parent_task_id, body.segment_kind.as_deref(),
     ).await?;
+    tracing::info!(task_id = id, "updated task");
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
+#[tracing::instrument(skip(state), fields(task_id = id))]
 async fn delete_task(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     app::service::tasks::TasksService::soft_delete(&state.pool, id).await?;
+    tracing::info!(task_id = id, "deleted task");
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

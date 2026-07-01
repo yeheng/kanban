@@ -1,10 +1,12 @@
 use crate::error::DbError;
 use crate::models::GanttBar;
 use sqlx::SqlitePool;
+use tracing;
 
 pub struct GanttRepo;
 impl GanttRepo {
     /// All allocation bars in a project (project Gantt view).
+    #[tracing::instrument(skip_all, level = "debug", fields(project_id))]
     pub async fn by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<GanttBar>, DbError> {
         Ok(sqlx::query_as::<_, GanttBar>(
             "SELECT a.id AS allocation_id, a.resource_id, r.name AS resource_name, \
@@ -20,6 +22,7 @@ impl GanttRepo {
     }
 
     /// A resource's allocation bars across ALL projects (cross-project resource Gantt view).
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn by_resource(pool: &SqlitePool, resource_id: i64) -> Result<Vec<GanttBar>, DbError> {
         Ok(sqlx::query_as::<_, GanttBar>(
             "SELECT a.id AS allocation_id, a.resource_id, r.name AS resource_name, \

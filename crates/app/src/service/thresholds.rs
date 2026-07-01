@@ -11,6 +11,7 @@ use std::collections::HashMap;
 /// Single source of truth for the `team_of_resource` → `team_overrides` lookup, so every
 /// effective-* resolver (thresholds, units) and the batch loops share one code path instead of
 /// re-implementing the same two queries (design §3.3.8a).
+#[tracing::instrument(skip(pool), fields(resource_id = resource_id))]
 pub async fn team_override_for(
     pool: &SqlitePool,
     resource_id: i64,
@@ -36,6 +37,7 @@ pub fn resolve_thresholds(global: Thresholds, o: Option<&TeamOverride>) -> Thres
 }
 
 /// Effective utilization thresholds for a resource (team override → global settings).
+#[tracing::instrument(skip(pool), fields(resource_id = resource_id))]
 pub async fn effective_thresholds(
     pool: &SqlitePool,
     resource_id: i64,
@@ -46,11 +48,13 @@ pub async fn effective_thresholds(
 
 /// Effective overload threshold for a resource (back-compat single-value accessor over
 /// `effective_thresholds`).
+#[tracing::instrument(skip(pool), fields(resource_id = resource_id))]
 pub async fn effective_overload(pool: &SqlitePool, resource_id: i64) -> Result<f64, AppError> {
     Ok(effective_thresholds(pool, resource_id).await?.overload)
 }
 
 /// Global PD/PM unit constants from `settings` (design §2.9: N fixed, default 20).
+#[tracing::instrument(skip(pool))]
 pub async fn global_unit_config(pool: &SqlitePool) -> Result<UnitConfig, AppError> {
     let u = SettingsRepo::unit_config(pool).await?;
     Ok(UnitConfig { hours_per_pd: u.pd_hours, pd_per_pm: u.pm_workdays })
@@ -69,6 +73,7 @@ pub fn resolve_unit_config(global: UnitConfig, o: Option<&TeamOverride>) -> Unit
 
 /// Effective PD/PM unit constants for a resource: team override (pd_hours/pm_workdays) → global
 /// settings → `UnitConfig::DEFAULT` (design §3.3.8a team-level override; §2.9 global default).
+#[tracing::instrument(skip(pool), fields(resource_id = resource_id))]
 pub async fn effective_unit_config(
     pool: &SqlitePool,
     resource_id: i64,
@@ -81,6 +86,7 @@ pub async fn effective_unit_config(
 /// bands). This is the SERVER-SIDE single source of truth: the frontend renders the returned
 /// string directly instead of re-deriving the band from GLOBAL thresholds, so per-team
 /// overrides actually take effect. Ordering matches the legacy frontend `band()` exactly.
+#[tracing::instrument(fields(util = util))]
 pub fn band(util: f64, t: &Thresholds) -> &'static str {
     if util >= t.overload {
         "red"
@@ -98,6 +104,7 @@ pub fn band(util: f64, t: &Thresholds) -> &'static str {
 /// resolves per resource. A resource with no team (or whose team has no override) maps to the
 /// global thresholds. The membership tie-break (`lead` first, newest `joined_at`) mirrors
 /// `TeamMembersRepo::team_of_resource`, so batch and single-resource resolution agree.
+#[tracing::instrument(skip(pool), fields(resource_count = resource_ids.len()))]
 pub async fn effective_thresholds_map(
     pool: &SqlitePool,
     resource_ids: &[i64],

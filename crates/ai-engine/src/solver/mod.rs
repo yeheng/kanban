@@ -118,7 +118,9 @@ fn jain(xs: &[f64]) -> f64 {
 }
 
 impl Solver for GreedySolver {
+    #[tracing::instrument(skip(self, problem, scores), fields(run_id = problem.run_id, resources = problem.resources.len(), tasks = problem.tasks.len()))]
     fn solve(&self, problem: &AllocationProblem, scores: &ScoreMatrix) -> Solution {
+        tracing::info!("greedy solver started");
         let caps: HashMap<(i64, NaiveDate), f64> = problem
             .daily_capacity
             .iter()
@@ -256,6 +258,12 @@ impl Solver for GreedySolver {
             .map(|r| total_load.get(&r.id).copied().unwrap_or(0.0))
             .collect();
 
+        tracing::info!(
+            assignments = assignments.len(),
+            unscheduled = unscheduled.len(),
+            overall = compute_metrics(problem, &score_sum, planned_pd, &loads, budget_cap, n).overall,
+            "greedy solver completed"
+        );
         Solution {
             run_id: problem.run_id,
             assignments,

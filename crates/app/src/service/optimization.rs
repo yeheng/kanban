@@ -8,6 +8,9 @@ use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+#[allow(unused_imports)]
+use tracing;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RunResult {
     pub run_id: i64,
@@ -20,6 +23,7 @@ impl OptimizationService {
     /// Build the problem from DB (all active resources + a project's todo/in_progress tasks),
     /// run the engine, persist a reproducible run (status='proposed'), return the plan.
     /// `weights` overrides the default balanced objective (design §5; confirmed #6 UI-tunable).
+    #[tracing::instrument(skip(pool), fields(project_id = project_id))]
     pub async fn run_for_project(
         pool: &SqlitePool, project_id: i64, weights: Option<ObjectiveWeights>,
     ) -> Result<RunResult, AppError> {
@@ -100,6 +104,15 @@ impl OptimizationService {
             .bind(snap).bind(out).bind(cons).bind(run_id)
             .execute(pool).await?;
 
+        tracing::info!(
+            run_id = run_id,
+            duration_ms = duration_ms,
+            solver_backend = effective_backend,
+            assignments = plan.solution.assignments.len(),
+            unscheduled = plan.solution.unscheduled.len(),
+            overall = plan.solution.metrics.overall,
+            "optimization run completed"
+        );
         Ok(RunResult { run_id, plan })
     }
 
@@ -114,6 +127,7 @@ impl OptimizationService {
     /// snapshot) and SKIP any assignment that no longer fits its window, rather than letting
     /// the trigger abort the batch. The returned count reflects only the assignments actually
     /// written; the run is still marked applied (a partial accept is friendlier than total loss).
+    #[tracing::instrument(skip(pool), fields(run_id = run_id))]
     pub async fn apply(pool: &SqlitePool, run_id: i64) -> Result<i64, AppError> {
         let count = db::tx::with_write_tx(pool, |mut tx| {
             Box::pin(async move {
@@ -168,20 +182,26 @@ impl OptimizationService {
                 Ok((tx, count))
             })
         }).await?;
+        tracing::info!(run_id = run_id, allocations_written = count, "applied optimization solution");
         Ok(count)
     }
 
+    #[tracing::instrument(skip(pool), fields(run_id = run_id))]
     pub async fn reject(pool: &SqlitePool, run_id: i64) -> Result<(), AppError> {
         sqlx::query("UPDATE ai_optimization_runs SET status='rejected' WHERE id=?")
             .bind(run_id).execute(pool).await?;
+        tracing::info!(run_id = run_id, "rejected optimization solution");
         Ok(())
     }
 
+    #[tracing::instrument(skip(pool), fields(limit = limit))]
     pub async fn list_recent(pool: &SqlitePool, limit: i64) -> Result<Vec<RunRow>, AppError> {
-        Ok(sqlx::query_as::<_, RunRow>(
+        let rows = sqlx::query_as::<_, RunRow>(
             "SELECT id, objective, status, applied, score_overall, created_at FROM ai_optimization_runs \
              ORDER BY created_at DESC LIMIT ?")
-            .bind(limit).fetch_all(pool).await?)
+            .bind(limit).fetch_all(pool).await?;
+        tracing::debug!(count = rows.len(), limit = limit, "listed optimization runs");
+        Ok(rows)
     }
 }
 

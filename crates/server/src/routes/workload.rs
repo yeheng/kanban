@@ -32,7 +32,9 @@ pub struct ThresholdsDto {
     pub yellow: f64,
 }
 
+#[tracing::instrument(skip(state))]
 async fn get_thresholds(State(state): State<AppState>) -> Result<Json<ThresholdsDto>, HttpError> {
+    tracing::debug!("getting thresholds");
     let t = db::SettingsRepo::thresholds(&state.pool).await?;
     Ok(Json(ThresholdsDto { overload: t.overload, underload: t.underload, green: t.green, yellow: t.yellow }))
 }
@@ -45,7 +47,9 @@ pub struct UnitConfigDto {
     pub pm_workdays: f64,
 }
 
+#[tracing::instrument(skip(state))]
 async fn get_unit_config(State(state): State<AppState>) -> Result<Json<UnitConfigDto>, HttpError> {
+    tracing::debug!("getting unit config");
     let u = app::service::thresholds::global_unit_config(&state.pool).await?;
     Ok(Json(UnitConfigDto { pd_hours: u.hours_per_pd, pm_workdays: u.pd_per_pm }))
 }
@@ -53,39 +57,49 @@ async fn get_unit_config(State(state): State<AppState>) -> Result<Json<UnitConfi
 #[derive(Debug, Deserialize)]
 struct WindowQuery { start: String, end: String }
 
+#[tracing::instrument(skip(state), fields(resource_id = resource_id))]
 async fn resource_summary(
     State(state): State<AppState>,
     Path(resource_id): Path<i64>,
     Query(q): Query<WindowQuery>,
 ) -> Result<Json<ResourceSummary>, HttpError> {
+    tracing::debug!("resource summary");
     Ok(Json(WorkloadService::resource_summary(&state.pool, resource_id, &q.start, &q.end).await?))
 }
 
+#[tracing::instrument(skip(state), fields(team_id = team_id))]
 async fn team_summary(
     State(state): State<AppState>,
     Path(team_id): Path<i64>,
     Query(q): Query<WindowQuery>,
 ) -> Result<Json<TeamSummary>, HttpError> {
+    tracing::debug!("team summary");
     Ok(Json(WorkloadService::team_summary(&state.pool, team_id, &q.start, &q.end).await?))
 }
 
+#[tracing::instrument(skip(state))]
 async fn overloads(
     State(state): State<AppState>,
     Query(q): Query<WindowQuery>,
 ) -> Result<Json<Vec<ResourceSummary>>, HttpError> {
+    tracing::debug!("listing overloads");
     Ok(Json(WorkloadService::overloads(&state.pool, &q.start, &q.end).await?))
 }
 
+#[tracing::instrument(skip(state), fields(project_id = project_id))]
 async fn project_burn(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
 ) -> Result<Json<ProjectBurn>, HttpError> {
+    tracing::debug!("project burn");
     Ok(Json(WorkloadService::project_burn(&state.pool, project_id).await?))
 }
 
+#[tracing::instrument(skip(state))]
 async fn daily_occupancy(
     State(state): State<AppState>,
     Query(q): Query<WindowQuery>,
 ) -> Result<Json<Vec<DayOccupancy>>, HttpError> {
+    tracing::debug!("daily occupancy");
     Ok(Json(CalendarOccupancyService::range(&state.pool, &q.start, &q.end).await?))
 }

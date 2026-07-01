@@ -2,6 +2,7 @@ use crate::error::DbError;
 use crate::models::{Holiday, TimeOff, WeekTemplate};
 use chrono::NaiveDate;
 use sqlx::SqlitePool;
+use tracing;
 
 // ---- Work-week template ----
 pub struct WeekTemplateRepo;
@@ -12,6 +13,7 @@ impl WeekTemplateRepo {
     /// day. The on/off bits are derived as `week[i] > 0`. The schema CHECK requires each
     /// `*_frac > 0`, so off-day fracs are stored as `1.0` (a sentinel that `frac_of` zeroes
     /// during hydration — the bit is the authoritative on/off signal).
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn upsert_global(
         pool: &SqlitePool,
         week: [f64; 7],
@@ -36,6 +38,7 @@ impl WeekTemplateRepo {
         })).await
     }
 
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn list(pool: &SqlitePool) -> Result<Vec<WeekTemplate>, DbError> {
         Ok(sqlx::query_as::<_, WeekTemplate>(
             "SELECT id, scope, project_id, mon,tue,wed,thu,fri,sat,sun,
@@ -55,6 +58,7 @@ fn frac_col(v: f64) -> f64 {
 // ---- Holidays ----
 pub struct HolidayRepo;
 impl HolidayRepo {
+    #[tracing::instrument(skip_all, level = "debug", fields(project_id))]
     pub async fn add(
         pool: &SqlitePool, project_id: Option<i64>, day: &str, fraction: f64, name: Option<&str>,
     ) -> Result<i64, DbError> {
@@ -63,11 +67,13 @@ impl HolidayRepo {
             .bind(project_id).bind(day).bind(fraction).bind(name).fetch_one(pool).await?;
         Ok(id)
     }
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn list(pool: &SqlitePool) -> Result<Vec<Holiday>, DbError> {
         Ok(sqlx::query_as::<_, Holiday>(
             "SELECT id, project_id, day, fraction, name FROM holiday ORDER BY day")
             .fetch_all(pool).await?)
     }
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
         let n = sqlx::query("DELETE FROM holiday WHERE id = ?")
             .bind(id).execute(pool).await?.rows_affected();
@@ -79,6 +85,7 @@ impl HolidayRepo {
 // ---- Time off ----
 pub struct TimeOffRepo;
 impl TimeOffRepo {
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn add(
         pool: &SqlitePool, resource_id: i64, day: &str, fraction: f64, reason: Option<&str>,
     ) -> Result<i64, DbError> {
@@ -87,16 +94,19 @@ impl TimeOffRepo {
             .bind(resource_id).bind(day).bind(fraction).bind(reason).fetch_one(pool).await?;
         Ok(id)
     }
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn list_for_resource(pool: &SqlitePool, resource_id: i64) -> Result<Vec<TimeOff>, DbError> {
         Ok(sqlx::query_as::<_, TimeOff>(
             "SELECT id, resource_id, day, fraction, reason FROM time_off WHERE resource_id = ? ORDER BY day")
             .bind(resource_id).fetch_all(pool).await?)
     }
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn list_all(pool: &SqlitePool) -> Result<Vec<TimeOff>, DbError> {
         Ok(sqlx::query_as::<_, TimeOff>(
             "SELECT id, resource_id, day, fraction, reason FROM time_off ORDER BY day")
             .fetch_all(pool).await?)
     }
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
         let n = sqlx::query("DELETE FROM time_off WHERE id = ?")
             .bind(id).execute(pool).await?.rows_affected();
@@ -113,6 +123,7 @@ fn frac_of(bit: i64, f: f64) -> f64 { if bit == 0 { 0.0 } else { f } }
 /// Load all calendar rows into a `domain::Calendar` (design §4.9 authoritative input).
 /// This is the single bridge from persisted calendar state to the pure struct the
 /// Phase 0 workload math runs on.
+#[tracing::instrument(skip_all, level = "debug")]
 pub async fn hydrate(pool: &SqlitePool) -> Result<domain::Calendar, DbError> {
     let mut cal = domain::Calendar::default();
     for w in WeekTemplateRepo::list(pool).await? {

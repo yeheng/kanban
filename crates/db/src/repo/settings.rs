@@ -1,5 +1,6 @@
 use crate::error::DbError;
 use sqlx::SqlitePool;
+use tracing;
 
 /// Effective global utilization thresholds (design §3.3.8a). Per-team overrides live
 /// in `team_overrides` and are resolved by the app-layer resolver, not here.
@@ -74,6 +75,7 @@ pub struct SettingsUpdate {
 pub struct SettingsRepo;
 impl SettingsRepo {
     /// Load the full global settings row.
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn get(pool: &SqlitePool) -> Result<SettingsRow, DbError> {
         Ok(sqlx::query_as(
             "SELECT id, default_unit, pd_hours, pm_workdays, ai_provider, ai_base_url, \
@@ -87,6 +89,7 @@ impl SettingsRepo {
     }
 
     /// Update the global settings row. Only fields set in `update` are written.
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn update(pool: &SqlitePool, update: &SettingsUpdate) -> Result<(), DbError> {
         let mut sets: Vec<&'static str> = Vec::new();
         if update.default_unit.is_some() { sets.push("default_unit = ?"); }
@@ -145,6 +148,7 @@ impl SettingsRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn thresholds(pool: &SqlitePool) -> Result<Thresholds, DbError> {
         let (overload, underload, green, yellow): (Option<f64>, Option<f64>, Option<f64>, Option<f64>) =
             sqlx::query_as(
@@ -160,6 +164,7 @@ impl SettingsRepo {
     }
 
     /// Global PD/PM constants from `settings` (design §2.9 / §3.3.1). Defaults 8h/PD, 20 PD/PM.
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn unit_config(pool: &SqlitePool) -> Result<UnitRow, DbError> {
         let (pd_hours, pm_workdays): (Option<f64>, Option<f64>) = sqlx::query_as(
             "SELECT pd_hours, pm_workdays FROM settings WHERE id = 1",
@@ -175,6 +180,7 @@ impl SettingsRepo {
     /// AI provider/model + solver backend configuration (design §3.3.1 `settings`).
     /// Used by the optimization pipeline to pick the scorer/explainer and to persist the
     /// actual provider/backend used in each run row (instead of hardcoded literals).
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn ai_settings(pool: &SqlitePool) -> Result<AiSettings, DbError> {
         let row: AiSettingsRow = sqlx::query_as(
             "SELECT ai_provider, ai_base_url, ai_api_key_enc, ai_chat_model, embed_provider, \

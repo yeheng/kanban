@@ -17,36 +17,52 @@ pub fn router() -> Router<AppState> {
 /// Optional multi-objective weights override (design §5; confirmed #6). Omitted body ⇒ balanced
 /// default. Takes the flat ObjectiveWeights directly (no flatten wrapper) — matches what the
 /// frontend sends and avoids a serde foot-gun on partial bodies.
+#[tracing::instrument(skip(state), fields(project_id = project_id))]
 async fn run_optimization(
     State(state): State<AppState>,
     Path(project_id): Path<i64>,
     body: Option<Json<ai_engine::ObjectiveWeights>>,
 ) -> Result<Json<RunResult>, HttpError> {
     let weights = body.map(|Json(w)| w);
-    Ok(Json(OptimizationService::run_for_project(&state.pool, project_id, weights).await?))
+    let result = OptimizationService::run_for_project(&state.pool, project_id, weights).await?;
+    tracing::info!(
+        run_id = result.run_id,
+        overall = result.plan.solution.metrics.overall,
+        assignments = result.plan.solution.assignments.len(),
+        unscheduled = result.plan.solution.unscheduled.len(),
+        "optimization run completed"
+    );
+    Ok(Json(result))
 }
 
 #[derive(Debug, Deserialize)]
 struct LimitQuery { limit: Option<i64> }
 
+#[tracing::instrument(skip(state))]
 async fn list_runs(
     State(state): State<AppState>,
     Query(q): Query<LimitQuery>,
 ) -> Result<Json<Vec<RunRow>>, HttpError> {
+    tracing::debug!("listing optimization runs");
     Ok(Json(OptimizationService::list_recent(&state.pool, q.limit.unwrap_or(20)).await?))
 }
 
+#[tracing::instrument(skip(state), fields(run_id = run_id))]
 async fn apply_solution(
     State(state): State<AppState>,
     Path(run_id): Path<i64>,
 ) -> Result<Json<i64>, HttpError> {
-    Ok(Json(OptimizationService::apply(&state.pool, run_id).await?))
+    let count = OptimizationService::apply(&state.pool, run_id).await?;
+    tracing::info!(run_id = run_id, allocations_written = count, "applied optimization solution");
+    Ok(Json(count))
 }
 
+#[tracing::instrument(skip(state), fields(run_id = run_id))]
 async fn reject_solution(
     State(state): State<AppState>,
     Path(run_id): Path<i64>,
 ) -> Result<axum::http::StatusCode, HttpError> {
     OptimizationService::reject(&state.pool, run_id).await?;
+    tracing::info!(run_id = run_id, "rejected optimization solution");
     Ok(axum::http::StatusCode::NO_CONTENT)
 }

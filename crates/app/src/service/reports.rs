@@ -34,6 +34,7 @@ pub struct ReportTable {
 
 pub struct ReportService;
 impl ReportService {
+    #[tracing::instrument(skip(pool), fields(kind = ?kind, project_id = project_id, start = %start, end = %end))]
     pub async fn build(
         pool: &SqlitePool, kind: ReportKind, project_id: Option<i64>, start: &str, end: &str,
     ) -> Result<ReportTable, AppError> {
@@ -46,6 +47,7 @@ impl ReportService {
         }
     }
 
+    #[tracing::instrument(skip(pool), fields(start = %start, end = %end))]
     async fn resource_utilization(pool: &SqlitePool, start: &str, end: &str) -> Result<ReportTable, AppError> {
         let cal = db::repo::calendar::hydrate(pool).await?;
         // Global PM conversion for report-level PM columns (design §2.9; cross-resource
@@ -69,6 +71,7 @@ impl ReportService {
 
     /// Team utilization report (design §8 / G5 "by team" aggregation dimension).
     /// Per active team: Σ workload / Σ capacity + overloaded-member count.
+    #[tracing::instrument(skip(pool), fields(start = %start, end = %end))]
     async fn team_utilization(pool: &SqlitePool, start: &str, end: &str) -> Result<ReportTable, AppError> {
         let unit = crate::service::thresholds::global_unit_config(pool).await?;
         let mut rows = Vec::new();
@@ -87,6 +90,7 @@ impl ReportService {
         })
     }
 
+    #[tracing::instrument(skip(pool))]
     async fn project_burn(pool: &SqlitePool) -> Result<ReportTable, AppError> {
         let unit = crate::service::thresholds::global_unit_config(pool).await?;
         let mut rows = Vec::new();
@@ -105,6 +109,7 @@ impl ReportService {
     }
 
     /// R4: structured AI decision records only (no LLM prompt/response — confirmed #40).
+    #[tracing::instrument(skip(pool))]
     async fn ai_decisions(pool: &SqlitePool) -> Result<ReportTable, AppError> {
         let rows: Vec<(i64, String, i64, Option<f64>, String)> = sqlx::query_as(
             "SELECT id, status, applied, score_overall, created_at \
@@ -127,6 +132,7 @@ impl ReportService {
     /// full span (calendar-aware). There is no cached PD column — the dead
     /// `allocations.allocated_pd` (always 0) was dropped in migration 0004. effective_daily_rate =
     /// resource_project_rates (latest valid_from) → resources.daily_rate_pd → 0.
+    #[tracing::instrument(skip(pool), fields(project_id = project_id))]
     async fn cost(pool: &SqlitePool, project_id: Option<i64>) -> Result<ReportTable, AppError> {
         let cal = db::repo::calendar::hydrate(pool).await?;
         // rows: resource_id, resource_name, daily_capacity_pd, project_id, project_name, start, end, percent
@@ -182,6 +188,7 @@ impl ReportService {
     }
 
     /// Workforce snapshot (JSON) — current utilization of all resources over a window.
+    #[tracing::instrument(skip(pool), fields(start = %start, end = %end))]
     pub async fn snapshot_json(pool: &SqlitePool, start: &str, end: &str) -> Result<String, AppError> {
         let cal = db::repo::calendar::hydrate(pool).await?;
         let mut entries = Vec::new();
@@ -236,7 +243,7 @@ impl ReportService {
     }
 }
 
-/// effective_daily_rate: latest resource_project_rates row → resources.daily_rate_pd → 0.
+#[tracing::instrument(skip(pool), fields(resource_id = resource_id, project_id = project_id))]
 async fn effective_daily_rate(pool: &SqlitePool, resource_id: i64, project_id: i64) -> Result<f64, AppError> {
     let row: Option<(f64,)> = sqlx::query_as(
         "SELECT daily_rate_pd FROM resource_project_rates \

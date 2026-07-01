@@ -1,12 +1,14 @@
 use crate::error::DbError;
 use crate::models::AllocationRow;
 use sqlx::SqlitePool;
+use tracing;
 
 pub struct AllocationsRepo;
 
 impl AllocationsRepo {
     /// Insert an allocation. Caller guarantees the (task,resource,window) validity —
     /// the DB trigger (trg_allocation_validate_insert) is the schema-level backstop.
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id, task_id))]
     pub async fn create(
         pool: &SqlitePool,
         resource_id: i64,
@@ -31,6 +33,7 @@ impl AllocationsRepo {
 
     /// All active allocations for a resource overlapping [start, end], joined to the
     /// task's project so they can be bridged to `domain::Allocation` via `to_domain()`.
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn list_for_resource(
         pool: &SqlitePool,
         resource_id: i64,
@@ -58,6 +61,7 @@ impl AllocationsRepo {
 
     /// All active allocations on a project, joined with resource name + task title.
     /// Column order matches `AllocationView` field order.
+    #[tracing::instrument(skip_all, level = "debug", fields(project_id))]
     pub async fn list_by_project(
         pool: &SqlitePool,
         project_id: i64,
@@ -79,6 +83,7 @@ impl AllocationsRepo {
 
     /// Update an allocation's window/percent. The trg_allocation_validate_update
     /// trigger enforces the task/resource window intersection (design §3.3.15a).
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn update(
         pool: &SqlitePool, id: i64, start: &str, end: &str, percent: f64,
     ) -> Result<(), DbError> {
@@ -92,6 +97,7 @@ impl AllocationsRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
         let n = sqlx::query(
             "UPDATE allocations SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \

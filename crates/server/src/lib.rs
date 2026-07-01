@@ -5,6 +5,7 @@ pub mod state;
 use state::AppState;
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 
 pub async fn run_server(pool: sqlx::SqlitePool, port: u16) {
     let state = AppState { pool };
@@ -14,7 +15,12 @@ pub async fn run_server(pool: sqlx::SqlitePool, port: u16) {
         .allow_methods(Any)
         .allow_headers(Any);
 
+    let trace = TraceLayer::new_for_http()
+        .make_span_with(DefaultMakeSpan::new().level(tracing::Level::INFO))
+        .on_response(DefaultOnResponse::new().level(tracing::Level::INFO));
+
     let app = routes::api_router()
+        .layer(trace)
         .layer(cors)
         .with_state(state);
 

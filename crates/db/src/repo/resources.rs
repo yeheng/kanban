@@ -2,10 +2,12 @@ use crate::error::DbError;
 use crate::models::{Resource, ResourceSkill, ResourceTag};
 use crate::tx::with_write_tx;
 use sqlx::SqlitePool;
+use tracing;
 
 pub struct ResourcesRepo;
 
 impl ResourcesRepo {
+    #[tracing::instrument(skip_all, level = "debug", fields(name))]
     pub async fn create(pool: &SqlitePool, name: &str, email: Option<&str>) -> Result<i64, DbError> {
         let row: (i64,) = sqlx::query_as(
             "INSERT INTO resources (name, email) VALUES (?, ?) RETURNING id"
@@ -17,6 +19,7 @@ impl ResourcesRepo {
         Ok(row.0)
     }
 
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn list_active(pool: &SqlitePool) -> Result<Vec<Resource>, DbError> {
         let rows = sqlx::query_as::<_, Resource>(
             "SELECT id, name, email, available_from, available_to, status, \
@@ -28,6 +31,7 @@ impl ResourcesRepo {
         Ok(rows)
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn get(pool: &SqlitePool, id: i64) -> Result<Resource, DbError> {
         sqlx::query_as::<_, Resource>(
             "SELECT id, name, email, available_from, available_to, status, \
@@ -40,6 +44,7 @@ impl ResourcesRepo {
         .ok_or(DbError::NotFound)
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
         let n = sqlx::query(
             "UPDATE resources SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = ? AND deleted_at IS NULL"
@@ -52,6 +57,7 @@ impl ResourcesRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn update(
         pool: &SqlitePool, id: i64, name: &str, email: Option<&str>,
         available_from: Option<&str>, available_to: Option<&str>,
@@ -73,6 +79,7 @@ impl ResourcesRepo {
     }
 
     /// List a resource's skills with the skill name resolved (design §3.3.5).
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn list_skills(pool: &SqlitePool, resource_id: i64) -> Result<Vec<ResourceSkill>, DbError> {
         Ok(sqlx::query_as::<_, ResourceSkill>(
             "SELECT rs.resource_id, rs.skill_id, s.name AS skill_name, rs.proficiency, rs.evidence \
@@ -87,6 +94,7 @@ impl ResourcesRepo {
     /// Replace a resource's skills atomically: (skill_id, proficiency). Caller validates
     /// proficiency ∈ 1..=5 and that skill ids exist. Uses a write tx so a partial failure
     /// rolls back (design §3.7 single-source-of-truth write paths).
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn set_skills(
         pool: &SqlitePool, resource_id: i64, skills: &[(i64, i64)],
     ) -> Result<(), DbError> {
@@ -107,6 +115,7 @@ impl ResourcesRepo {
     }
 
     /// List a resource's tags with the tag name + color resolved (design §3.3.6).
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn list_tags(pool: &SqlitePool, resource_id: i64) -> Result<Vec<ResourceTag>, DbError> {
         Ok(sqlx::query_as::<_, ResourceTag>(
             "SELECT rt.resource_id, rt.tag_id, t.name AS tag_name, t.color \
@@ -119,6 +128,7 @@ impl ResourcesRepo {
     }
 
     /// Replace a resource's tags atomically: tag_ids. Caller validates tag ids exist.
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn set_tags(
         pool: &SqlitePool, resource_id: i64, tag_ids: &[i64],
     ) -> Result<(), DbError> {

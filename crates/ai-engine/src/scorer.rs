@@ -4,6 +4,7 @@ use async_trait::async_trait;
 #[async_trait]
 pub trait Scorer: Send + Sync {
     async fn score(&self, r: &CandidateResource, t: &CandidateTask) -> f64; // 0..1
+    #[tracing::instrument(skip(self, problem), fields(resources = problem.resources.len(), tasks = problem.tasks.len()))]
     async fn matrix(&self, problem: &AllocationProblem) -> ScoreMatrix {
         let mut m = ScoreMatrix::new();
         for r in &problem.resources {
@@ -63,11 +64,14 @@ impl FallbackScorer {
 
 #[async_trait]
 impl Scorer for FallbackScorer {
+    #[tracing::instrument(skip(self, r, t), fields(resource_id = r.id, task_id = t.id))]
     async fn score(&self, r: &CandidateResource, t: &CandidateTask) -> f64 {
         self.score_sync(r, t)
     }
     /// Pure-CPU scorer — build the matrix without R·T awaits (default impl would).
+    #[tracing::instrument(skip(self, problem), fields(resources = problem.resources.len(), tasks = problem.tasks.len()))]
     async fn matrix(&self, problem: &AllocationProblem) -> ScoreMatrix {
+        tracing::debug!("building fallback score matrix");
         let mut m = ScoreMatrix::with_capacity(problem.resources.len() * problem.tasks.len());
         for r in &problem.resources {
             for t in &problem.tasks {
@@ -153,6 +157,7 @@ pub mod semantic {
 
     #[async_trait]
     impl super::Scorer for SemanticScorer {
+        #[tracing::instrument(skip(self, r, t), fields(resource_id = r.id, task_id = t.id, model = %self.model))]
         async fn score(&self, r: &CandidateResource, t: &CandidateTask) -> f64 {
             if !mandatory_skills_met(r, t) {
                 return 0.0;
@@ -176,6 +181,7 @@ pub mod semantic {
         /// pair. The default impl would call `score` R·T times and re-embed resources
         /// for every task — O(R·T) round-trips instead of O(R+T). On any provider error
         /// the whole matrix degrades to 0.0 (design §2.8 graceful degradation).
+        #[tracing::instrument(skip(self, problem), fields(resources = problem.resources.len(), tasks = problem.tasks.len(), model = %self.model))]
         async fn matrix(&self, problem: &AllocationProblem) -> ScoreMatrix {
             use std::collections::HashMap;
             let mut m = ScoreMatrix::with_capacity(problem.resources.len() * problem.tasks.len());
@@ -184,6 +190,7 @@ pub mod semantic {
             };
             let model = client.embedding_model(&self.model);
 
+            tracing::debug!("building semantic score matrix");
             let mut er: HashMap<i64, Vec<f64>> = HashMap::new();
             for r in &problem.resources {
                 if let Ok(e) = model.embed_text(&resource_text(r)).await {

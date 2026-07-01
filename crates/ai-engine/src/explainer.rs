@@ -11,7 +11,9 @@ pub struct TemplateExplainer;
 
 #[async_trait]
 impl Explainer for TemplateExplainer {
+    #[tracing::instrument(skip(self, _problem, sol), fields(assignments = sol.assignments.len(), unscheduled = sol.unscheduled.len()))]
     async fn explain(&self, _problem: &AllocationProblem, sol: &Solution) -> String {
+        tracing::debug!("generating template explanation");
         let n = sol.assignments.len();
         let unsched = sol.unscheduled.len();
         let avg = if n > 0 {
@@ -59,7 +61,9 @@ pub mod llm {
 
     #[async_trait]
     impl super::Explainer for LlmExplainer {
+        #[tracing::instrument(skip(self, problem, sol), fields(model = %self.model, assignments = sol.assignments.len(), unscheduled = sol.unscheduled.len()))]
         async fn explain(&self, problem: &AllocationProblem, sol: &Solution) -> String {
+            tracing::debug!("generating LLM explanation");
             let Some(client) = self.client() else {
                 return super::TemplateExplainer.explain(problem, sol).await;
             };

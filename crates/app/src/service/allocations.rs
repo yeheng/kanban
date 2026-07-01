@@ -9,6 +9,7 @@ use sqlx::SqlitePool;
 pub struct AllocationsService;
 
 impl AllocationsService {
+    #[tracing::instrument(skip(pool), fields(resource_id = resource_id, task_id = task_id, start = %start, end = %end, percent = percent))]
     pub async fn create(
         pool: &SqlitePool,
         resource_id: i64,
@@ -29,7 +30,7 @@ impl AllocationsService {
             percent,
         )
         .await?;
-        Ok(AllocationsRepo::create(
+        let id = AllocationsRepo::create(
             pool,
             resource_id,
             task_id,
@@ -37,9 +38,12 @@ impl AllocationsService {
             &window.end,
             percent,
         )
-        .await?)
+        .await?;
+        tracing::info!(allocation_id = id, resource_id = resource_id, task_id = task_id, "created allocation");
+        Ok(id)
     }
 
+    #[tracing::instrument(skip(pool), fields(project_id = project_id))]
     pub async fn list_by_project(
         pool: &SqlitePool,
         project_id: i64,
@@ -47,6 +51,7 @@ impl AllocationsService {
         Ok(AllocationsRepo::list_by_project(pool, project_id).await?)
     }
 
+    #[tracing::instrument(skip(pool), fields(allocation_id = id, start = %start, end = %end, percent = percent))]
     pub async fn update(
         pool: &SqlitePool,
         id: i64,
@@ -73,22 +78,30 @@ impl AllocationsService {
             percent,
         )
         .await?;
-        Ok(AllocationsRepo::update(pool, id, &window.start, &window.end, percent).await?)
+        AllocationsRepo::update(pool, id, &window.start, &window.end, percent).await?;
+        tracing::info!(allocation_id = id, "updated allocation");
+        Ok(())
     }
 
+    #[tracing::instrument(skip(pool), fields(allocation_id = id))]
     pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), AppError> {
-        Ok(AllocationsRepo::soft_delete(pool, id).await?)
+        AllocationsRepo::soft_delete(pool, id).await?;
+        tracing::info!(allocation_id = id, "deleted allocation");
+        Ok(())
     }
 }
 
+#[tracing::instrument(fields(percent = percent))]
 fn validate_percent(percent: f64) -> Result<(), AppError> {
     if percent.is_finite() && percent > 0.0 && percent <= 1.0 {
         Ok(())
     } else {
+        tracing::warn!(percent = percent, "invalid allocation percent");
         Err(domain::DomainError::InvalidRatio(percent).into())
     }
 }
 
+#[tracing::instrument(skip(pool), fields(self_id = ?self_id, resource_id = resource_id, task_id = task_id))]
 async fn validate_allocation_constraints(
     pool: &SqlitePool,
     self_id: Option<i64>,
@@ -110,6 +123,7 @@ async fn validate_allocation_constraints(
 /// hold the skill at `>= min_proficiency`. Soft requirements (`is_mandatory = 0`) are
 /// scoring hints and never block allocation (design §9 #12 "nice-to-have"). Returns the
 /// first missing/insufficient skill as a `SkillMismatch` domain error.
+#[tracing::instrument(skip(pool), fields(resource_id = resource_id, task_id = task_id))]
 async fn validate_skills(
     pool: &SqlitePool,
     resource_id: i64,
@@ -141,12 +155,14 @@ async fn validate_skills(
     for (skill_id, min_prof) in reqs {
         let have = held_map.get(&skill_id).copied().unwrap_or(0);
         if have < min_prof {
+            tracing::warn!(resource_id = resource_id, task_id = task_id, skill_id = skill_id, have = have, required = min_prof, "skill mismatch");
             return Err(domain::DomainError::SkillMismatch { task_id, skill_id }.into());
         }
     }
     Ok(())
 }
 
+#[tracing::instrument(skip(pool), fields(self_id = ?self_id, resource_id = resource_id, task_id = task_id))]
 async fn validate_capacity(
     pool: &SqlitePool,
     self_id: Option<i64>,
@@ -207,6 +223,7 @@ async fn validate_capacity(
         if limit > 0.0 {
             let load = load_by_day.get(&d).copied().unwrap_or(0.0) + percent;
             if load > limit + 1e-9 {
+                tracing::warn!(resource_id = resource_id, task_id = task_id, date = %d, load = load, limit = limit, "insufficient capacity");
                 return Err(domain::DomainError::InsufficientCapacity {
                     resource_id,
                     shortfall_pd: load - limit,
@@ -219,6 +236,7 @@ async fn validate_capacity(
     Ok(())
 }
 
+#[tracing::instrument(skip(pool), fields(task_id = task_id))]
 async fn validate_dependencies(
     pool: &SqlitePool,
     task_id: i64,
@@ -244,6 +262,7 @@ async fn validate_dependencies(
         if let Some(predecessor_end) = predecessor_end {
             let earliest = add_days(predecessor_end, lag_days)?;
             if start_date < earliest {
+                tracing::warn!(task_id = task_id, predecessor_id = predecessor_id, "dependency violation");
                 return Err(domain::DomainError::DependencyViolation {
                     task_id,
                     related_task_id: predecessor_id,
@@ -269,6 +288,7 @@ async fn validate_dependencies(
         if let Some(successor_start) = successor_start {
             let earliest_successor = add_days(end_date, lag_days)?;
             if successor_start < earliest_successor {
+                tracing::warn!(task_id = task_id, successor_id = successor_id, "dependency violation with successor");
                 return Err(domain::DomainError::DependencyViolation {
                     task_id,
                     related_task_id: successor_id,

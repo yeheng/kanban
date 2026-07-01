@@ -1,6 +1,7 @@
 use crate::error::DbError;
 use crate::models::{KanbanTask, Task, TaskSkillRequirement};
 use sqlx::SqlitePool;
+use tracing;
 
 pub struct TasksRepo;
 
@@ -25,6 +26,7 @@ impl TasksRepo {
     ///
     /// Uses the hand-back `with_write_tx` contract: the closure owns the `Transaction`,
     /// does its work with `&mut *tx`, and returns `(tx, id)` so `with_write_tx` commits.
+    #[tracing::instrument(skip_all, level = "debug", fields(project_id = input.project_id))]
     pub async fn create(pool: &SqlitePool, input: TaskCreate<'_>) -> Result<i64, DbError> {
         crate::tx::with_write_tx(pool, |mut tx| Box::pin(async move {
             let (id,): (i64,) = sqlx::query_as(
@@ -49,6 +51,7 @@ impl TasksRepo {
         })).await
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(project_id))]
     pub async fn list_by_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<Task>, DbError> {
         Ok(sqlx::query_as::<_, Task>(
             "SELECT id, project_id, parent_task_id, title, description, estimate_pd, start_date, end_date, \
@@ -57,6 +60,7 @@ impl TasksRepo {
             .bind(project_id).fetch_all(pool).await?)
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(id, status))]
     pub async fn set_status(pool: &SqlitePool, id: i64, status: &str) -> Result<(), DbError> {
         let n = sqlx::query("UPDATE tasks SET status = ? WHERE id = ? AND deleted_at IS NULL")
             .bind(status).bind(id).execute(pool).await?.rows_affected();
@@ -64,6 +68,7 @@ impl TasksRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn update(
         pool: &SqlitePool, id: i64, title: &str, description: Option<&str>,
         estimate_pd: f64, start: Option<&str>, end: Option<&str>,
@@ -81,6 +86,7 @@ impl TasksRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
         let n = sqlx::query(
             "UPDATE tasks SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
@@ -90,6 +96,7 @@ impl TasksRepo {
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(task_id))]
     pub async fn list_skill_reqs(pool: &SqlitePool, task_id: i64) -> Result<Vec<TaskSkillRequirement>, DbError> {
         Ok(sqlx::query_as::<_, TaskSkillRequirement>(
             "SELECT task_id, skill_id, min_proficiency, is_mandatory, weight \
@@ -98,6 +105,7 @@ impl TasksRepo {
     }
 
     /// Kanban-shaped read: task + first assignee name + skill count (design §7 Kanban card).
+    #[tracing::instrument(skip_all, level = "debug", fields(project_id))]
     pub async fn list_kanban(pool: &SqlitePool, project_id: i64) -> Result<Vec<KanbanTask>, DbError> {
         Ok(sqlx::query_as::<_, KanbanTask>(
             "SELECT t.id, t.project_id, t.parent_task_id, t.title, t.description, t.is_long_term, t.segment_kind, \
@@ -118,6 +126,7 @@ impl TaskDepsRepo {
     /// Cycle-freedom is enforced by the caller (the service reads all edges in the SAME tx
     /// before calling this), so this is purely the write step. `dep_type` must already be one
     /// of the schema's `FS`/`FF`/`SS`/`SF` codes (the service normalizes it).
+    #[tracing::instrument(skip_all, level = "debug", fields(task_id, predecessor_id, lag_days, dep_type))]
     pub async fn upsert_tx(
         tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
         task_id: i64,
@@ -141,6 +150,7 @@ impl TaskDepsRepo {
     }
 
     /// All (task_id, predecessor_id) edges for live tasks, for in-memory cycle detection.
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn all_edges(pool: &SqlitePool) -> Result<Vec<(i64, i64)>, DbError> {
         Ok(sqlx::query_as(
             "SELECT d.task_id, d.predecessor_id \
@@ -151,6 +161,7 @@ impl TaskDepsRepo {
     }
 
     /// Direct predecessors of a task (for the Kanban/Gantt dependency display).
+    #[tracing::instrument(skip_all, level = "debug", fields(task_id))]
     pub async fn predecessors(pool: &SqlitePool, task_id: i64) -> Result<Vec<i64>, DbError> {
         let rows: Vec<(i64,)> = sqlx::query_as(
             "SELECT predecessor_id FROM task_dependencies WHERE task_id = ?")
@@ -160,6 +171,7 @@ impl TaskDepsRepo {
 
     /// Dependency edges among tasks of one project (for Gantt arrows).
     /// Filters both the dependent task and the predecessor for soft-deletes.
+    #[tracing::instrument(skip_all, level = "debug", fields(project_id))]
     pub async fn for_project(pool: &SqlitePool, project_id: i64) -> Result<Vec<crate::models::DepEdge>, DbError> {
         Ok(sqlx::query_as::<_, crate::models::DepEdge>(
             "SELECT d.task_id, d.predecessor_id, d.lag_days, d.dep_type \

@@ -57,11 +57,13 @@ impl From<SettingsRow> for SettingsDto {
 pub struct SettingsService;
 
 impl SettingsService {
+    #[tracing::instrument(skip(pool))]
     pub async fn get(pool: &SqlitePool) -> Result<SettingsDto, AppError> {
         let row = SettingsRepo::get(pool).await?;
         Ok(row.into())
     }
 
+    #[tracing::instrument(skip(pool))]
     pub async fn update(pool: &SqlitePool, dto: SettingsDto) -> Result<(), AppError> {
         validate(&dto)?;
         SettingsRepo::update(
@@ -90,18 +92,22 @@ impl SettingsService {
             },
         )
         .await?;
+        tracing::info!("updated settings");
         Ok(())
     }
 }
 
+#[tracing::instrument]
 fn validate(dto: &SettingsDto) -> Result<(), AppError> {
     if !["PD", "PM"].contains(&dto.default_unit.as_str()) {
+        tracing::warn!(default_unit = %dto.default_unit, "invalid default_unit");
         return Err(AppError::validation(format!(
             "invalid default_unit: {}",
             dto.default_unit
         )));
     }
     if dto.pd_hours <= 0.0 {
+        tracing::warn!(pd_hours = dto.pd_hours, "invalid pd_hours");
         return Err(domain::DomainError::InvalidValue {
             field: "pd_hours",
             value: dto.pd_hours,
@@ -109,6 +115,7 @@ fn validate(dto: &SettingsDto) -> Result<(), AppError> {
         .into());
     }
     if dto.pm_workdays <= 0.0 {
+        tracing::warn!(pm_workdays = dto.pm_workdays, "invalid pm_workdays");
         return Err(domain::DomainError::InvalidValue {
             field: "pm_workdays",
             value: dto.pm_workdays,
@@ -116,6 +123,7 @@ fn validate(dto: &SettingsDto) -> Result<(), AppError> {
         .into());
     }
     if dto.overload_threshold <= 0.0 {
+        tracing::warn!(overload_threshold = dto.overload_threshold, "invalid overload_threshold");
         return Err(domain::DomainError::InvalidValue {
             field: "overload_threshold",
             value: dto.overload_threshold,
@@ -123,6 +131,7 @@ fn validate(dto: &SettingsDto) -> Result<(), AppError> {
         .into());
     }
     if dto.underload_threshold < 0.0 {
+        tracing::warn!(underload_threshold = dto.underload_threshold, "invalid underload_threshold");
         return Err(domain::DomainError::InvalidValue {
             field: "underload_threshold",
             value: dto.underload_threshold,
@@ -130,42 +139,50 @@ fn validate(dto: &SettingsDto) -> Result<(), AppError> {
         .into());
     }
     if !(0.0..=1.0).contains(&dto.utilization_green) {
+        tracing::warn!(utilization_green = dto.utilization_green, "invalid utilization_green");
         return Err(domain::DomainError::InvalidRatio(dto.utilization_green).into());
     }
     if !(0.0..=1.0).contains(&dto.utilization_yellow) {
+        tracing::warn!(utilization_yellow = dto.utilization_yellow, "invalid utilization_yellow");
         return Err(domain::DomainError::InvalidRatio(dto.utilization_yellow).into());
     }
     if dto.solver_timeout_ms <= 0 {
+        tracing::warn!(solver_timeout_ms = dto.solver_timeout_ms, "invalid solver_timeout_ms");
         return Err(AppError::validation(format!(
             "solver_timeout_ms must be positive: {}",
             dto.solver_timeout_ms
         )));
     }
     if dto.embed_dim <= 0 {
+        tracing::warn!(embed_dim = dto.embed_dim, "invalid embed_dim");
         return Err(AppError::validation(format!(
             "embed_dim must be positive: {}",
             dto.embed_dim
         )));
     }
     if !["ollama", "openai", "anthropic", "deepseek"].contains(&dto.ai_provider.as_str()) {
+        tracing::warn!(ai_provider = %dto.ai_provider, "invalid ai_provider");
         return Err(AppError::validation(format!(
             "invalid ai_provider: {}",
             dto.ai_provider
         )));
     }
     if !["ollama", "openai", "anthropic", "deepseek"].contains(&dto.embed_provider.as_str()) {
+        tracing::warn!(embed_provider = %dto.embed_provider, "invalid embed_provider");
         return Err(AppError::validation(format!(
             "invalid embed_provider: {}",
             dto.embed_provider
         )));
     }
     if !["keychain", "encrypted_file"].contains(&dto.secret_store.as_str()) {
+        tracing::warn!(secret_store = %dto.secret_store, "invalid secret_store");
         return Err(AppError::validation(format!(
             "invalid secret_store: {}",
             dto.secret_store
         )));
     }
     if !["good_lp", "greedy", "hungarian"].contains(&dto.solver_backend.as_str()) {
+        tracing::warn!(solver_backend = %dto.solver_backend, "invalid solver_backend");
         return Err(AppError::validation(format!(
             "invalid solver_backend: {}",
             dto.solver_backend

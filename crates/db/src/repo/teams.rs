@@ -1,10 +1,12 @@
 use crate::error::DbError;
 use crate::models::{Team, TeamMember, TeamOverride};
 use sqlx::SqlitePool;
+use tracing;
 
 pub struct TeamsRepo;
 
 impl TeamsRepo {
+    #[tracing::instrument(skip_all, level = "debug", fields(name))]
     pub async fn create(
         pool: &SqlitePool,
         name: &str,
@@ -18,6 +20,7 @@ impl TeamsRepo {
                 .await?;
         Ok(id)
     }
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn get(pool: &SqlitePool, id: i64) -> Result<Team, DbError> {
         sqlx::query_as::<_, Team>(
             "SELECT id, name, description FROM teams WHERE id = ? AND deleted_at IS NULL",
@@ -27,6 +30,7 @@ impl TeamsRepo {
         .await?
         .ok_or(DbError::NotFound)
     }
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn list_active(pool: &SqlitePool) -> Result<Vec<Team>, DbError> {
         Ok(sqlx::query_as::<_, Team>(
             "SELECT id, name, description FROM teams WHERE deleted_at IS NULL ORDER BY name",
@@ -35,6 +39,7 @@ impl TeamsRepo {
         .await?)
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(id))]
     pub async fn soft_delete(pool: &SqlitePool, id: i64) -> Result<(), DbError> {
         let n = sqlx::query(
             "UPDATE teams SET deleted_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') \
@@ -47,6 +52,7 @@ impl TeamsRepo {
 
 pub struct TeamMembersRepo;
 impl TeamMembersRepo {
+    #[tracing::instrument(skip_all, level = "debug", fields(team_id, resource_id, role))]
     pub async fn add(
         pool: &SqlitePool,
         team_id: i64,
@@ -64,6 +70,7 @@ impl TeamMembersRepo {
         .await?;
         Ok(())
     }
+    #[tracing::instrument(skip_all, level = "debug", fields(team_id))]
     pub async fn list_members(pool: &SqlitePool, team_id: i64) -> Result<Vec<TeamMember>, DbError> {
         Ok(sqlx::query_as::<_, TeamMember>(
             "SELECT team_id, resource_id, role FROM team_members WHERE team_id = ?",
@@ -74,6 +81,7 @@ impl TeamMembersRepo {
     }
     /// Remove a resource from a team. `NotFound` if the membership doesn't exist (so the
     /// caller can surface a 404 rather than silently succeeding).
+    #[tracing::instrument(skip_all, level = "debug", fields(team_id, resource_id))]
     pub async fn remove(pool: &SqlitePool, team_id: i64, resource_id: i64) -> Result<(), DbError> {
         let n = sqlx::query("DELETE FROM team_members WHERE team_id = ? AND resource_id = ?")
             .bind(team_id)
@@ -87,6 +95,7 @@ impl TeamMembersRepo {
         Ok(())
     }
     /// The (first) team a resource belongs to, for effective-constant resolution (design §3.3.8a).
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_id))]
     pub async fn team_of_resource(
         pool: &SqlitePool,
         resource_id: i64,
@@ -104,6 +113,7 @@ impl TeamMembersRepo {
 
 pub struct TeamOverridesRepo;
 impl TeamOverridesRepo {
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn upsert(pool: &SqlitePool, o: &TeamOverride) -> Result<(), DbError> {
         sqlx::query(
             "INSERT INTO team_overrides (team_id, pd_hours, pm_workdays, overload_threshold, \
@@ -127,6 +137,7 @@ impl TeamOverridesRepo {
         .await?;
         Ok(())
     }
+    #[tracing::instrument(skip_all, level = "debug", fields(team_id))]
     pub async fn get(pool: &SqlitePool, team_id: i64) -> Result<Option<TeamOverride>, DbError> {
         Ok(sqlx::query_as::<_, TeamOverride>(
             "SELECT team_id, pd_hours, pm_workdays, overload_threshold, underload_threshold, \
