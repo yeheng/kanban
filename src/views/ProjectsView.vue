@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { PlusIcon } from "@lucide/vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,13 +22,6 @@ import {
   NumberFieldInput,
 } from "@/components/ui/number-field";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Table,
   TableBody,
   TableCell,
@@ -37,6 +31,9 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import DateRangePicker from "@/components/DateRangePicker.vue";
+import ListPage from "@/components/list/ListPage.vue";
+import ListRowActions from "@/components/list/ListRowActions.vue";
+import ListToolbar from "@/components/list/ListToolbar.vue";
 import ProjectForm from "@/components/ProjectForm.vue";
 import TaskForm from "@/components/TaskForm.vue";
 import { useProjectsStore } from "@/stores/projects";
@@ -49,17 +46,26 @@ const unit = useUnitStore();
 
 // Filters
 const filterName = ref("");
-const filterStatus = ref<string>("all");
-const filterPriority = ref<string>("all");
+const filterStatus = ref("all");
+const statusOptions = [
+  { label: "active", value: "active" },
+  { label: "done", value: "done" },
+];
+
+const isFiltered = computed(() => !!(filterName.value || filterStatus.value !== "all"));
 
 const filteredProjects = computed(() => {
   return projects.items.filter((p) => {
     const matchesName = !filterName.value || p.name.toLowerCase().includes(filterName.value.toLowerCase());
     const matchesStatus = filterStatus.value === "all" || p.status === filterStatus.value;
-    const matchesPriority = filterPriority.value === "all" || String(p.priority) === filterPriority.value;
-    return matchesName && matchesStatus && matchesPriority;
+    return matchesName && matchesStatus;
   });
 });
+
+function resetFilters() {
+  filterName.value = "";
+  filterStatus.value = "all";
+}
 
 // Edit dialog state
 const editVisible = ref(false);
@@ -121,62 +127,34 @@ async function doDelete() {
   deleteId.value = null;
   deleteName.value = "";
 }
+
+// New project dialog
+const createVisible = ref(false);
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">项目 / Projects</h1>
-        <p class="text-muted-foreground">管理项目并维护预算与优先级</p>
-      </div>
-    </div>
+  <ListPage title="项目 / Projects" description="管理项目并维护预算与优先级">
+    <template #actions>
+      <Button @click="createVisible = true">
+        <PlusIcon class="mr-2 h-4 w-4" />
+        新建项目
+      </Button>
+    </template>
 
     <Card>
-      <CardHeader>
-        <CardTitle class="text-base">新建项目</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ProjectForm />
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader>
+      <CardHeader class="pb-3">
         <CardTitle class="text-base">项目列表</CardTitle>
       </CardHeader>
       <CardContent class="space-y-4">
-        <div class="flex flex-col gap-3 md:flex-row md:items-end">
-          <div class="grid gap-2 flex-1">
-            <Label class="text-xs">搜索项目名</Label>
-            <Input v-model="filterName" placeholder="输入项目名过滤" />
-          </div>
-          <div class="grid gap-2 w-full md:w-40">
-            <Label class="text-xs">状态</Label>
-            <Select v-model="filterStatus">
-              <SelectTrigger>
-                <SelectValue placeholder="全部状态" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态</SelectItem>
-                <SelectItem value="active">active</SelectItem>
-                <SelectItem value="done">done</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div class="grid gap-2 w-full md:w-40">
-            <Label class="text-xs">优先级</Label>
-            <Select v-model="filterPriority">
-              <SelectTrigger>
-                <SelectValue placeholder="全部优先级" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部优先级</SelectItem>
-                <SelectItem v-for="n in 9" :key="n" :value="String(n)">{{ n }}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+        <ListToolbar
+          v-model:search="filterName"
+          v-model:filter="filterStatus"
+          :show-reset="isFiltered"
+          search-placeholder="搜索项目名..."
+          filter-label="状态"
+          :filter-options="statusOptions"
+          @reset="resetFilters"
+        />
 
         <div class="rounded-md border">
           <Table>
@@ -188,7 +166,7 @@ async function doDelete() {
                 <TableHead>预算</TableHead>
                 <TableHead class="hidden md:table-cell">周期</TableHead>
                 <TableHead class="hidden lg:table-cell">描述</TableHead>
-                <TableHead class="w-[180px] text-right">操作</TableHead>
+                <TableHead class="w-[60px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -223,34 +201,10 @@ async function doDelete() {
                   {{ p.description || "-" }}
                 </TableCell>
                 <TableCell class="text-right">
-                  <div class="flex items-center justify-end gap-2">
-                    <Button
-                      v-if="p.status === 'active'"
-                      size="sm"
-                      variant="outline"
-                      @click="projects.setStatus(p.id, 'done')"
-                    >
-                      完成
-                    </Button>
-                    <Button
-                      v-else
-                      size="sm"
-                      variant="outline"
-                      @click="projects.setStatus(p.id, 'active')"
-                    >
-                      激活
-                    </Button>
-                    <Button size="sm" variant="outline" @click="openEdit(p)">
-                      编辑
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      @click="confirmDelete(p.id, p.name)"
-                    >
-                      删除
-                    </Button>
-                  </div>
+                  <ListRowActions
+                    @edit="openEdit(p)"
+                    @delete="confirmDelete(p.id, p.name)"
+                  />
                 </TableCell>
               </TableRow>
               <TableRow v-if="!filteredProjects.length">
@@ -273,6 +227,18 @@ async function doDelete() {
         <span v-else class="text-muted-foreground">请先选择一个项目。</span>
       </CardContent>
     </Card>
+
+    <!-- Create project dialog -->
+    <Dialog v-model:open="createVisible">
+      <DialogContent class="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>新建项目</DialogTitle>
+        </DialogHeader>
+        <CardContent class="pt-4">
+          <ProjectForm />
+        </CardContent>
+      </DialogContent>
+    </Dialog>
 
     <!-- Edit project dialog -->
     <Dialog v-model:open="editVisible">
@@ -363,5 +329,5 @@ async function doDelete() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </div>
+  </ListPage>
 </template>

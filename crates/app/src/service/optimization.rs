@@ -80,7 +80,7 @@ impl OptimizationService {
             .bind(plan.solution.metrics.overall).bind(plan.solution.metrics.skill_fit)
             .bind(plan.solution.metrics.scheduled_ratio).bind(plan.solution.metrics.fairness)
             .bind(&plan.explanation_md)
-            .bind(&ai.provider).bind(&ai.chat_model).bind(&ai.embed_model).bind(effective_backend)
+            .bind(&ai.chat.provider).bind(&ai.chat.model).bind(&ai.embed.model).bind(effective_backend)
             .bind(plan.solution.status.as_str())
             .bind(started.to_rfc3339()).bind(finished.to_rfc3339()).bind(duration_ms)
             .fetch_one(pool).await?;
@@ -409,8 +409,8 @@ fn select_scorer(
     #[cfg(feature = "llm")]
     if std::env::var("KANBAN_USE_SEMANTIC").as_deref() == Ok("1") {
         return Arc::new(ai_engine::scorer::semantic::SemanticScorer {
-            model: ai.embed_model.clone(),
-            base_url: ai.base_url.clone(),
+            model: ai.embed.model.clone(),
+            base_url: ai.embed.base_url.clone(),
         });
     }
     let _ = ai; // silence unused when llm feature off
@@ -425,8 +425,8 @@ fn select_explainer(ai: &db::AiSettings) -> Arc<dyn ai_engine::explainer::Explai
     #[cfg(feature = "llm")]
     if std::env::var("KANBAN_USE_LLM_EXPLAINER").as_deref() == Ok("1") {
         return Arc::new(ai_engine::explainer::llm::LlmExplainer {
-            model: ai.chat_model.clone(),
-            base_url: ai.base_url.clone(),
+            model: ai.chat.model.clone(),
+            base_url: ai.chat.base_url.clone(),
         });
     }
     let _ = ai; // silence unused when llm feature off

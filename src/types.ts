@@ -108,8 +108,11 @@ export interface Settings {
   ai_api_key_enc: string | null;
   secret_store: "keychain" | "encrypted_file";
   ai_chat_model: string;
-  ai_embed_model: string;
-  ai_embed_dim: number;
+  embed_provider: string;
+  embed_base_url: string | null;
+  embed_api_key_enc: string | null;
+  embed_model: string;
+  embed_dim: number;
   solver_backend: "good_lp" | "greedy" | "hungarian";
   solver_timeout_ms: number;
   locale: string;

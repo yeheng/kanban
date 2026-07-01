@@ -31,8 +31,11 @@ pub struct SettingsRow {
     pub ai_api_key_enc: Option<String>,
     pub secret_store: String,
     pub ai_chat_model: String,
-    pub ai_embed_model: String,
-    pub ai_embed_dim: i64,
+    pub embed_provider: String,
+    pub embed_base_url: Option<String>,
+    pub embed_api_key_enc: Option<String>,
+    pub embed_model: String,
+    pub embed_dim: i64,
     pub solver_backend: String,
     pub solver_timeout_ms: i64,
     pub locale: String,
@@ -54,8 +57,11 @@ pub struct SettingsUpdate {
     pub ai_api_key_enc: Option<Option<String>>,
     pub secret_store: Option<String>,
     pub ai_chat_model: Option<String>,
-    pub ai_embed_model: Option<String>,
-    pub ai_embed_dim: Option<i64>,
+    pub embed_provider: Option<String>,
+    pub embed_base_url: Option<Option<String>>,
+    pub embed_api_key_enc: Option<Option<String>>,
+    pub embed_model: Option<String>,
+    pub embed_dim: Option<i64>,
     pub solver_backend: Option<String>,
     pub solver_timeout_ms: Option<i64>,
     pub locale: Option<String>,
@@ -71,9 +77,10 @@ impl SettingsRepo {
     pub async fn get(pool: &SqlitePool) -> Result<SettingsRow, DbError> {
         Ok(sqlx::query_as(
             "SELECT id, default_unit, pd_hours, pm_workdays, ai_provider, ai_base_url, \
-             ai_api_key_enc, secret_store, ai_chat_model, ai_embed_model, ai_embed_dim, \
-             solver_backend, solver_timeout_ms, locale, overload_threshold, underload_threshold, \
-             utilization_green, utilization_yellow FROM settings WHERE id = 1",
+             ai_api_key_enc, secret_store, ai_chat_model, embed_provider, embed_base_url, \
+             embed_api_key_enc, embed_model, embed_dim, solver_backend, solver_timeout_ms, locale, \
+             overload_threshold, underload_threshold, utilization_green, utilization_yellow \
+             FROM settings WHERE id = 1",
         )
         .fetch_one(pool)
         .await?)
@@ -90,8 +97,11 @@ impl SettingsRepo {
         if update.ai_api_key_enc.is_some() { sets.push("ai_api_key_enc = ?"); }
         if update.secret_store.is_some() { sets.push("secret_store = ?"); }
         if update.ai_chat_model.is_some() { sets.push("ai_chat_model = ?"); }
-        if update.ai_embed_model.is_some() { sets.push("ai_embed_model = ?"); }
-        if update.ai_embed_dim.is_some() { sets.push("ai_embed_dim = ?"); }
+        if update.embed_provider.is_some() { sets.push("embed_provider = ?"); }
+        if update.embed_base_url.is_some() { sets.push("embed_base_url = ?"); }
+        if update.embed_api_key_enc.is_some() { sets.push("embed_api_key_enc = ?"); }
+        if update.embed_model.is_some() { sets.push("embed_model = ?"); }
+        if update.embed_dim.is_some() { sets.push("embed_dim = ?"); }
         if update.solver_backend.is_some() { sets.push("solver_backend = ?"); }
         if update.solver_timeout_ms.is_some() { sets.push("solver_timeout_ms = ?"); }
         if update.locale.is_some() { sets.push("locale = ?"); }
@@ -118,8 +128,11 @@ impl SettingsRepo {
         if let Some(v) = &update.ai_api_key_enc { q = q.bind(v); }
         if let Some(v) = &update.secret_store { q = q.bind(v); }
         if let Some(v) = &update.ai_chat_model { q = q.bind(v); }
-        if let Some(v) = &update.ai_embed_model { q = q.bind(v); }
-        if let Some(v) = &update.ai_embed_dim { q = q.bind(v); }
+        if let Some(v) = &update.embed_provider { q = q.bind(v); }
+        if let Some(v) = &update.embed_base_url { q = q.bind(v); }
+        if let Some(v) = &update.embed_api_key_enc { q = q.bind(v); }
+        if let Some(v) = &update.embed_model { q = q.bind(v); }
+        if let Some(v) = &update.embed_dim { q = q.bind(v); }
         if let Some(v) = &update.solver_backend { q = q.bind(v); }
         if let Some(v) = &update.solver_timeout_ms { q = q.bind(v); }
         if let Some(v) = &update.locale { q = q.bind(v); }
@@ -163,32 +176,70 @@ impl SettingsRepo {
     /// Used by the optimization pipeline to pick the scorer/explainer and to persist the
     /// actual provider/backend used in each run row (instead of hardcoded literals).
     pub async fn ai_settings(pool: &SqlitePool) -> Result<AiSettings, DbError> {
-        let (provider, base_url, chat_model, embed_model, solver_backend, solver_timeout_ms): (
-            Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>,
-        ) = sqlx::query_as(
-            "SELECT ai_provider, ai_base_url, ai_chat_model, ai_embed_model, solver_backend, \
+        let row: AiSettingsRow = sqlx::query_as(
+            "SELECT ai_provider, ai_base_url, ai_api_key_enc, ai_chat_model, embed_provider, \
+             embed_base_url, embed_api_key_enc, embed_model, embed_dim, solver_backend, \
              solver_timeout_ms FROM settings WHERE id = 1",
         )
         .fetch_one(pool)
         .await?;
         Ok(AiSettings {
-            provider: provider.unwrap_or_else(|| "ollama".into()),
-            base_url,
-            chat_model: chat_model.unwrap_or_else(|| "qwen2.5:7b".into()),
-            embed_model: embed_model.unwrap_or_else(|| "nomic-embed-text".into()),
-            solver_backend: solver_backend.unwrap_or_else(|| "greedy".into()),
-            solver_timeout_ms: solver_timeout_ms.unwrap_or(5000).max(0) as u64,
+            chat: ChatLlmConfig {
+                provider: row.ai_provider.unwrap_or_else(|| "ollama".into()),
+                base_url: row.ai_base_url,
+                api_key_enc: row.ai_api_key_enc,
+                model: row.ai_chat_model.unwrap_or_else(|| "qwen2.5:7b".into()),
+            },
+            embed: EmbedLlmConfig {
+                provider: row.embed_provider.unwrap_or_else(|| "ollama".into()),
+                base_url: row.embed_base_url,
+                api_key_enc: row.embed_api_key_enc,
+                model: row.embed_model.unwrap_or_else(|| "nomic-embed-text".into()),
+                dim: row.embed_dim.unwrap_or(768).max(0) as usize,
+            },
+            solver_backend: row.solver_backend.unwrap_or_else(|| "greedy".into()),
+            solver_timeout_ms: row.solver_timeout_ms.unwrap_or(5000).max(0) as u64,
         })
     }
 }
 
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct AiSettingsRow {
+    ai_provider: Option<String>,
+    ai_base_url: Option<String>,
+    ai_api_key_enc: Option<String>,
+    ai_chat_model: Option<String>,
+    embed_provider: Option<String>,
+    embed_base_url: Option<String>,
+    embed_api_key_enc: Option<String>,
+    embed_model: Option<String>,
+    embed_dim: Option<i64>,
+    solver_backend: Option<String>,
+    solver_timeout_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone)]
 pub struct AiSettings {
-    pub provider: String,
-    pub base_url: Option<String>,
-    pub chat_model: String,
-    pub embed_model: String,
+    pub chat: ChatLlmConfig,
+    pub embed: EmbedLlmConfig,
     pub solver_backend: String,
     /// HiGHS time budget (ms) for the MILP solver; also the outer tokio::time::timeout budget.
     pub solver_timeout_ms: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ChatLlmConfig {
+    pub provider: String,
+    pub base_url: Option<String>,
+    pub api_key_enc: Option<String>,
+    pub model: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct EmbedLlmConfig {
+    pub provider: String,
+    pub base_url: Option<String>,
+    pub api_key_enc: Option<String>,
+    pub model: String,
+    pub dim: usize,
 }

@@ -82,7 +82,10 @@ function reset() {
   }
 }
 
-function updateNullableString(field: "ai_base_url" | "ai_api_key_enc", value: string | number) {
+function updateNullableString(
+  field: "ai_base_url" | "ai_api_key_enc" | "embed_base_url" | "embed_api_key_enc",
+  value: string | number,
+) {
   if (!draft.value) return;
   draft.value[field] = String(value || "");
 }
@@ -195,8 +198,8 @@ function updateNullableString(field: "ai_base_url" | "ai_api_key_enc", value: st
 
       <Card>
         <CardHeader>
-          <CardTitle>AI / LLM</CardTitle>
-          <CardDescription>模型与密钥配置</CardDescription>
+          <CardTitle>Chat LLM</CardTitle>
+          <CardDescription>对话模型与密钥配置</CardDescription>
         </CardHeader>
         <CardContent class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div class="grid gap-2">
@@ -234,20 +237,6 @@ function updateNullableString(field: "ai_base_url" | "ai_api_key_enc", value: st
             <Input v-model="draft.ai_chat_model" />
           </div>
           <div class="grid gap-2">
-            <Label>Embed Model</Label>
-            <Input v-model="draft.ai_embed_model" />
-          </div>
-          <div class="grid gap-2">
-            <Label>Embed 维度</Label>
-            <NumberField v-model="draft.ai_embed_dim" :step="1" :min="1">
-              <NumberFieldContent>
-                <NumberFieldDecrement />
-                <NumberFieldInput />
-                <NumberFieldIncrement />
-              </NumberFieldContent>
-            </NumberField>
-          </div>
-          <div class="grid gap-2">
             <Label>密钥存储</Label>
             <Select v-model="draft.secret_store">
               <SelectTrigger>
@@ -259,6 +248,59 @@ function updateNullableString(field: "ai_base_url" | "ai_api_key_enc", value: st
                 </SelectItem>
               </SelectContent>
             </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Embedding LLM</CardTitle>
+          <CardDescription>Embedding 模型与密钥配置</CardDescription>
+        </CardHeader>
+        <CardContent class="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div class="grid gap-2">
+            <Label>Provider</Label>
+            <Select v-model="draft.embed_provider">
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="o in providerOptions" :key="o.value" :value="o.value">
+                  {{ o.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div class="grid gap-2">
+            <Label>Base URL</Label>
+            <Input
+              :model-value="draft?.embed_base_url ?? ''"
+              placeholder="可选，如 http://localhost:11434"
+              @update:model-value="(v) => updateNullableString('embed_base_url', v)"
+            />
+          </div>
+          <div class="grid gap-2">
+            <Label>API Key</Label>
+            <Input
+              :model-value="draft?.embed_api_key_enc ?? ''"
+              type="password"
+              placeholder="可选"
+              @update:model-value="(v) => updateNullableString('embed_api_key_enc', v)"
+            />
+          </div>
+          <div class="grid gap-2">
+            <Label>Embed Model</Label>
+            <Input v-model="draft.embed_model" />
+          </div>
+          <div class="grid gap-2">
+            <Label>Embed 维度</Label>
+            <NumberField v-model="draft.embed_dim" :step="1" :min="1">
+              <NumberFieldContent>
+                <NumberFieldDecrement />
+                <NumberFieldInput />
+                <NumberFieldIncrement />
+              </NumberFieldContent>
+            </NumberField>
           </div>
         </CardContent>
       </Card>

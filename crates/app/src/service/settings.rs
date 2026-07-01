@@ -13,8 +13,11 @@ pub struct SettingsDto {
     pub ai_api_key_enc: Option<String>,
     pub secret_store: String,
     pub ai_chat_model: String,
-    pub ai_embed_model: String,
-    pub ai_embed_dim: i64,
+    pub embed_provider: String,
+    pub embed_base_url: Option<String>,
+    pub embed_api_key_enc: Option<String>,
+    pub embed_model: String,
+    pub embed_dim: i64,
     pub solver_backend: String,
     pub solver_timeout_ms: i64,
     pub locale: String,
@@ -35,8 +38,11 @@ impl From<SettingsRow> for SettingsDto {
             ai_api_key_enc: row.ai_api_key_enc,
             secret_store: row.secret_store,
             ai_chat_model: row.ai_chat_model,
-            ai_embed_model: row.ai_embed_model,
-            ai_embed_dim: row.ai_embed_dim,
+            embed_provider: row.embed_provider,
+            embed_base_url: row.embed_base_url,
+            embed_api_key_enc: row.embed_api_key_enc,
+            embed_model: row.embed_model,
+            embed_dim: row.embed_dim,
             solver_backend: row.solver_backend,
             solver_timeout_ms: row.solver_timeout_ms,
             locale: row.locale,
@@ -69,8 +75,11 @@ impl SettingsService {
                 ai_api_key_enc: Some(dto.ai_api_key_enc),
                 secret_store: Some(dto.secret_store),
                 ai_chat_model: Some(dto.ai_chat_model),
-                ai_embed_model: Some(dto.ai_embed_model),
-                ai_embed_dim: Some(dto.ai_embed_dim),
+                embed_provider: Some(dto.embed_provider),
+                embed_base_url: Some(dto.embed_base_url),
+                embed_api_key_enc: Some(dto.embed_api_key_enc),
+                embed_model: Some(dto.embed_model),
+                embed_dim: Some(dto.embed_dim),
                 solver_backend: Some(dto.solver_backend),
                 solver_timeout_ms: Some(dto.solver_timeout_ms),
                 locale: Some(dto.locale),
@@ -132,16 +141,22 @@ fn validate(dto: &SettingsDto) -> Result<(), AppError> {
             dto.solver_timeout_ms
         )));
     }
-    if dto.ai_embed_dim <= 0 {
+    if dto.embed_dim <= 0 {
         return Err(AppError::validation(format!(
-            "ai_embed_dim must be positive: {}",
-            dto.ai_embed_dim
+            "embed_dim must be positive: {}",
+            dto.embed_dim
         )));
     }
     if !["ollama", "openai", "anthropic", "deepseek"].contains(&dto.ai_provider.as_str()) {
         return Err(AppError::validation(format!(
             "invalid ai_provider: {}",
             dto.ai_provider
+        )));
+    }
+    if !["ollama", "openai", "anthropic", "deepseek"].contains(&dto.embed_provider.as_str()) {
+        return Err(AppError::validation(format!(
+            "invalid embed_provider: {}",
+            dto.embed_provider
         )));
     }
     if !["keychain", "encrypted_file"].contains(&dto.secret_store.as_str()) {
