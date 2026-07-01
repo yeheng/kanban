@@ -12,7 +12,6 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AllocationForm: typeof import('./../components/AllocationForm.vue')['default']
-    AppLayout: typeof import('./../components/AppLayout.vue')['default']
     DateRangePicker: typeof import('./../components/DateRangePicker.vue')['default']
     GanttTimeline: typeof import('./../components/GanttTimeline.vue')['default']
     HolidayList: typeof import('./../components/HolidayList.vue')['default']
