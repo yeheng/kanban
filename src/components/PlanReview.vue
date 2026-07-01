@@ -11,17 +11,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useOptimizationStore } from "@/stores/optimization";
-import type { ScoredAssignment } from "@/types";
+import type { RunResult, ScoredAssignment } from "@/types";
 
-const opt = useOptimizationStore();
+const props = defineProps<{ run: RunResult }>();
+const emit = defineEmits<{
+  (e: "accept", runId: number): void;
+  (e: "reject", runId: number): void;
+}>();
+
 function pct(v: number) { return Math.round(v) + "%"; }
 
 interface StatItem { label: string; value: string; }
 const stats = computed<StatItem[]>(() => [
-  { label: "综合评分", value: pct(opt.current!.plan.solution.metrics.overall) },
-  { label: "技能", value: pct(opt.current!.plan.solution.metrics.skill_fit) },
-  { label: "排期覆盖", value: pct(opt.current!.plan.solution.metrics.scheduled_ratio) },
+  { label: "综合评分", value: pct(props.run.plan.solution.metrics.overall) },
+  { label: "技能", value: pct(props.run.plan.solution.metrics.skill_fit) },
+  { label: "排期覆盖", value: pct(props.run.plan.solution.metrics.scheduled_ratio) },
 ]);
 
 function assignmentKey(a: ScoredAssignment, i: number) {
@@ -30,9 +34,9 @@ function assignmentKey(a: ScoredAssignment, i: number) {
 </script>
 
 <template>
-  <div v-if="opt.current" class="space-y-4">
+  <div v-if="run" class="space-y-4">
     <h3 class="text-2xl font-semibold tracking-tight">
-      方案 #{{ opt.current.run_id }}
+      方案 #{{ run.run_id }}
     </h3>
 
     <div class="flex flex-wrap gap-4">
@@ -47,7 +51,7 @@ function assignmentKey(a: ScoredAssignment, i: number) {
     </div>
 
     <h4 class="text-lg font-semibold tracking-tight">
-      已分配 ({{ opt.current.plan.solution.assignments.length }})
+      已分配 ({{ run.plan.solution.assignments.length }})
     </h4>
     <Table>
       <TableHeader>
@@ -61,7 +65,7 @@ function assignmentKey(a: ScoredAssignment, i: number) {
       </TableHeader>
       <TableBody>
         <TableRow
-          v-for="(a, i) in opt.current.plan.solution.assignments"
+          v-for="(a, i) in run.plan.solution.assignments"
           :key="assignmentKey(a, i)"
         >
           <TableCell>
@@ -80,23 +84,23 @@ function assignmentKey(a: ScoredAssignment, i: number) {
     </Table>
 
     <Alert
-      v-if="opt.current.plan.solution.unscheduled.length"
+      v-if="run.plan.solution.unscheduled.length"
       variant="default"
       class="border-yellow-200 bg-yellow-50 text-yellow-800"
     >
       <AlertDescription class="text-yellow-800">
-        ⚠ 未排期任务：{{ opt.current.plan.solution.unscheduled.join(", ") }}
+        ⚠ 未排期任务：{{ run.plan.solution.unscheduled.join(", ") }}
       </AlertDescription>
     </Alert>
 
     <h4 class="text-lg font-semibold tracking-tight">解释</h4>
     <span class="text-muted-foreground plan-review__explanation block">
-      {{ opt.current.plan.explanation_md }}
+      {{ run.plan.explanation_md }}
     </span>
 
     <div class="flex flex-wrap gap-2">
-      <Button @click="opt.accept(opt.current!.run_id)">✓ 采纳（写入分配）</Button>
-      <Button variant="destructive" @click="opt.reject(opt.current!.run_id)">
+      <Button @click="emit('accept', run.run_id)">✓ 采纳（写入分配）</Button>
+      <Button variant="destructive" @click="emit('reject', run.run_id)">
         ✗ 拒绝
       </Button>
     </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -9,11 +9,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import DateRangePicker from "@/components/DateRangePicker.vue";
-import { api, reportKinds, type ReportKind, type ReportCatalogEntry } from "@/api";
-import { useProjectsStore } from "@/stores/projects";
+import { useGetReportCatalogQuery, reportKinds, exportReport, exportSnapshot, type ReportKind } from "@/services/api/reports.api";
+import { useApiFetch } from "@/services/fetch";
+import { useListProjectsQuery } from "@/services/api/projects.api";
 import { fmtDate, parseDateStrict } from "@/utils/date";
 
-const projects = useProjectsStore();
+const { apiFetch } = useApiFetch();
+const projectsQuery = useListProjectsQuery();
+const catalogQuery = useGetReportCatalogQuery();
 const kind = ref<ReportKind>("ResourceUtilization");
 const dateRange = ref<[number, number]>([parseDateStrict("2026-06-29"), parseDateStrict("2026-07-12")]);
 const fmt = ref<string>("csv");
@@ -21,7 +24,6 @@ const projectId = ref<number | null>(null);
 const msg = ref("");
 const busy = ref(false);
 const allProjectsValue = "__all__";
-const catalog = ref<ReportCatalogEntry[]>([]);
 
 const cn: Record<ReportKind, string> = {
   ResourceUtilization: "资源利用率",
@@ -34,29 +36,21 @@ const cn: Record<ReportKind, string> = {
 const kindOptions = reportKinds.map((k) => ({ label: cn[k], value: k }));
 const projectOptions = computed(() => [
   { label: "全部项目", value: allProjectsValue },
-  ...projects.items.map((p) => ({ label: p.name, value: String(p.id) })),
+  ...(projectsQuery.data.value ?? []).map((p) => ({ label: p.name, value: String(p.id) })),
 ]);
 const projectValue = computed(() => projectId.value == null ? allProjectsValue : String(projectId.value));
 
-// Available formats for the selected kind, driven by the backend catalog so unavailable
-// formats (e.g. PDF without the app/pdf feature) are hidden instead of failing on export.
 const fmtOptions = computed(() => {
-  const entry = catalog.value.find((e) => e.kind === kind.value);
+  const entry = catalogQuery.data.value?.find((e) => e.kind === kind.value);
   const formats = entry?.formats ?? ["csv", "xlsx"];
   return formats.map((f) => ({ label: f.toUpperCase(), value: f }));
 });
-// Whether the selected kind accepts a project_id filter.
+
 const acceptsProject = computed(() => {
-  const entry = catalog.value.find((e) => e.kind === kind.value);
+  const entry = catalogQuery.data.value?.find((e) => e.kind === kind.value);
   return entry?.accepts_project_id ?? false;
 });
 
-onMounted(async () => {
-  void projects.load();
-  try { catalog.value = await api.getReportCatalog(); } catch { /* offline fallback: defaults */ }
-});
-
-// Keep the selected format valid when the kind changes.
 watch(kind, () => {
   const formats = fmtOptions.value.map((o) => o.value);
   if (!formats.includes(fmt.value)) fmt.value = formats[0] ?? "csv";
@@ -69,7 +63,7 @@ async function doExport() {
     const start = fmtDate(dateRange.value[0]);
     const end = fmtDate(dateRange.value[1]);
     const pid = acceptsProject.value ? projectId.value : null;
-    const ok = await api.exportReport(kind.value, pid, start, end, fmt.value as "csv" | "xlsx" | "pdf");
+    const ok = await exportReport(apiFetch, kind.value, pid, start, end, fmt.value as "csv" | "xlsx" | "pdf");
     msg.value = ok ? `已导出 ${kind.value}.${fmt.value}` : "导出失败";
   } catch (e: unknown) {
     msg.value = e instanceof Error ? e.message : String(e);
@@ -84,7 +78,7 @@ async function doSnapshot() {
   try {
     const start = fmtDate(dateRange.value[0]);
     const end = fmtDate(dateRange.value[1]);
-    const ok = await api.exportSnapshot(start, end);
+    const ok = await exportSnapshot(apiFetch, start, end);
     msg.value = ok ? "已导出快照 JSON" : "导出失败";
   } catch (e: unknown) {
     msg.value = e instanceof Error ? e.message : String(e);

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
+import { type MaybeRef, computed, toValue } from "vue";
 import { useApiFetch } from "../fetch";
 import type { ObjectiveWeights, RunResult, RunRow } from "@/types";
 
@@ -50,5 +51,15 @@ export function useRejectSolutionMutation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["optimization-runs"] });
     },
+  });
+}
+
+export function useGetOptimizationRunQuery(runId: MaybeRef<number | null>) {
+  const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(runId));
+  return useQuery<RunResult>({
+    queryKey: computed(() => ["optimization-run", id.value]),
+    queryFn: () => apiFetch<RunResult>(`/api/optimization/runs/${id.value}`),
+    enabled: () => id.value != null,
   });
 }

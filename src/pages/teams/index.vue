@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { PlusIcon } from "@lucide/vue";
-import { useTeamsStore } from "@/stores/teams";
-import { useResourcesStore } from "@/stores/resources";
+import {
+  useListTeamsQuery,
+  useCreateTeamMutation,
+  useDeleteTeamMutation,
+  useListTeamMembersQuery,
+  useAddTeamMemberMutation,
+  useRemoveTeamMemberMutation,
+  useSetTeamOverrideMutation,
+  useGetTeamOverrideQuery,
+} from "@/services/api/teams.api";
+import { useListResourcesQuery } from "@/services/api/resources.api";
 import type { TeamOverride } from "@/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -43,8 +52,11 @@ import ListPage from "@/components/list/ListPage.vue";
 import ListRowActions from "@/components/list/ListRowActions.vue";
 import ListToolbar from "@/components/list/ListToolbar.vue";
 
-const teams = useTeamsStore();
-const resources = useResourcesStore();
+const teamsQuery = useListTeamsQuery();
+const createTeamMutation = useCreateTeamMutation();
+const deleteTeam = useDeleteTeamMutation();
+const resourcesQuery = useListResourcesQuery();
+
 const teamName = ref("");
 const filterName = ref("");
 const selectedTeam = ref<number | null>(null);
@@ -60,68 +72,61 @@ const overridePmWorkdays = ref<number | null>(null);
 
 const deleteDialogOpen = ref(false);
 const deleteTargetId = ref<number | null>(null);
-const deleteTargetName = computed(() => teams.items.find((t) => t.id === deleteTargetId.value)?.name ?? "");
+const deleteTargetName = computed(() => (teamsQuery.data.value ?? []).find((t) => t.id === deleteTargetId.value)?.name ?? "");
 const removeDialogOpen = ref(false);
 const removeTargetId = ref<number | null>(null);
 const removeTargetName = computed(() => resourceName(removeTargetId.value ?? 0));
 
 const resourceOptions = computed(() =>
-  resources.items.map((r) => ({ label: r.name, value: r.id })),
+  (resourcesQuery.data.value ?? []).map((r) => ({ label: r.name, value: r.id })),
 );
 
 const selectedTeamName = computed(() =>
-  teams.items.find((t) => t.id === selectedTeam.value)?.name ?? null,
+  (teamsQuery.data.value ?? []).find((t) => t.id === selectedTeam.value)?.name ?? null,
 );
 
 const filteredTeams = computed(() => {
-  return teams.items.filter((t) => {
+  return (teamsQuery.data.value ?? []).filter((t) => {
     if (!filterName.value) return true;
     return t.name.toLowerCase().includes(filterName.value.toLowerCase());
   });
 });
 
-onMounted(async () => {
-  await teams.load();
-  await resources.load();
-});
+const teamMembersQuery = useListTeamMembersQuery(computed(() => selectedTeam.value));
+const teamOverrideQuery = useGetTeamOverrideQuery(computed(() => selectedTeam.value));
+const addTeamMember = useAddTeamMemberMutation();
+const removeTeamMember = useRemoveTeamMemberMutation();
+const setTeamOverride = useSetTeamOverrideMutation();
 
-watch(selectedTeam, async (id) => {
-  if (id != null) await teams.loadMembers(id);
-  overrideOverload.value = null;
-  overrideUnderload.value = null;
-  overrideGreen.value = null;
-  overrideYellow.value = null;
-  overridePdHours.value = null;
-  overridePmWorkdays.value = null;
-  if (id != null) {
-    const existing = await teams.getOverride(id);
-    if (existing) {
-      overrideOverload.value = existing.overload_threshold;
-      overrideUnderload.value = existing.underload_threshold;
-      overrideGreen.value = existing.utilization_green;
-      overrideYellow.value = existing.utilization_yellow;
-      overridePdHours.value = existing.pd_hours;
-      overridePmWorkdays.value = existing.pm_workdays;
-    }
-  }
-});
+watch(
+  () => teamOverrideQuery.data.value,
+  (existing) => {
+    overrideOverload.value = existing?.overload_threshold ?? null;
+    overrideUnderload.value = existing?.underload_threshold ?? null;
+    overrideGreen.value = existing?.utilization_green ?? null;
+    overrideYellow.value = existing?.utilization_yellow ?? null;
+    overridePdHours.value = existing?.pd_hours ?? null;
+    overridePmWorkdays.value = existing?.pm_workdays ?? null;
+  },
+  { immediate: true },
+);
 
 async function createTeam() {
   if (!teamName.value.trim()) return;
-  await teams.create(teamName.value, null);
+  await createTeamMutation.mutateAsync({ name: teamName.value, description: null });
   teamName.value = "";
 }
 
 async function addMember() {
   if (selectedTeam.value == null || memberResource.value == null) return;
-  await teams.addMember(selectedTeam.value, memberResource.value, memberRole.value || null);
+  await addTeamMember.mutateAsync({ teamId: selectedTeam.value, resourceId: memberResource.value, role: memberRole.value || null });
   memberResource.value = null;
   memberRole.value = "";
 }
 
 async function removeMember(resourceId: number) {
   if (selectedTeam.value == null) return;
-  await teams.removeMember(selectedTeam.value, resourceId);
+  await removeTeamMember.mutateAsync({ teamId: selectedTeam.value, resourceId });
 }
 
 async function saveOverride() {
@@ -135,11 +140,11 @@ async function saveOverride() {
     utilization_green: overrideGreen.value,
     utilization_yellow: overrideYellow.value,
   };
-  await teams.setOverride(override);
+  await setTeamOverride.mutateAsync(override);
 }
 
 function resourceName(id: number): string {
-  return resources.items.find((r) => r.id === id)?.name ?? `#${id}`;
+  return (resourcesQuery.data.value ?? []).find((r) => r.id === id)?.name ?? `#${id}`;
 }
 
 function openDeleteDialog(id: number) {
@@ -149,7 +154,7 @@ function openDeleteDialog(id: number) {
 
 async function confirmDelete() {
   if (deleteTargetId.value == null) return;
-  await teams.remove(deleteTargetId.value);
+  await deleteTeam.mutateAsync(deleteTargetId.value);
   deleteDialogOpen.value = false;
   deleteTargetId.value = null;
 }
@@ -273,7 +278,7 @@ async function confirmRemove() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow v-for="m in teams.members" :key="`${m.team_id}-${m.resource_id}`">
+                <TableRow v-for="m in teamMembersQuery.data.value ?? []" :key="`${m.team_id}-${m.resource_id}`">
                   <TableCell class="font-medium">{{ resourceName(m.resource_id) }}</TableCell>
                   <TableCell>
                     <Badge v-if="m.role" variant="secondary">{{ m.role }}</Badge>
@@ -283,7 +288,7 @@ async function confirmRemove() {
                     <ListRowActions @delete="openRemoveDialog(m.resource_id)" />
                   </TableCell>
                 </TableRow>
-                <TableRow v-if="!teams.members.length">
+                <TableRow v-if="!(teamMembersQuery.data.value ?? []).length">
                   <TableCell colspan="3" class="text-center text-muted-foreground py-6">
                     暂无成员
                   </TableCell>

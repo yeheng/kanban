@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, watch } from "vue";
 import { useRoute, RouterLink } from "vue-router";
 import {
   Select,
@@ -40,14 +40,29 @@ import {
   SettingsIcon,
 } from "@lucide/vue";
 import { useProjectsStore } from "@/stores/projects";
-import { useCatalogStore } from "@/stores/catalog";
 import { useUnitStore } from "@/stores/unit";
+import { useListProjectsQuery } from "@/services/api/projects.api";
+import { useListSkillsQuery, useListTagsQuery } from "@/services/api/catalog.api";
+import { useGetUnitConfigQuery } from "@/services/api/config.api";
 
 const projects = useProjectsStore();
-const catalog = useCatalogStore();
 const unit = useUnitStore();
-const ready = ref(false);
 const route = useRoute();
+
+const projectsQuery = useListProjectsQuery();
+const skillsQuery = useListSkillsQuery();
+const tagsQuery = useListTagsQuery();
+const unitConfigQuery = useGetUnitConfigQuery();
+
+const ready = computed(() =>
+  projectsQuery.isSuccess && skillsQuery.isSuccess && tagsQuery.isSuccess && unitConfigQuery.isSuccess,
+);
+
+watch(() => projectsQuery.data.value, (items) => {
+  if (projects.current == null && items && items.length > 0) {
+    projects.select(items[0].id);
+  }
+});
 
 const navItems = [
   { to: "/dashboard", label: "仪表盘 Dashboard", icon: LayoutDashboardIcon },
@@ -68,27 +83,13 @@ const navItems = [
 const activePath = computed(() => route.path);
 
 const projectOptions = computed(() =>
-  projects.items.map((p) => ({ label: p.name, value: String(p.id) })),
+  (projectsQuery.data.value ?? []).map((p) => ({ label: p.name, value: String(p.id) })),
 );
 
 function onProjectChange(value: unknown) {
   const id = Number(value);
   if (!Number.isNaN(id)) projects.select(id);
 }
-
-onMounted(async () => {
-  for (let i = 0; i < 40; i++) {
-    try {
-      await projects.load();
-      await catalog.load();
-      await unit.loadGlobal();
-      ready.value = true;
-      return;
-    } catch {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  }
-});
 </script>
 
 <template>
