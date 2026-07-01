@@ -1,4 +1,4 @@
-import type { Project, KanbanTask, Skill, Tag, Resource, ResourceSkill, ResourceTag, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunRow } from "../types";
+import type { Project, KanbanTask, Skill, Tag, Resource, ResourceSkill, ResourceTag, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunRow, Settings } from "../types";
 
 export type SkillReq = [number, number, boolean, number];
 
@@ -130,6 +130,11 @@ export const api = {
   getThresholds: (): Promise<Thresholds> => request("GET", "/api/thresholds"),
   getUnitConfig: (): Promise<{ pd_hours: number; pm_workdays: number }> =>
     request("GET", "/api/config/units"),
+
+  // ---- Settings ----
+  getSettings: (): Promise<Settings> => request("GET", "/api/settings"),
+  updateSettings: (settings: Settings): Promise<void> =>
+    request("PUT", "/api/settings", settings),
 
   // ---- Phase 2: allocations ----
   createAllocation: (resourceId: number, taskId: number, start: string, end: string, percent: number): Promise<number> =>

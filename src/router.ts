@@ -19,5 +19,6 @@ export const router = createRouter({
     { path: "/teams", component: () => import("./views/TeamsView.vue") },
     { path: "/ai", component: () => import("./views/AiPanelView.vue") },
     { path: "/reports", component: () => import("./views/ReportsView.vue") },
+    { path: "/settings", component: () => import("./views/SettingsView.vue") },
   ],
 });

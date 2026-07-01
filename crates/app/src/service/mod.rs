@@ -7,6 +7,7 @@ pub mod optimization;
 pub mod projects;
 pub mod reports;
 pub mod resources;
+pub mod settings;
 pub mod tasks;
 pub mod teams;
 pub mod thresholds;

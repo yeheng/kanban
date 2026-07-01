@@ -19,8 +19,119 @@ pub struct UnitRow {
     pub pm_workdays: f64,
 }
 
+/// Full global settings row (design §3.3.1). There is always exactly one row with id = 1.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SettingsRow {
+    pub id: i64,
+    pub default_unit: String,
+    pub pd_hours: f64,
+    pub pm_workdays: f64,
+    pub ai_provider: String,
+    pub ai_base_url: Option<String>,
+    pub ai_api_key_enc: Option<String>,
+    pub secret_store: String,
+    pub ai_chat_model: String,
+    pub ai_embed_model: String,
+    pub ai_embed_dim: i64,
+    pub solver_backend: String,
+    pub solver_timeout_ms: i64,
+    pub locale: String,
+    pub overload_threshold: Option<f64>,
+    pub underload_threshold: Option<f64>,
+    pub utilization_green: Option<f64>,
+    pub utilization_yellow: Option<f64>,
+}
+
+/// Editable subset of `settings`. All fields are optional so callers can send only what
+/// changed; `SettingsRepo::update` writes only the provided fields.
+#[derive(Debug, Clone, Default)]
+pub struct SettingsUpdate {
+    pub default_unit: Option<String>,
+    pub pd_hours: Option<f64>,
+    pub pm_workdays: Option<f64>,
+    pub ai_provider: Option<String>,
+    pub ai_base_url: Option<Option<String>>,
+    pub ai_api_key_enc: Option<Option<String>>,
+    pub secret_store: Option<String>,
+    pub ai_chat_model: Option<String>,
+    pub ai_embed_model: Option<String>,
+    pub ai_embed_dim: Option<i64>,
+    pub solver_backend: Option<String>,
+    pub solver_timeout_ms: Option<i64>,
+    pub locale: Option<String>,
+    pub overload_threshold: Option<f64>,
+    pub underload_threshold: Option<f64>,
+    pub utilization_green: Option<f64>,
+    pub utilization_yellow: Option<f64>,
+}
+
 pub struct SettingsRepo;
 impl SettingsRepo {
+    /// Load the full global settings row.
+    pub async fn get(pool: &SqlitePool) -> Result<SettingsRow, DbError> {
+        Ok(sqlx::query_as(
+            "SELECT id, default_unit, pd_hours, pm_workdays, ai_provider, ai_base_url, \
+             ai_api_key_enc, secret_store, ai_chat_model, ai_embed_model, ai_embed_dim, \
+             solver_backend, solver_timeout_ms, locale, overload_threshold, underload_threshold, \
+             utilization_green, utilization_yellow FROM settings WHERE id = 1",
+        )
+        .fetch_one(pool)
+        .await?)
+    }
+
+    /// Update the global settings row. Only fields set in `update` are written.
+    pub async fn update(pool: &SqlitePool, update: &SettingsUpdate) -> Result<(), DbError> {
+        let mut sets: Vec<&'static str> = Vec::new();
+        if update.default_unit.is_some() { sets.push("default_unit = ?"); }
+        if update.pd_hours.is_some() { sets.push("pd_hours = ?"); }
+        if update.pm_workdays.is_some() { sets.push("pm_workdays = ?"); }
+        if update.ai_provider.is_some() { sets.push("ai_provider = ?"); }
+        if update.ai_base_url.is_some() { sets.push("ai_base_url = ?"); }
+        if update.ai_api_key_enc.is_some() { sets.push("ai_api_key_enc = ?"); }
+        if update.secret_store.is_some() { sets.push("secret_store = ?"); }
+        if update.ai_chat_model.is_some() { sets.push("ai_chat_model = ?"); }
+        if update.ai_embed_model.is_some() { sets.push("ai_embed_model = ?"); }
+        if update.ai_embed_dim.is_some() { sets.push("ai_embed_dim = ?"); }
+        if update.solver_backend.is_some() { sets.push("solver_backend = ?"); }
+        if update.solver_timeout_ms.is_some() { sets.push("solver_timeout_ms = ?"); }
+        if update.locale.is_some() { sets.push("locale = ?"); }
+        if update.overload_threshold.is_some() { sets.push("overload_threshold = ?"); }
+        if update.underload_threshold.is_some() { sets.push("underload_threshold = ?"); }
+        if update.utilization_green.is_some() { sets.push("utilization_green = ?"); }
+        if update.utilization_yellow.is_some() { sets.push("utilization_yellow = ?"); }
+
+        if sets.is_empty() {
+            return Ok(());
+        }
+
+        let sql = format!(
+            "UPDATE settings SET {}, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id = 1",
+            sets.join(", ")
+        );
+
+        let mut q = sqlx::query(&sql);
+        if let Some(v) = &update.default_unit { q = q.bind(v); }
+        if let Some(v) = &update.pd_hours { q = q.bind(v); }
+        if let Some(v) = &update.pm_workdays { q = q.bind(v); }
+        if let Some(v) = &update.ai_provider { q = q.bind(v); }
+        if let Some(v) = &update.ai_base_url { q = q.bind(v); }
+        if let Some(v) = &update.ai_api_key_enc { q = q.bind(v); }
+        if let Some(v) = &update.secret_store { q = q.bind(v); }
+        if let Some(v) = &update.ai_chat_model { q = q.bind(v); }
+        if let Some(v) = &update.ai_embed_model { q = q.bind(v); }
+        if let Some(v) = &update.ai_embed_dim { q = q.bind(v); }
+        if let Some(v) = &update.solver_backend { q = q.bind(v); }
+        if let Some(v) = &update.solver_timeout_ms { q = q.bind(v); }
+        if let Some(v) = &update.locale { q = q.bind(v); }
+        if let Some(v) = &update.overload_threshold { q = q.bind(v); }
+        if let Some(v) = &update.underload_threshold { q = q.bind(v); }
+        if let Some(v) = &update.utilization_green { q = q.bind(v); }
+        if let Some(v) = &update.utilization_yellow { q = q.bind(v); }
+
+        q.execute(pool).await?;
+        Ok(())
+    }
+
     pub async fn thresholds(pool: &SqlitePool) -> Result<Thresholds, DbError> {
         let (overload, underload, green, yellow): (Option<f64>, Option<f64>, Option<f64>, Option<f64>) =
             sqlx::query_as(

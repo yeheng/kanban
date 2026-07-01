@@ -97,3 +97,24 @@ export interface SolutionMetrics { overall: number; skill_fit: number; scheduled
 export interface Solution { run_id: number; assignments: ScoredAssignment[]; unscheduled: number[]; metrics: SolutionMetrics; }
 export interface RunResult { run_id: number; plan: { solution: Solution; explanation_md: string; }; }
 export interface RunRow { id: number; objective: string; status: string; applied: number; score_overall: number | null; created_at: string; }
+
+// Global settings (design §3.3.1)
+export interface Settings {
+  default_unit: "PD" | "PM";
+  pd_hours: number;
+  pm_workdays: number;
+  ai_provider: string;
+  ai_base_url: string | null;
+  ai_api_key_enc: string | null;
+  secret_store: "keychain" | "encrypted_file";
+  ai_chat_model: string;
+  ai_embed_model: string;
+  ai_embed_dim: number;
+  solver_backend: "good_lp" | "greedy" | "hungarian";
+  solver_timeout_ms: number;
+  locale: string;
+  overload_threshold: number;
+  underload_threshold: number;
+  utilization_green: number;
+  utilization_yellow: number;
+}

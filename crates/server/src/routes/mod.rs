@@ -9,6 +9,7 @@ pub mod optimization;
 pub mod projects;
 pub mod reports;
 pub mod resources;
+pub mod settings;
 pub mod tasks;
 pub mod teams;
 pub mod workload;
@@ -26,4 +27,5 @@ pub fn api_router() -> Router<AppState> {
         .merge(gantt::router())
         .merge(optimization::router())
         .merge(reports::router())
+        .merge(settings::router())
 }

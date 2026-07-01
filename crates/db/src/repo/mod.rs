@@ -13,7 +13,7 @@ pub use calendar::{HolidayRepo, TimeOffRepo, WeekTemplateRepo};
 pub use gantt::GanttRepo;
 pub use projects::ProjectsRepo;
 pub use resources::ResourcesRepo;
-pub use settings::{AiSettings, SettingsRepo, Thresholds, UnitRow};
+pub use settings::{AiSettings, SettingsRepo, SettingsRow, SettingsUpdate, Thresholds, UnitRow};
 pub use skills::SkillsRepo;
 pub use tags::TagsRepo;
 pub use tasks::{TaskCreate, TaskDepsRepo, TasksRepo};

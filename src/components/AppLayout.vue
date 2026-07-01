@@ -26,6 +26,7 @@ const menuOptions = computed<MenuOption[]>(() => [
   { label: () => h(RouterLink, { to: "/calendar-grid" }, { default: () => "占用网格 Calendar Grid" }), key: "calendar-grid" },
   { label: () => h(RouterLink, { to: "/ai" }, { default: () => "AI 优化 Optimization" }), key: "ai" },
   { label: () => h(RouterLink, { to: "/reports" }, { default: () => "报表 Reports" }), key: "reports" },
+  { label: () => h(RouterLink, { to: "/settings" }, { default: () => "设置 Settings" }), key: "settings" },
 ]);
 
 const activeKey = computed(() => route.path.replace(/^\//, ""));
