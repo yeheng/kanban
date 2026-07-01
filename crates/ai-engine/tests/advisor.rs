@@ -33,3 +33,13 @@ fn suggestion_item_roundtrips() {
     let back: SuggestionItem = serde_json::from_str(&json).unwrap();
     assert_eq!(back, item);
 }
+
+use ai_engine::advisor::{Advisor, NoAdvisor};
+use ai_engine::types::{AllocationProblem, Solution};
+
+#[tokio::test]
+async fn no_advisor_returns_empty() {
+    let advisor = NoAdvisor;
+    let items = advisor.advise(&AllocationProblem::default(), &Solution::default()).await;
+    assert!(items.is_empty(), "NoAdvisor must return zero suggestions");
+}
