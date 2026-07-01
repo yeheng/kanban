@@ -1,0 +1,14 @@
+{
+  "app": {
+    "title": "Kanban"
+  },
+  "common": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search"
+  }
+}

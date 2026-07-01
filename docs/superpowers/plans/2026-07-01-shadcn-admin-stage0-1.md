@@ -10,6 +10,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-07-01-shadcn-admin-stage0-1-design.md`
 
+> **执行修正（已实现，2026-07-01）** — 下列 code block 中两处计划缺陷，执行时已据实修正，后续阶段勿再踩：
+> 1. **Task 4 / vite.config 的 `VueRouterAutoImports` 导入路径**：计划写的是 `from "vue-router/auto-routes"`，但 vue-router@5 的 `./auto-routes` 子路径**仅 types 导出、无运行时条件**，运行时报 `No known conditions for "./auto-routes"`。正确路径是 **`from "vue-router/unplugin"`**（`VueRouterAutoImports` 仅声明于此）。
+> 2. **Task 5 / App.vue 的 VueQueryDevtools**：计划假定 devtools 经 `app.use()` 注册（Task 3 的 setup.ts），但 `@tanstack/vue-query-devtools@6` 把 `VueQueryDevtools` 作为**组件**（`DefineComponent`）而非插件导出，`app.use()` 不通过类型检查。正确做法：setup.ts **不注册 devtools**，改为在 `App.vue` 渲染 `<VueQueryDevtools v-if="isDev" />`（`const isDev = import.meta.env.DEV` 在 `<script setup>` 中预计算——模板表达式作用域不能直接用 `import.meta`）。组件内部按 NODE_ENV 自裁剪，prod bundle 已验证不含 devtools 代码。
+> 上述修正导致本阶段实际**修改了 `src/App.vue`**（spec §4.7 原计划不动）——这是修正 v6 API 错误假设的必然结果，非破坏性。
+
 ---
 
 ## File Structure
