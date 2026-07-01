@@ -1,21 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import { Button } from "@/components/ui/button";
 import DateRangePicker from "@/components/DateRangePicker.vue";
-import { api } from "@/api";
-import { useResourcesStore } from "@/stores/resources";
-import { useWorkloadStore } from "@/stores/workload";
-import { useRefreshStore } from "@/stores/refresh";
+import { useListResourcesQuery } from "@/services/api/resources.api";
+import { useDailyOccupancyQuery } from "@/services/api/gantt.api";
 import OccupancyGrid from "@/components/OccupancyGrid.vue";
 import { fmtDate, parseDateStrict } from "@/utils/date";
-import type { DayOccupancy } from "@/types";
 
-const resources = useResourcesStore();
-const wl = useWorkloadStore();
-const refreshBus = useRefreshStore();
+const resourcesQuery = useListResourcesQuery();
 const dateRange = ref<[number, number]>([parseDateStrict("2026-06-29"), parseDateStrict("2026-07-12")]);
-const items = ref<DayOccupancy[]>([]);
 const days = ref<string[]>([]);
+
+const startStr = computed(() => fmtDate(dateRange.value[0]));
+const endStr = computed(() => fmtDate(dateRange.value[1]));
+const occupancyQuery = useDailyOccupancyQuery(startStr, endStr);
 
 function buildDays() {
   const out: string[] = [];
@@ -26,15 +24,15 @@ function buildDays() {
   }
   days.value = out;
 }
-async function refresh() {
+
+function refresh() {
   buildDays();
-  const start = fmtDate(dateRange.value[0]);
-  const end = fmtDate(dateRange.value[1]);
-  items.value = await api.dailyOccupancy(start, end);
+  occupancyQuery.refetch();
 }
-onMounted(async () => { await wl.loadThresholds(); await resources.load(); await refresh(); });
-// Reload occupancy when an allocation write / AI accept bumps the refresh bus (design G4).
-watch(() => refreshBus.version.calendar, () => { void refresh(); });
+
+watch(dateRange, () => {
+  buildDays();
+}, { immediate: true });
 </script>
 
 <template>
@@ -43,5 +41,5 @@ watch(() => refreshBus.version.calendar, () => { void refresh(); });
     <DateRangePicker v-model="dateRange" />
     <Button @click="refresh">刷新</Button>
   </div>
-  <OccupancyGrid :items="items" :days="days" :resources="resources.items" />
+  <OccupancyGrid :items="occupancyQuery.data.value ?? []" :days="days" :resources="resourcesQuery.data.value ?? []" />
 </template>

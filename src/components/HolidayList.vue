@@ -8,11 +8,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useCalendarStore } from "@/stores/calendar";
+import { useListHolidaysQuery, useAddHolidayMutation, useDeleteHolidayMutation } from "@/services/api/calendar.api";
 import { fmtDate } from "@/utils/date";
 import type { DateValue } from "@internationalized/date";
 
-const cal = useCalendarStore();
+const holidaysQuery = useListHolidaysQuery();
+const addHoliday = useAddHolidayMutation();
+const deleteHoliday = useDeleteHolidayMutation();
+
 const day = ref<number | null>(null);
 const frac = ref(1);
 const name = ref("");
@@ -39,7 +42,7 @@ function onSelectFrac(value: unknown) {
 
 async function add() {
   if (day.value == null) return;
-  await cal.addHoliday(fmtDate(day.value), frac.value, name.value || null);
+  await addHoliday.mutateAsync({ projectId: null, day: fmtDate(day.value), fraction: frac.value, name: name.value || null });
   day.value = null;
   name.value = "";
 }
@@ -84,7 +87,7 @@ const confirmOpen = ref<Record<number, boolean>>({});
     </div>
 
     <div class="border rounded-lg divide-y">
-      <div v-for="h in cal.holidays" :key="h.id" class="flex items-center justify-between p-3">
+      <div v-for="h in holidaysQuery.data.value ?? []" :key="h.id" class="flex items-center justify-between p-3">
         <div>
           <div class="font-medium">{{ h.day }}</div>
           <div class="text-sm text-muted-foreground">
@@ -102,7 +105,7 @@ const confirmOpen = ref<Record<number, boolean>>({});
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" @click="confirmOpen[h.id] = false">取消</Button>
-              <Button variant="destructive" @click="cal.removeHoliday(h.id); confirmOpen[h.id] = false">删除</Button>
+              <Button variant="destructive" @click="deleteHoliday.mutate(h.id); confirmOpen[h.id] = false">删除</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
