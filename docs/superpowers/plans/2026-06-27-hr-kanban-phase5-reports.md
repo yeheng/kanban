@@ -12,7 +12,7 @@
 
 **Scope note:** Reports were deliberately deferred to last (confirmed). PDF via `printpdf` (no `headless_chrome`/Chromium — keeps the binary lean; HTML→PDF remains a future optional feature #41). Snapshot >1MB externalization (#42) and Excel pivot/chart (#43) are noted impl-time refinements; here we export straightforward tables.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§8 Reporting & Export).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§8 Reporting & Export).
 
 ---
 
@@ -326,7 +326,7 @@ pub async fn export_snapshot(state: tauri::State<'_, AppState>, start: String, e
 }
 ```
 
-- [ ] **Step 4: Register in `src-tauri/src/main.rs`** — add `export_report, export_snapshot` to the handler list. (Build with `-p hr-kanban --features app/pdf` when PDF is wanted.)
+- [ ] **Step 4: Register in `src-tauri/src/main.rs`** — add `export_report, export_snapshot` to the handler list. (Build with `-p kanban --features app/pdf` when PDF is wanted.)
 
 - [ ] **Step 5: Build (default, no PDF) + full suite**
 
@@ -445,4 +445,4 @@ git add -A && git commit -m "feat(web): report center (export CSV/Excel/PDF + sn
 
 ## Execution Handoff
 
-Plan saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase5-reports.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. Next: **Phase 6 (polish)** — the final plan.
+Plan saved to `docs/superpowers/plans/2026-06-27-kanban-phase5-reports.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. Next: **Phase 6 (polish)** — the final plan.

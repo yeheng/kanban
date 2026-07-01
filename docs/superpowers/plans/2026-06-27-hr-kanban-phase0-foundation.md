@@ -6,11 +6,11 @@
 
 **Architecture:** A Cargo workspace with two crates: `domain` (pure types + the workload/capacity core, zero I/O, zero serde on errors) and `db` (sqlx persistence: migrations, pool, `with_write_tx`, entity models, repositories). The workload engine is a set of pure functions over an in-memory `Calendar`, verified by golden numeric tests derived from design §4.10. No Tauri/UI/AI yet — everything is verifiable via `cargo test`.
 
-**Tech Stack:** Rust (edition 2021), `sqlx` (SQLite, `bundled`, runtime queries + `migrate!`), `libsqlite3-sys` (bundled static SQLite), `chrono` (dates), `tokio` (async runtime, used by sqlx), `thiserror` (domain errors). Schema + workload formulas are taken verbatim from the finalized design doc `docs/design/2026-06-27-hr-kanban-design.md` (§3.3 DDL, §4.9 workload core).
+**Tech Stack:** Rust (edition 2021), `sqlx` (SQLite, `bundled`, runtime queries + `migrate!`), `libsqlite3-sys` (bundled static SQLite), `chrono` (dates), `tokio` (async runtime, used by sqlx), `thiserror` (domain errors). Schema + workload formulas are taken verbatim from the finalized design doc `docs/design/2026-06-27-kanban-design.md` (§3.3 DDL, §4.9 workload core).
 
 **Scope note:** This plan covers Phase 0 only. Phase 1 (Tauri shell + CRUD commands + Kanban UI), Phase 2 (allocations UI + Dashboard), Phase 3 (Gantt + calendar), Phase 4 (AI engine), Phase 5 (reports), Phase 6 (polish) are separate plans. Repositories for entities beyond `resources`/`allocations` (teams, projects, tasks, skills, tags, calendar tables) are also deferred to Phase 1 — this plan establishes the schema and the repo *pattern* with the two most critical repos.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md`
+**Reference design:** `docs/design/2026-06-27-kanban-design.md`
 
 ---
 
@@ -1723,7 +1723,7 @@ git commit -m "feat(db): AllocationsRepo + domain bridge; foundation complete"
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase0-foundation.md`. Two execution options:
+Plan complete and saved to `docs/superpowers/plans/2026-06-27-kanban-phase0-foundation.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks, fast iteration.
 2. **Inline Execution** — Execute tasks in this session using executing-plans, batch execution with checkpoints.

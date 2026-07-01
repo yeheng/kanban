@@ -12,7 +12,7 @@
 
 **Scope note:** This is the final roadmap phase. Items are discrete hardening tasks; some are config/verification rather than pure TDD. After this, the app is release-ready at MVP scope.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§6.8 master key, §9.2 NFRs, §9.4 decisions #35/#54/#55/#56).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§6.8 master key, §9.2 NFRs, §9.4 decisions #35/#54/#55/#56).
 
 ---
 
@@ -417,4 +417,4 @@ git add -A && git commit -m "feat(app): vacuum_db; release build verified"
 
 ## Execution Handoff
 
-Plan saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase6-polish.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. This completes the full Phase 0–6 plan set.
+Plan saved to `docs/superpowers/plans/2026-06-27-kanban-phase6-polish.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. This completes the full Phase 0–6 plan set.

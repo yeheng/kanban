@@ -12,7 +12,7 @@
 
 **Scope note:** Engine + commands (backend). The **AI panel UI** (run, compare, accept/tweak, show explanation) is Phase 4b. Incremental optimization and `workload_cache` integration are later. Local Ollama is the default provider; cloud is configurable but not required for the deterministic path.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§5 AI Optimization Engine, §3.3.16 ai_optimization_runs).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§5 AI Optimization Engine, §3.3.16 ai_optimization_runs).
 
 ---
 
@@ -1033,4 +1033,4 @@ git add -A && git commit -m "feat(app): AI optimization service + commands (run/
 
 ## Execution Handoff
 
-Plan saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase4-ai-engine.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. Next: **Phase 4b (AI panel UI)** or **Phase 5 (reports)**.
+Plan saved to `docs/superpowers/plans/2026-06-27-kanban-phase4-ai-engine.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. Next: **Phase 4b (AI panel UI)** or **Phase 5 (reports)**.

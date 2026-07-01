@@ -12,7 +12,7 @@
 
 **Scope note:** Backend only. The Dashboard / allocation-editor / calendar-management **UI** is Phase 2b. Computation is on-demand (no `workload_cache`); long-term-task segmentation enforcement and `config_hash`/cache are Phase 3+.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§4 workload core, §3.3.8a/9 calendar, §3.6 queries, §7 Dashboard data needs).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§4 workload core, §3.3.8a/9 calendar, §3.6 queries, §7 Dashboard data needs).
 
 ---
 
@@ -806,7 +806,7 @@ git commit -m "feat(app): workload + calendar commands; Phase 2 backend complete
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase2-backend.md`. Two execution options:
+Plan complete and saved to `docs/superpowers/plans/2026-06-27-kanban-phase2-backend.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** — fresh subagent per task, review between tasks.
 2. **Inline Execution** — batch execution with checkpoints.

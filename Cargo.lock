@@ -1717,17 +1717,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hr-kanban"
-version = "0.1.0"
-dependencies = [
- "server",
- "tauri",
- "tauri-build",
- "tokio",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "html5ever"
 version = "0.38.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2169,6 +2158,17 @@ checksum = "5dea2b27dd239b2556ed7a25ba842fe47fd602e7fc7433c2a8d6106d4d9edd70"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "kanban"
+version = "0.1.0"
+dependencies = [
+ "server",
+ "tauri",
+ "tauri-build",
+ "tokio",
+ "tracing-subscriber",
 ]
 
 [[package]]

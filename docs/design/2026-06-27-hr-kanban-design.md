@@ -543,7 +543,7 @@ pub enum ProgressEvent {
 采用 Cargo workspace 多 crate，使 domain 可独立编译/测试，Tauri 外壳仅是薄组装。
 
 ```
-devhr-kanban/                         # 仓库根
+devkanban/                         # 仓库根
 ├─ Cargo.toml                         # [workspace]
 ├─ crates/
 │  ├─ domain/                         # 纯领域：实体、值对象、trait、领域错误（零 serde）

@@ -12,7 +12,7 @@
 
 **Scope note:** Kanban + project/task/resource CRUD only. Gantt, calendar, allocations UI, Dashboard/workload, and the AI panel are later phases. SQLite encryption and production first-run passphrase prompt + OS keychain storage (§6.8) are explicitly deferred.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§7 Frontend & UI).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§7 Frontend & UI).
 
 > **Post-implementation architecture change:** The original plan used Tauri `invoke` IPC. It was changed to HTTP API calls to support multi-client deployment (web, desktop, mobile). See the updated Task 2/Task 3/Task 8 below.
 
@@ -89,7 +89,7 @@ kanban/
 
 ```json
 {
-  "name": "hr-kanban",
+  "name": "kanban",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -193,7 +193,7 @@ createApp(App).use(createPinia()).use(router).mount("#app");
 
 ```toml
 [package]
-name = "hr-kanban"
+name = "kanban"
 version = "0.1.0"
 edition.workspace = true
 
@@ -348,7 +348,7 @@ members = ["crates/domain", "crates/db", "crates/app", "crates/server", "src-tau
 
 - [ ] **Step 5: Verify it compiles**
 
-Run: `cargo build -p server && cargo build -p hr-kanban`
+Run: `cargo build -p server && cargo build -p kanban`
 Expected: clean build.
 
 - [ ] **Step 6: Commit**
@@ -1091,7 +1091,7 @@ Expected: browser/Tauri window opens, sidebar shows, "正在打开数据库…" 
 
 With the server already running:
 ```bash
-cargo build -p hr-kanban
+cargo build -p kanban
 npm run tauri dev
 ```
 Expected: desktop window loads the frontend and talks to the same HTTP API.
@@ -1139,4 +1139,4 @@ git commit -m "test: Phase 1b end-to-end smoke (kanban DnD over HTTP API)"
 
 ## Execution Handoff
 
-Plan updated and saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase1b-frontend.md`. The IPC→HTTP migration is already implemented; remaining optional work includes the Task 8 manual smoke, Phase 2 (allocations UI + Dashboard/workload), and the deferred teams CRUD / first-run hardening.
+Plan updated and saved to `docs/superpowers/plans/2026-06-27-kanban-phase1b-frontend.md`. The IPC→HTTP migration is already implemented; remaining optional work includes the Task 8 manual smoke, Phase 2 (allocations UI + Dashboard/workload), and the deferred teams CRUD / first-run hardening.

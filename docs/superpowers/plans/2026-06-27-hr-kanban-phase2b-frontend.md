@@ -12,7 +12,7 @@
 
 **Scope note:** Dashboard + allocation editor + calendar management only. Gantt/Calendar **visualizations** are Phase 3b. Production first-run passphrase + teams-CRUD polish remain deferred.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§7 Dashboard / allocation / calendar views).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§7 Dashboard / allocation / calendar views).
 
 ---
 
@@ -724,4 +724,4 @@ git commit -m "test: Phase 2b end-to-end smoke (dashboard/allocations/calendar)"
 
 ## Execution Handoff
 
-Plan saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase2b-frontend.md`. Options: **1. Subagent-Driven** (recommended) or **2. Inline Execution**. Which? (Next: **Phase 3 backend** — Gantt/cross-project/calendar-occupancy queries.)
+Plan saved to `docs/superpowers/plans/2026-06-27-kanban-phase2b-frontend.md`. Options: **1. Subagent-Driven** (recommended) or **2. Inline Execution**. Which? (Next: **Phase 3 backend** — Gantt/cross-project/calendar-occupancy queries.)

@@ -12,7 +12,7 @@
 
 **Scope note:** Backend read queries + commands only. The Gantt UI (bars, drag-resize, dependency arrows, virtualization) and the Calendar occupancy grid are **Phase 3b** (frontend). Allocation mutation (resize/reassign via drag) reuses `create_allocation`/`set_task_status` plus a future `update_allocation` — the resize command is noted for 3b.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§7 Gantt resource/project views, §3.6 queries, §4.6 aggregation).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§7 Gantt resource/project views, §3.6 queries, §4.6 aggregation).
 
 ---
 
@@ -425,4 +425,4 @@ git commit -m "feat(app): gantt/occupancy/deps commands; Phase 3 backend complet
 
 ## Execution Handoff
 
-Plan saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase3-backend.md`. Options: **1. Subagent-Driven** (recommended) or **2. Inline Execution**. Which? (Next: **Phase 3b frontend** — Gantt bars + dependency arrows + calendar occupancy grid, consuming these commands.)
+Plan saved to `docs/superpowers/plans/2026-06-27-kanban-phase3-backend.md`. Options: **1. Subagent-Driven** (recommended) or **2. Inline Execution**. Which? (Next: **Phase 3b frontend** — Gantt bars + dependency arrows + calendar occupancy grid, consuming these commands.)

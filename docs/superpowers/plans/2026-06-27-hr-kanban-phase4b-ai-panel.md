@@ -12,7 +12,7 @@
 
 **Scope note:** Run / review / accept / reject / history + weight tuning. What-if multi-scenario overlay (confirmed #36) and Gantt overlay preview are later refinements (design §7.5.6; needs Phase 3 Gantt).
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§7.5.6 AI panel, §5 ObjectiveWeights).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§7.5.6 AI panel, §5 ObjectiveWeights).
 
 ---
 
@@ -318,4 +318,4 @@ npm run build && git add -A && git commit -m "feat(web): AI panel (run/review/we
 
 ## Execution Handoff
 
-Plan saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase4b-ai-panel.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. Next: **Phase 5 (reports)**.
+Plan saved to `docs/superpowers/plans/2026-06-27-kanban-phase4b-ai-panel.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. Next: **Phase 5 (reports)**.

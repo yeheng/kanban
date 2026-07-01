@@ -8,11 +8,11 @@
 
 **Tech Stack:** Rust, `sqlx` (SQLite), `tokio`, `thiserror`, `serde` (on `db` row models + `AppError`), `tauri` v2 (command macro + `State` only; no window/context yet — that is Phase 1b).
 
-**Prerequisite:** Phase 0 plan (`docs/superpowers/plans/2026-06-27-hr-kanban-phase0-foundation.md`) is implemented: `domain` (UnitConfig/Calendar/workload/types) and `db` (full schema migration, `connect`, `with_write_tx`, `ResourcesRepo`, `AllocationsRepo`) exist and `cargo test --workspace` passes.
+**Prerequisite:** Phase 0 plan (`docs/superpowers/plans/2026-06-27-kanban-phase0-foundation.md`) is implemented: `domain` (UnitConfig/Calendar/workload/types) and `db` (full schema migration, `connect`, `with_write_tx`, `ResourcesRepo`, `AllocationsRepo`) exist and `cargo test --workspace` passes.
 
 **Scope note:** This is the **backend half** of roadmap Phase 1. The **frontend** (Vite+Vue+Pinio setup, Kanban view, CRUD UIs) is **Phase 1b**, the next plan. Calendar-table repos (`holiday`/`time_off`/`work_week_template`), `resource_project_rates`, and the `workload_cache` materialization belong to Phase 2 (allocations/workload UI) and are intentionally not here. `#[tauri::command]` functions are written and compile-checked; the `tauri::Builder`/window wiring lands in Phase 1b.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§2.5/§6.4 error model, §3.3 schema, §6 service/command split).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§2.5/§6.4 error model, §3.3 schema, §6 service/command split).
 
 ---
 
@@ -1648,7 +1648,7 @@ git commit -m "feat(app): encrypted DB open via SQLCipher (default-on, §6.8)"
 
 ## Execution Handoff
 
-Plan complete and saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase1-backend.md`. Two execution options:
+Plan complete and saved to `docs/superpowers/plans/2026-06-27-kanban-phase1-backend.md`. Two execution options:
 
 1. **Subagent-Driven (recommended)** — I dispatch a fresh subagent per task, review between tasks.
 2. **Inline Execution** — Execute tasks in this session in batches with checkpoints.

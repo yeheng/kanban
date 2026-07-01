@@ -12,7 +12,7 @@
 
 **Scope note:** Project Gantt (bars + move/resize + arrows), resource cross-project Gantt, calendar occupancy grid. Long-term-task segmentation display and virtualization are later refinements. AI panel is Phase 4b.
 
-**Reference design:** `docs/design/2026-06-27-hr-kanban-design.md` (§7 Gantt / calendar views).
+**Reference design:** `docs/design/2026-06-27-kanban-design.md` (§7 Gantt / calendar views).
 
 ---
 
@@ -491,4 +491,4 @@ git add -A && git commit -m "test: Phase 3b end-to-end smoke (gantt/calendar)"
 
 ## Execution Handoff
 
-Plan saved to `docs/superpowers/plans/2026-06-27-hr-kanban-phase3b-frontend.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. Next: **Phase 4 (AI engine)**.
+Plan saved to `docs/superpowers/plans/2026-06-27-kanban-phase3b-frontend.md`. **1. Subagent-Driven** (recommended) or **2. Inline**. Next: **Phase 4 (AI engine)**.
