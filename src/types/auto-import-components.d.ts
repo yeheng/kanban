@@ -12,11 +12,13 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AllocationForm: typeof import('./../components/AllocationForm.vue')['default']
-    AppLayout: typeof import('./../components/AppLayout.vue')['default']
     DateRangePicker: typeof import('./../components/DateRangePicker.vue')['default']
     GanttTimeline: typeof import('./../components/GanttTimeline.vue')['default']
     HolidayList: typeof import('./../components/HolidayList.vue')['default']
     KanbanColumn: typeof import('./../components/KanbanColumn.vue')['default']
+    ListPage: typeof import('./../components/list/ListPage.vue')['default']
+    ListRowActions: typeof import('./../components/list/ListRowActions.vue')['default']
+    ListToolbar: typeof import('./../components/list/ListToolbar.vue')['default']
     OccupancyGrid: typeof import('./../components/OccupancyGrid.vue')['default']
     PlanReview: typeof import('./../components/PlanReview.vue')['default']
     ProjectForm: typeof import('./../components/ProjectForm.vue')['default']

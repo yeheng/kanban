@@ -7,10 +7,17 @@ import AutoImport from "unplugin-auto-import/vite";
 import Component from "unplugin-vue-components/vite";
 import { defineConfig } from "vitest/config";
 import vueDevTools from "vite-plugin-vue-devtools";
+import Layouts from "vite-plugin-vue-layouts";
+import VueRouter from "vue-router/vite";
 import { VueRouterAutoImports } from "vue-router/unplugin";
 
 export default defineConfig({
   plugins: [
+    VueRouter({
+      exclude: ["**/components/**", "**/layouts/**", "**/data/**", "**/types/**", "**/validators/**"],
+      dts: "src/types/route-map.d.ts",
+    }),
+    Layouts({ defaultLayout: "default" }),
     vue(),
     tailwindcss(),
     vueDevTools(),
