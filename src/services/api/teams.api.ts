@@ -1,3 +1,4 @@
+import { type MaybeRef, computed, toValue } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { Team, TeamMember, TeamOverride } from "@/types";
@@ -32,11 +33,13 @@ export function useDeleteTeamMutation() {
   });
 }
 
-export function useListTeamMembersQuery(teamId: number) {
+export function useListTeamMembersQuery(teamId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(teamId));
   return useQuery<TeamMember[]>({
-    queryKey: ["team-members", teamId],
-    queryFn: () => apiFetch<TeamMember[]>(`/api/teams/${teamId}/members`),
+    queryKey: computed(() => ["team-members", id.value]),
+    queryFn: () => apiFetch<TeamMember[]>(`/api/teams/${id.value}/members`),
+    enabled: () => id.value != null,
   });
 }
 
@@ -76,10 +79,12 @@ export function useSetTeamOverrideMutation() {
   });
 }
 
-export function useGetTeamOverrideQuery(teamId: number) {
+export function useGetTeamOverrideQuery(teamId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(teamId));
   return useQuery<TeamOverride | null>({
-    queryKey: ["team-override", teamId],
-    queryFn: () => apiFetch<TeamOverride | null>(`/api/teams/${teamId}/override`),
+    queryKey: computed(() => ["team-override", id.value]),
+    queryFn: () => apiFetch<TeamOverride | null>(`/api/teams/${id.value}/override`),
+    enabled: () => id.value != null,
   });
 }
