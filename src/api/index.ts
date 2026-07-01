@@ -1,4 +1,4 @@
-import type { Project, KanbanTask, Skill, Tag, Resource, ResourceSkill, ResourceTag, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunList, Settings } from "../types";
+import type { Project, KanbanTask, Skill, Tag, Resource, ResourceSkill, ResourceTag, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunList, SuggestionItem, Settings } from "../types";
 
 export type SkillReq = [number, number, boolean, number];
 
@@ -201,6 +201,12 @@ export const api = {
     request("POST", `/api/optimization/runs/${runId}/apply`),
   rejectSolution: (runId: number): Promise<void> =>
     request("POST", `/api/optimization/runs/${runId}/reject`),
+  listSuggestions: (runId: number): Promise<SuggestionItem[]> =>
+    request("GET", `/api/optimization/runs/${runId}/suggestions`),
+  rerun: (runId: number, suggestionIds: number[]): Promise<RunResult> =>
+    request("POST", `/api/optimization/runs/${runId}/rerun`, { suggestion_ids: suggestionIds }),
+  setSuggestionStatus: (id: number, status: string): Promise<void> =>
+    request("PATCH", `/api/optimization/suggestions/${id}`, { status }),
 
   // ---- Phase 5: reports ----
   /** Fetch a report file and trigger a browser download (no Tauri save dialog — the app is HTTP). */
