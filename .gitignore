@@ -12,3 +12,4 @@ pnpm-lock.yaml
 pnpm-workspace.yaml
 shadcn-vue-admin/
 .worktrees/
+*.tsbuildinfo
