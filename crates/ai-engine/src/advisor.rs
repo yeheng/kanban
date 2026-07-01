@@ -22,6 +22,59 @@ impl Advisor for NoAdvisor {
     }
 }
 
+/// 把一批建议应用到 problem（内存快照，不回写 DB）。
+/// - WidenWindow / WidenResourceWindow：只放宽不收窄（防 LLM 误缩）。
+/// - DropDependency：移除 dependency 边。
+/// - ChangeResourceCapacity / UpsertResourceSkill：覆盖对应字段（范围已在 LlmAdvisor::validate_item 校验）。
+/// - AddResource：**跳过**——需从 DB 取 resource，app 层 rerun 单独处理（本函数只动内存）。
+/// - SwapResource / ChangePercent：advisory，不强制生效（求解器无对应旋钮），本函数不改动 problem。
+/// 冲突（同一目标多条）后写覆盖。返回被跳过的 AddResource 列表，供 rerun 从 DB 补。
+pub fn apply_suggestions(problem: &mut AllocationProblem, suggestions: &[Suggestion]) -> Vec<Suggestion> {
+    let mut add_resource_pending = Vec::new();
+    for s in suggestions {
+        match s {
+            Suggestion::WidenWindow { task_id, new_start, new_end } => {
+                if let Some(t) = problem.tasks.iter_mut().find(|t| t.id == *task_id) {
+                    if *new_start <= t.start { t.start = *new_start; }
+                    if *new_end >= t.end { t.end = *new_end; }
+                }
+            }
+            Suggestion::WidenResourceWindow { resource_id, new_available_from, new_available_to } => {
+                if let Some(r) = problem.resources.iter_mut().find(|r| r.id == *resource_id) {
+                    // 只放宽：若原值 None 视为可放宽到新值；若 Some 只在新值更宽时覆盖。
+                    let relax_from = match r.available_from {
+                        Some(cur) => *new_available_from <= cur,
+                        None => true,
+                    };
+                    if relax_from { r.available_from = Some(*new_available_from); }
+                    let relax_to = match r.available_to {
+                        Some(cur) => *new_available_to >= cur,
+                        None => true,
+                    };
+                    if relax_to { r.available_to = Some(*new_available_to); }
+                }
+            }
+            Suggestion::DropDependency { task_id, predecessor_id } => {
+                problem.dependencies.retain(|d| !(d.task_id == *task_id && d.predecessor_id == *predecessor_id));
+            }
+            Suggestion::ChangeResourceCapacity { resource_id, new_daily_capacity_pd } => {
+                if let Some(r) = problem.resources.iter_mut().find(|r| r.id == *resource_id) {
+                    r.daily_capacity_pd = *new_daily_capacity_pd;
+                }
+            }
+            Suggestion::UpsertResourceSkill { resource_id, skill_id, new_proficiency } => {
+                if let Some(r) = problem.resources.iter_mut().find(|r| r.id == *resource_id) {
+                    r.skills.insert(*skill_id, *new_proficiency);
+                }
+            }
+            Suggestion::AddResource { .. } => add_resource_pending.push(s.clone()),
+            // advisory：不改动 problem
+            Suggestion::SwapResource { .. } | Suggestion::ChangePercent { .. } => {}
+        }
+    }
+    add_resource_pending
+}
+
 /// `LlmAdvisor` 与 `select_advisor` 见 `llm` 子模块（仅 `llm` feature 编译）。
 #[cfg(feature = "llm")]
 pub mod llm {
