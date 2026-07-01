@@ -68,8 +68,10 @@ export function useSetTeamOverrideMutation() {
   const queryClient = useQueryClient();
   return useMutation<void, Error, TeamOverride>({
     mutationFn: (override) => apiFetch<void>("/api/teams/overrides", { method: "PUT", body: override }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["team-override"] });
+    onSuccess: (_data, variables) => {
+      // 针对该 team 的 override 缓存；override 改阈值/单位会影响该 team 的 workload 汇总
+      queryClient.invalidateQueries({ queryKey: ["team-override", variables.team_id] });
+      queryClient.invalidateQueries({ queryKey: ["workload-team"] });
     },
   });
 }

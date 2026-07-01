@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { ObjectiveWeights, RunResult, RunRow } from "@/types";
 
+import { invalidateAllocationDerivedViews } from "./invalidate";
+
 export function useRunOptimizationMutation() {
   const { apiFetch } = useApiFetch();
   const queryClient = useQueryClient();
@@ -34,11 +36,7 @@ export function useApplySolutionMutation() {
     mutationFn: (runId) => apiFetch<number>(`/api/optimization/runs/${runId}/apply`, { method: "POST" }),
     onSuccess: () => {
       // 接受方案会改 allocations → 失效所有 allocation 衍生视图
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
-      queryClient.invalidateQueries({ queryKey: ["workload"] });
-      queryClient.invalidateQueries({ queryKey: ["gantt"] });
-      queryClient.invalidateQueries({ queryKey: ["kanban"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateAllocationDerivedViews(queryClient);
       queryClient.invalidateQueries({ queryKey: ["optimization-runs"] });
     },
   });

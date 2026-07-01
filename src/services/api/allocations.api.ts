@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { AllocationView } from "@/types";
 
+import { invalidateAllocationDerivedViews } from "./invalidate";
+
 export function useListAllocationsQuery(projectId: number) {
   const { apiFetch } = useApiFetch();
   return useQuery<AllocationView[]>({
@@ -23,11 +25,7 @@ export function useCreateAllocationMutation() {
       }),
     onSuccess: () => {
       // allocation 写入失效所有 allocation 衍生视图（对应旧 refresh bump 的多 scope）
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
-      queryClient.invalidateQueries({ queryKey: ["workload"] });
-      queryClient.invalidateQueries({ queryKey: ["gantt"] });
-      queryClient.invalidateQueries({ queryKey: ["kanban"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateAllocationDerivedViews(queryClient);
     },
   });
 }
@@ -39,11 +37,7 @@ export function useUpdateAllocationMutation() {
     mutationFn: (args) =>
       apiFetch<void>(`/api/allocations/${args.id}`, { method: "PUT", body: { start: args.start, end: args.end, percent: args.percent } }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
-      queryClient.invalidateQueries({ queryKey: ["workload"] });
-      queryClient.invalidateQueries({ queryKey: ["gantt"] });
-      queryClient.invalidateQueries({ queryKey: ["kanban"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateAllocationDerivedViews(queryClient);
     },
   });
 }
@@ -54,11 +48,7 @@ export function useDeleteAllocationMutation() {
   return useMutation<void, Error, { id: number; projectId?: number }>({
     mutationFn: (args) => apiFetch<void>(`/api/allocations/${args.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["allocations"] });
-      queryClient.invalidateQueries({ queryKey: ["workload"] });
-      queryClient.invalidateQueries({ queryKey: ["gantt"] });
-      queryClient.invalidateQueries({ queryKey: ["kanban"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateAllocationDerivedViews(queryClient);
     },
   });
 }

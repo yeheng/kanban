@@ -2,6 +2,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { Holiday, TimeOff, WeekTemplate } from "@/types";
 
+import { invalidateCalendarDerivedViews } from "./invalidate";
+
 export function useListWorkWeeksQuery() {
   const { apiFetch } = useApiFetch();
   return useQuery<WeekTemplate[]>({
@@ -17,7 +19,8 @@ export function useSetGlobalWorkWeekMutation() {
     mutationFn: (week) => apiFetch<void>("/api/calendar/work-week", { method: "POST", body: { week } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["work-weeks"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      // work-week 变更影响利用率与占用网格
+      invalidateCalendarDerivedViews(queryClient);
     },
   });
 }
@@ -41,7 +44,7 @@ export function useAddHolidayMutation() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["holidays"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateCalendarDerivedViews(queryClient);
     },
   });
 }
@@ -53,7 +56,7 @@ export function useDeleteHolidayMutation() {
     mutationFn: (id) => apiFetch<void>(`/api/calendar/holidays/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["holidays"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateCalendarDerivedViews(queryClient);
     },
   });
 }
@@ -77,7 +80,7 @@ export function useAddTimeOffMutation() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["time-off"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateCalendarDerivedViews(queryClient);
     },
   });
 }
@@ -89,7 +92,7 @@ export function useDeleteTimeOffMutation() {
     mutationFn: (id) => apiFetch<void>(`/api/calendar/time-off/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["time-off"] });
-      queryClient.invalidateQueries({ queryKey: ["calendar"] });
+      invalidateCalendarDerivedViews(queryClient);
     },
   });
 }
