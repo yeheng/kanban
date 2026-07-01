@@ -107,6 +107,33 @@ impl OptimizationService {
             .bind(snap).bind(out).bind(cons).bind(run_id)
             .execute(pool).await?;
 
+        // LLM 建议：若启用 advisor，审视方案产出结构化建议并写表（status='proposed'）。
+        // 无建议（LLM 不可用/解析空）时表里无行，前端显示"AI 无建议"。
+        let advisor = select_advisor(&ai);
+        let suggestions = advisor.advise(&problem, &plan.solution).await;
+        for item in &suggestions {
+            let kind = match &item.suggestion {
+                ai_engine::types::Suggestion::SwapResource { .. } => "swap_resource",
+                ai_engine::types::Suggestion::ChangePercent { .. } => "change_percent",
+                ai_engine::types::Suggestion::WidenWindow { .. } => "widen_window",
+                ai_engine::types::Suggestion::DropDependency { .. } => "drop_dependency",
+                ai_engine::types::Suggestion::AddResource { .. } => "add_resource",
+                ai_engine::types::Suggestion::WidenResourceWindow { .. } => "widen_resource_window",
+                ai_engine::types::Suggestion::ChangeResourceCapacity { .. } => "change_resource_capacity",
+                ai_engine::types::Suggestion::UpsertResourceSkill { .. } => "upsert_resource_skill",
+            };
+            let payload = serde_json::to_string(&item.suggestion).unwrap_or_default();
+            sqlx::query(
+                "INSERT INTO ai_optimization_suggestions (run_id, kind, target_task_id, target_resource_id, payload_json, rationale_md, status) \
+                 VALUES (?,?,?,?,?,?,?)")
+                .bind(run_id).bind(kind)
+                .bind(item.suggestion.target_task_id())
+                .bind(item.suggestion.target_resource_id())
+                .bind(payload).bind(&item.rationale_md).bind("proposed")
+                .execute(pool).await?;
+        }
+        tracing::debug!(run_id = run_id, suggestions = suggestions.len(), "advisor suggestions persisted");
+
         tracing::info!(
             run_id = run_id,
             duration_ms = duration_ms,
