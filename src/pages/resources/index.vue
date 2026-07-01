@@ -46,7 +46,6 @@ import ListRowActions from "@/components/list/ListRowActions.vue";
 import ListToolbar from "@/components/list/ListToolbar.vue";
 import {
   useListResourcesQuery,
-  useCreateResourceMutation,
   useUpdateResourceMutation,
   useDeleteResourceMutation,
   useGetResourceSkillsQuery,
@@ -60,7 +59,6 @@ import { fmtDate, parseDate } from "@/utils/date";
 import type { Resource, ResourceSkill, ResourceTag } from "@/types";
 
 const resourcesQuery = useListResourcesQuery();
-const createResource = useCreateResourceMutation();
 const updateResource = useUpdateResourceMutation();
 const deleteResource = useDeleteResourceMutation();
 const setResourceSkills = useSetResourceSkillsMutation();
@@ -193,24 +191,34 @@ function openEdit(r: Resource) {
   editAvailTo.value = parseDate(r.available_to);
   editCapacity.value = r.daily_capacity_pd;
   editRate.value = r.daily_rate_pd;
+  editSkills.value = [];
+  editTags.value = [];
   editVisible.value = true;
 }
 
 async function saveEdit() {
   if (editingId.value == null) return;
-  await updateResource.mutateAsync({
-    id: editingId.value,
-    name: editName.value,
-    email: editEmail.value || null,
-    availableFrom: editAvailFrom.value != null ? fmtDate(editAvailFrom.value) : null,
-    availableTo: editAvailTo.value != null ? fmtDate(editAvailTo.value) : null,
-    dailyCapacityPd: editCapacity.value,
-    dailyRatePd: editRate.value,
-  });
-  await setResourceSkills.mutateAsync({ id: editingId.value, skills: editSkills.value.map((s) => [s.skillId, s.proficiency]) });
-  await setResourceTags.mutateAsync({ id: editingId.value, tagIds: editTags.value });
-  editVisible.value = false;
-  editingId.value = null;
+  const id = editingId.value;
+  try {
+    await updateResource.mutateAsync({
+      id,
+      name: editName.value,
+      email: editEmail.value || null,
+      availableFrom: editAvailFrom.value != null ? fmtDate(editAvailFrom.value) : null,
+      availableTo: editAvailTo.value != null ? fmtDate(editAvailTo.value) : null,
+      dailyCapacityPd: editCapacity.value,
+      dailyRatePd: editRate.value,
+    });
+    await setResourceSkills.mutateAsync({ id, skills: editSkills.value.map((s) => [s.skillId, s.proficiency]) });
+    await setResourceTags.mutateAsync({ id, tagIds: editTags.value });
+    delete skillCache.value[id];
+    delete tagCache.value[id];
+    editVisible.value = false;
+    editingId.value = null;
+  } catch (e: unknown) {
+    // Keep the dialog open so the user can retry or correct the input.
+    console.error("Failed to save resource:", e);
+  }
 }
 
 // Delete confirmation dialog state

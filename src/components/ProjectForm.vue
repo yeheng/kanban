@@ -21,6 +21,8 @@ async function submit() {
   if (!name.value.trim()) return;
   await createProject.mutateAsync({ name: name.value, priority: priority.value, budgetPd: budget.value });
   name.value = "";
+  priority.value = 5;
+  budget.value = 0;
 }
 </script>
 
