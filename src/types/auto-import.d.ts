@@ -56,28 +56,17 @@ declare global {
   const toValue: typeof import('vue').toValue
   const triggerRef: typeof import('vue').triggerRef
   const unref: typeof import('vue').unref
-  const useAllocationsStore: typeof import('../stores/allocations').useAllocationsStore
   const useAttrs: typeof import('vue').useAttrs
-  const useCalendarStore: typeof import('../stores/calendar').useCalendarStore
-  const useCatalogStore: typeof import('../stores/catalog').useCatalogStore
   const useCssModule: typeof import('vue').useCssModule
   const useCssVars: typeof import('vue').useCssVars
-  const useGanttStore: typeof import('../stores/gantt').useGanttStore
   const useId: typeof import('vue').useId
   const useModel: typeof import('vue').useModel
-  const useOptimizationStore: typeof import('../stores/optimization').useOptimizationStore
   const useProjectsStore: typeof import('../stores/projects').useProjectsStore
-  const useRefreshStore: typeof import('../stores/refresh').useRefreshStore
-  const useResourcesStore: typeof import('../stores/resources').useResourcesStore
   const useRoute: typeof import('vue-router').useRoute
   const useRouter: typeof import('vue-router').useRouter
-  const useSettingsStore: typeof import('../stores/settings').useSettingsStore
   const useSlots: typeof import('vue').useSlots
-  const useTasksStore: typeof import('../stores/tasks').useTasksStore
-  const useTeamsStore: typeof import('../stores/teams').useTeamsStore
   const useTemplateRef: typeof import('vue').useTemplateRef
   const useUnitStore: typeof import('../stores/unit').useUnitStore
-  const useWorkloadStore: typeof import('../stores/workload').useWorkloadStore
   const watch: typeof import('vue').watch
   const watchEffect: typeof import('vue').watchEffect
   const watchPostEffect: typeof import('vue').watchPostEffect
@@ -88,7 +77,4 @@ declare global {
   // @ts-ignore
   export type { Component, Slot, Slots, ComponentPublicInstance, ComputedRef, DirectiveBinding, ExtractDefaultPropTypes, ExtractPropTypes, ExtractPublicPropTypes, InjectionKey, PropType, Ref, ShallowRef, MaybeRef, MaybeRefOrGetter, VNode, WritableComputedRef } from 'vue'
   import('vue')
-  // @ts-ignore
-  export type { RefreshScope } from '../stores/refresh'
-  import('../stores/refresh')
 }
