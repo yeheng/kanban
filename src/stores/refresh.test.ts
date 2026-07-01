@@ -21,6 +21,10 @@ vi.mock("../api", () => ({
     addDependency: vi.fn().mockResolvedValue(undefined),
     addHoliday: vi.fn().mockResolvedValue(undefined),
     listHolidays: vi.fn().mockResolvedValue([]),
+    listSuggestions: vi.fn().mockResolvedValue([]),
+    rerun: vi.fn(),
+    setSuggestionStatus: vi.fn().mockResolvedValue(undefined),
+    getOptimizationRun: vi.fn(),
   },
 }));
 beforeEach(() => { setActivePinia(createPinia()); });
