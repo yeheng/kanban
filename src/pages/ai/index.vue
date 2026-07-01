@@ -9,6 +9,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   useRunOptimizationMutation,
   useListOptimizationRunsQuery,
@@ -34,9 +36,19 @@ const page = ref(1);
 const pageSize = ref(10);
 
 const viewRunQuery = useGetOptimizationRunQuery(viewingRunId);
+const viewError = ref<string | null>(null);
 
 watch(() => viewRunQuery.data.value, (run) => {
-  if (run) currentRun.value = run;
+  if (run) {
+    currentRun.value = run;
+    viewError.value = null;
+  }
+});
+
+watch(() => viewRunQuery.error.value, (e) => {
+  if (e) {
+    viewError.value = e instanceof Error ? e.message : String(e);
+  }
 });
 
 const totalPages = computed(() =>
@@ -50,27 +62,42 @@ const displayedRows = computed(() => {
 });
 
 async function runForCurrent() {
-  if (projects.current == null) return;
-  const result = await runOptimization.mutateAsync({ projectId: projects.current, weights: weights.value });
-  currentRun.value = result;
-  viewingRunId.value = null;
+  if (projects.current == null || runOptimization.isPending.value) return;
+  viewError.value = null;
+  try {
+    const result = await runOptimization.mutateAsync({ projectId: projects.current, weights: weights.value });
+    currentRun.value = result;
+    viewingRunId.value = null;
+  } catch (e: unknown) {
+    viewError.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
 async function loadRun(id: number) {
+  if (runOptimization.isPending.value) return;
+  viewError.value = null;
+  currentRun.value = null;
   viewingRunId.value = id;
-  // The watch on viewRunQuery.data will set currentRun when data arrives.
 }
 
 async function accept(runId: number) {
-  await applySolution.mutateAsync(runId);
-  currentRun.value = null;
-  viewingRunId.value = null;
+  try {
+    await applySolution.mutateAsync(runId);
+    currentRun.value = null;
+    viewingRunId.value = null;
+  } catch (e: unknown) {
+    viewError.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
 async function reject(runId: number) {
-  await rejectSolution.mutateAsync(runId);
-  currentRun.value = null;
-  viewingRunId.value = null;
+  try {
+    await rejectSolution.mutateAsync(runId);
+    currentRun.value = null;
+    viewingRunId.value = null;
+  } catch (e: unknown) {
+    viewError.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
 function setPage(n: number) {
@@ -98,6 +125,13 @@ function setPageSize(n: number) {
     </div>
     <div class="flex-1">
       <PlanReview v-if="currentRun" :run="currentRun" @accept="accept" @reject="reject" />
+      <div v-else-if="viewRunQuery.isPending" class="space-y-2">
+        <Skeleton class="h-6 w-48" />
+        <Skeleton class="h-32 w-full" />
+      </div>
+      <Alert v-else-if="viewError" variant="destructive">
+        <AlertDescription>{{ viewError }}</AlertDescription>
+      </Alert>
       <span v-else class="text-muted-foreground">运行优化后在此查看建议方案。</span>
     </div>
   </div>

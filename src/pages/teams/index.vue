@@ -155,6 +155,9 @@ function openDeleteDialog(id: number) {
 async function confirmDelete() {
   if (deleteTargetId.value == null) return;
   await deleteTeam.mutateAsync(deleteTargetId.value);
+  if (selectedTeam.value === deleteTargetId.value) {
+    selectedTeam.value = null;
+  }
   deleteDialogOpen.value = false;
   deleteTargetId.value = null;
 }

@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -57,6 +59,23 @@ const unitConfigQuery = useGetUnitConfigQuery();
 const ready = computed(() =>
   projectsQuery.isSuccess && skillsQuery.isSuccess && tagsQuery.isSuccess && unitConfigQuery.isSuccess,
 );
+
+const error = computed(() => {
+  const queries = [projectsQuery, skillsQuery, tagsQuery, unitConfigQuery];
+  const failed = queries.find((q) => q.isError);
+  if (!failed) return null;
+  const e = failed.error.value;
+  return e instanceof Error ? e.message : String(e);
+});
+
+async function retry() {
+  await Promise.all([
+    projectsQuery.refetch(),
+    skillsQuery.refetch(),
+    tagsQuery.refetch(),
+    unitConfigQuery.refetch(),
+  ]);
+}
 
 watch(() => projectsQuery.data.value, (items) => {
   if (projects.current == null && items && items.length > 0) {
@@ -169,7 +188,14 @@ function onProjectChange(value: unknown) {
       </header>
 
       <main class="flex-1 overflow-auto p-6">
-        <div v-if="!ready" class="space-y-4">
+        <div v-if="error" class="space-y-4">
+          <Alert variant="destructive">
+            <AlertTitle>加载失败</AlertTitle>
+            <AlertDescription>{{ error }}</AlertDescription>
+          </Alert>
+          <Button variant="outline" @click="retry">重试</Button>
+        </div>
+        <div v-else-if="!ready" class="space-y-4">
           <Skeleton class="h-8 w-48" />
           <Skeleton class="h-32 w-full" />
           <Skeleton class="h-32 w-full" />
