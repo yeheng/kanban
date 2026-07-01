@@ -5,7 +5,7 @@ use ai_engine::types::*;
 use chrono::{Days, NaiveDate};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[allow(unused_imports)]
@@ -107,6 +107,33 @@ impl OptimizationService {
             .bind(snap).bind(out).bind(cons).bind(run_id)
             .execute(pool).await?;
 
+        // LLM 建议：若启用 advisor，审视方案产出结构化建议并写表（status='proposed'）。
+        // 无建议（LLM 不可用/解析空）时表里无行，前端显示"AI 无建议"。
+        let advisor = select_advisor(&ai);
+        let suggestions = advisor.advise(&problem, &plan.solution).await;
+        for item in &suggestions {
+            let kind = match &item.suggestion {
+                ai_engine::types::Suggestion::SwapResource { .. } => "swap_resource",
+                ai_engine::types::Suggestion::ChangePercent { .. } => "change_percent",
+                ai_engine::types::Suggestion::WidenWindow { .. } => "widen_window",
+                ai_engine::types::Suggestion::DropDependency { .. } => "drop_dependency",
+                ai_engine::types::Suggestion::AddResource { .. } => "add_resource",
+                ai_engine::types::Suggestion::WidenResourceWindow { .. } => "widen_resource_window",
+                ai_engine::types::Suggestion::ChangeResourceCapacity { .. } => "change_resource_capacity",
+                ai_engine::types::Suggestion::UpsertResourceSkill { .. } => "upsert_resource_skill",
+            };
+            let payload = serde_json::to_string(&item.suggestion).unwrap_or_default();
+            sqlx::query(
+                "INSERT INTO ai_optimization_suggestions (run_id, kind, target_task_id, target_resource_id, payload_json, rationale_md, status) \
+                 VALUES (?,?,?,?,?,?,?)")
+                .bind(run_id).bind(kind)
+                .bind(item.suggestion.target_task_id())
+                .bind(item.suggestion.target_resource_id())
+                .bind(payload).bind(&item.rationale_md).bind("proposed")
+                .execute(pool).await?;
+        }
+        tracing::debug!(run_id = run_id, suggestions = suggestions.len(), "advisor suggestions persisted");
+
         tracing::info!(
             run_id = run_id,
             duration_ms = duration_ms,
@@ -197,14 +224,203 @@ impl OptimizationService {
         Ok(())
     }
 
-    #[tracing::instrument(skip(pool), fields(limit = limit))]
-    pub async fn list_recent(pool: &SqlitePool, limit: i64) -> Result<Vec<RunRow>, AppError> {
+    /// Paginated list of historical runs. Returns both the page rows and the total count so
+    /// the frontend can render a real pager (offset/limit, ordered newest-first).
+    #[tracing::instrument(skip(pool), fields(offset = offset, limit = limit))]
+    pub async fn list_recent(pool: &SqlitePool, offset: i64, limit: i64) -> Result<RunList, AppError> {
+        let limit = limit.max(1);
         let rows = sqlx::query_as::<_, RunRow>(
             "SELECT id, objective, status, applied, score_overall, created_at FROM ai_optimization_runs \
-             ORDER BY created_at DESC LIMIT ?")
-            .bind(limit).fetch_all(pool).await?;
-        tracing::debug!(count = rows.len(), limit = limit, "listed optimization runs");
-        Ok(rows)
+             ORDER BY created_at DESC LIMIT ? OFFSET ?")
+            .bind(limit).bind(offset.max(0)).fetch_all(pool).await?;
+        let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM ai_optimization_runs")
+            .fetch_one(pool).await?;
+        tracing::debug!(count = rows.len(), total = total, offset = offset, limit = limit, "listed optimization runs");
+        Ok(RunList { rows, total })
+    }
+
+    /// Reconstruct a persisted run as a `RunResult` so the UI (or reports) can replay the
+    /// AI decision: assignments, unscheduled tasks, metrics, and explanation. The unscheduled
+    /// list is derived from the input snapshot (all candidate tasks minus assigned ones) so it
+    /// remains accurate even if tasks are later deleted or changed.
+    #[tracing::instrument(skip(pool), fields(run_id = run_id))]
+    pub async fn get_run(pool: &SqlitePool, run_id: i64) -> Result<RunResult, AppError> {
+        let row: RunDetailRow = sqlx::query_as(
+            "SELECT id, output_plan_json, input_snapshot_json, score_overall, score_skill_fit, \
+             score_scheduled_ratio, score_fairness, explanation_md, solver_status \
+             FROM ai_optimization_runs WHERE id=?",
+        )
+        .bind(run_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| AppError::not_found(format!("optimization run {run_id}")))?;
+
+        let assignments: Vec<ai_engine::ScoredAssignment> =
+            serde_json::from_str(row.output_plan_json.as_deref().unwrap_or("[]"))
+                .map_err(|e| AppError::internal(format!("invalid optimization plan json: {e}")))?;
+
+        // Reconstruct the problem snapshot so we can recover the full candidate task set.
+        let problem: AllocationProblem =
+            serde_json::from_str(&row.input_snapshot_json).unwrap_or_default();
+        let assigned: HashSet<i64> = assignments.iter().map(|a| a.task_id).collect();
+        let mut unscheduled: Vec<i64> = problem
+            .tasks
+            .iter()
+            .map(|t| t.id)
+            .filter(|id| !assigned.contains(id))
+            .collect();
+        // Preserve a deterministic order for easier UI diffs.
+        unscheduled.sort();
+
+        let solution = Solution {
+            run_id: row.id,
+            assignments,
+            unscheduled,
+            metrics: SolutionMetrics {
+                overall: row.score_overall.unwrap_or(0.0),
+                skill_fit: row.score_skill_fit.unwrap_or(0.0),
+                scheduled_ratio: row.score_scheduled_ratio.unwrap_or(0.0),
+                fairness: row.score_fairness.unwrap_or(0.0),
+            },
+            status: parse_solver_status(&row.solver_status),
+        };
+        let plan = ai_engine::OptimizedPlan {
+            solution,
+            explanation_md: row.explanation_md.unwrap_or_default(),
+        };
+        tracing::debug!(run_id = run_id, assignments = plan.solution.assignments.len(), unscheduled = plan.solution.unscheduled.len(), "loaded optimization run");
+        Ok(RunResult { run_id: row.id, plan })
+    }
+    /// 列出某 run 的全部 LLM 建议。
+    pub async fn list_suggestions(pool: &SqlitePool, run_id: i64) -> Result<Vec<SuggestionItem>, AppError> {
+        #[derive(sqlx::FromRow)]
+        struct Row { id: i64, payload_json: String, rationale_md: String, status: String }
+        let rows: Vec<Row> = sqlx::query_as(
+            "SELECT id, payload_json, rationale_md, status FROM ai_optimization_suggestions WHERE run_id=? ORDER BY id")
+            .bind(run_id).fetch_all(pool).await?;
+        let mut out = Vec::new();
+        for r in rows {
+            let suggestion: ai_engine::types::Suggestion =
+                serde_json::from_str(&r.payload_json).map_err(|e| AppError::internal(format!("invalid suggestion json: {e}")))?;
+            out.push(SuggestionItem { id: Some(r.id), suggestion, rationale_md: r.rationale_md, status: r.status });
+        }
+        Ok(out)
+    }
+
+    /// 标记某条建议状态（proposed/accepted/skipped/applied）。
+    pub async fn set_suggestion_status(pool: &SqlitePool, suggestion_id: i64, status: &str) -> Result<(), AppError> {
+        sqlx::query("UPDATE ai_optimization_suggestions SET status=? WHERE id=?")
+            .bind(status).bind(suggestion_id).execute(pool).await?;
+        Ok(())
+    }
+
+    /// 用采纳的建议重跑求解器：从父 run 的 input_snapshot 重建 problem → 应用建议 →
+    /// 重跑 → 插新 run（parent_run_id 指回父 run）→ 标建议 applied。返回新 RunResult。
+    #[tracing::instrument(skip(pool), fields(parent_run_id = parent_run_id))]
+    pub async fn rerun(
+        pool: &SqlitePool, parent_run_id: i64, accepted_ids: Vec<i64>,
+    ) -> Result<RunResult, AppError> {
+        // 1. 读父 run 快照 + 配置。weights/config 不单独读——它们已编码进 input_snapshot_json，
+        //    rerun 从重建的 problem 取 weights，config 由下方 ai 设置覆盖。
+        #[derive(sqlx::FromRow)]
+        struct ParentRow {
+            input_snapshot_json: String,
+            scope_project_ids: Option<String>,
+        }
+        let parent: ParentRow = sqlx::query_as(
+            "SELECT input_snapshot_json, scope_project_ids \
+             FROM ai_optimization_runs WHERE id=?")
+            .bind(parent_run_id).fetch_optional(pool).await?
+            .ok_or_else(|| AppError::not_found(format!("optimization run {parent_run_id}")))?;
+        let mut problem: ai_engine::types::AllocationProblem =
+            serde_json::from_str(&parent.input_snapshot_json)
+                .map_err(|e| AppError::internal(format!("invalid input snapshot json: {e}")))?;
+
+        // 2. 读采纳的建议（只取 run_id 匹配且 status='accepted' 的；越界 id 忽略）。
+        #[derive(sqlx::FromRow)]
+        struct SugRow { id: i64, payload_json: String }
+        let rows: Vec<SugRow> = sqlx::query_as(
+            "SELECT id, payload_json FROM ai_optimization_suggestions WHERE run_id=? AND status='accepted'")
+            .bind(parent_run_id).fetch_all(pool).await?;
+        let accepted_set: std::collections::HashSet<i64> = accepted_ids.into_iter().collect();
+        let mut applied_suggestion_ids: Vec<i64> = Vec::new();
+        let mut suggestions: Vec<ai_engine::types::Suggestion> = Vec::new();
+        for r in rows {
+            if !accepted_set.contains(&r.id) { continue; }
+            match serde_json::from_str::<ai_engine::types::Suggestion>(&r.payload_json) {
+                Ok(s) => { suggestions.push(s); applied_suggestion_ids.push(r.id); }
+                Err(e) => tracing::warn!(suggestion_id = r.id, error = %e, "skipping unparseable suggestion"),
+            }
+        }
+
+        // 3. 应用内存可改建议；AddResource 单独从 DB 补。
+        let add_pending = ai_engine::advisor::apply_suggestions(&mut problem, &suggestions);
+        for s in &add_pending {
+            if let ai_engine::types::Suggestion::AddResource { resource_id } = s {
+                if let Some(cr) = load_candidate_resource(pool, *resource_id).await? {
+                    if !problem.resources.iter().any(|r| r.id == cr.id) {
+                        problem.resources.push(cr);
+                    }
+                } else {
+                    tracing::warn!(resource_id, "AddResource: resource not found in DB, skipping");
+                }
+            }
+        }
+
+        // 4. 复用 run_for_project 的下半段（scorer/solve/explain/persist）。
+        problem.run_id = 0;
+        let ai = db::SettingsRepo::ai_settings(pool).await?;
+        let total = (problem.weights.skill_fit + problem.weights.balance).max(0.001);
+        let scorer = select_scorer(&ai, problem.weights.skill_fit / total, problem.weights.balance / total);
+        let explainer = select_explainer(&ai);
+        let (solver, effective_backend) = select_solver(&ai);
+        problem.config.backend = effective_backend.to_string();
+        problem.config.timeout_ms = ai.solver_timeout_ms;
+        let milp_active = cfg!(feature = "milp") && ai.solver_backend == "good_lp";
+        let started = chrono::Utc::now();
+        let scores = scorer.matrix(&problem).await;
+        let solution = solve_with_fallback(&ai, solver, milp_active, &problem, &scores).await;
+        let explanation_md = explainer.explain(&problem, &solution).await;
+        let mut plan = ai_engine::OptimizedPlan { solution, explanation_md };
+        let finished = chrono::Utc::now();
+        let duration_ms = (finished - started).num_milliseconds();
+
+        let cfg = serde_json::to_string(&problem.config).unwrap_or_default();
+        let wts = serde_json::to_string(&problem.weights).unwrap_or_default();
+        // 5. 插新 run（parent_run_id 指回父 run）。列顺序与 run_for_project 的 INSERT 对齐，末尾多 parent_run_id。
+        //    23 列：4 字面量（constraints_json='', input_snapshot_json='', output_plan_json='',
+        //    status='proposed'）→ 19 个 `?` 占位符，19 个 bind。
+        let (run_id,): (i64,) = sqlx::query_as(
+            "INSERT INTO ai_optimization_runs (seed, scope, scope_project_ids, config_json, constraints_json, \
+                weights_json, input_snapshot_json, output_plan_json, score_overall, score_skill_fit, \
+                score_scheduled_ratio, score_fairness, explanation_md, provider, chat_model, embed_model, \
+                solver_backend, solver_status, status, started_at, finished_at, duration_ms, parent_run_id) \
+             VALUES (?,?,?,?,'',?,'','',?,?,?,?,?,?,?,?,?,?,'proposed',?,?,?,?) RETURNING id")
+            .bind(0i64).bind("full").bind(parent.scope_project_ids)
+            .bind(cfg).bind(wts)
+            .bind(plan.solution.metrics.overall).bind(plan.solution.metrics.skill_fit)
+            .bind(plan.solution.metrics.scheduled_ratio).bind(plan.solution.metrics.fairness)
+            .bind(&plan.explanation_md)
+            .bind(&ai.chat.provider).bind(&ai.chat.model).bind(&ai.embed.model).bind(effective_backend)
+            .bind(plan.solution.status.as_str())
+            .bind(started.to_rfc3339()).bind(finished.to_rfc3339()).bind(duration_ms)
+            .bind(parent_run_id)
+            .fetch_one(pool).await?;
+        problem.run_id = run_id;
+        plan.solution.run_id = run_id;
+        let snap = serde_json::to_string(&problem).unwrap_or_default();
+        let out = serde_json::to_string(&plan.solution.assignments).unwrap_or_default();
+        let cons = serde_json::to_string(&problem.dependencies).unwrap_or_else(|_| "[]".into());
+        sqlx::query("UPDATE ai_optimization_runs SET input_snapshot_json=?, output_plan_json=?, constraints_json=? WHERE id=?")
+            .bind(snap).bind(out).bind(cons).bind(run_id).execute(pool).await?;
+
+        // 6. 标采纳建议 applied。
+        for id in &applied_suggestion_ids {
+            sqlx::query("UPDATE ai_optimization_suggestions SET status='applied' WHERE id=?")
+                .bind(id).execute(pool).await?;
+        }
+        tracing::info!(run_id = run_id, parent_run_id = parent_run_id, applied_suggestions = applied_suggestion_ids.len(), "rerun completed");
+        Ok(RunResult { run_id, plan })
     }
 }
 
@@ -216,6 +432,36 @@ pub struct RunRow {
     pub applied: i64,
     pub score_overall: Option<f64>,
     pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RunList {
+    pub rows: Vec<RunRow>,
+    pub total: i64,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct RunDetailRow {
+    pub id: i64,
+    pub output_plan_json: Option<String>,
+    pub input_snapshot_json: String,
+    pub score_overall: Option<f64>,
+    pub score_skill_fit: Option<f64>,
+    pub score_scheduled_ratio: Option<f64>,
+    pub score_fairness: Option<f64>,
+    pub explanation_md: Option<String>,
+    pub solver_status: String,
+}
+
+fn parse_solver_status(s: &str) -> SolverStatus {
+    match s {
+        "optimal" => SolverStatus::Optimal,
+        "feasible" => SolverStatus::Feasible,
+        "infeasible" => SolverStatus::Infeasible,
+        "timeout" => SolverStatus::Timeout,
+        "error" => SolverStatus::Error,
+        _ => SolverStatus::Feasible,
+    }
 }
 
 /// Re-read the current (start, end) window for each id in `ids`, inside the given tx, so apply()
@@ -241,6 +487,30 @@ async fn current_windows(
         map.insert(row.0, (row.1, row.2));
     }
     Ok(map)
+}
+
+/// 按 id 从 DB 加载单个 CandidateResource（含 skills/tags/capacity/window），供 AddResource 建议用。
+/// 不存在或已删除返回 None。
+async fn load_candidate_resource(pool: &SqlitePool, resource_id: i64) -> Result<Option<ai_engine::types::CandidateResource>, AppError> {
+    use std::collections::HashMap;
+    type ResRow = (i64, String, f64, Option<NaiveDate>, Option<NaiveDate>);
+    let row: Option<ResRow> = sqlx::query_as(
+        "SELECT id, name, daily_capacity_pd, available_from, available_to \
+         FROM resources WHERE id=? AND deleted_at IS NULL AND status='active'")
+        .bind(resource_id).fetch_optional(pool).await?;
+    let Some((id, name, cap, af, at)) = row else { return Ok(None); };
+    let skill_rows: Vec<(i64, i64, i64)> = sqlx::query_as(
+        "SELECT resource_id, skill_id, proficiency FROM resource_skills WHERE resource_id=?")
+        .bind(id).fetch_all(pool).await?;
+    let mut skills: HashMap<i64, i64> = HashMap::new();
+    for (_, sid, prof) in skill_rows { skills.insert(sid, prof); }
+    let tag_rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT rt.resource_id, t.name FROM resource_tags rt JOIN tags t ON t.id=rt.tag_id WHERE rt.resource_id=?")
+        .bind(id).fetch_all(pool).await?;
+    let tags: Vec<String> = tag_rows.into_iter().map(|(_, n)| n).collect();
+    Ok(Some(ai_engine::types::CandidateResource {
+        id, name, skills, tags, daily_capacity_pd: cap, available_from: af, available_to: at,
+    }))
 }
 
 async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationProblem, AppError> {
@@ -461,6 +731,24 @@ fn select_explainer(ai: &db::AiSettings) -> Arc<dyn ai_engine::explainer::Explai
     }
     let _ = ai; // silence unused when llm feature off
     Arc::new(ai_engine::explainer::TemplateExplainer)
+}
+
+/// Pick the advisor based on AI settings. 当 `llm` feature 编译且 `use_llm_advisor` 为真时
+/// 用 `LlmAdvisor`；否则 `NoAdvisor`（无建议，功能等同关闭）。`LlmAdvisor` 在 provider
+/// 错误或 JSON 解析失败时返回空 Vec（graceful degradation）。
+fn select_advisor(ai: &db::AiSettings) -> Arc<dyn ai_engine::advisor::Advisor> {
+    #[cfg(feature = "llm")]
+    if ai.use_llm_advisor {
+        return Arc::new(ai_engine::advisor::llm::LlmAdvisor {
+            provider: ai.chat.provider.clone(),
+            model: ai.chat.model.clone(),
+            base_url: ai.chat.base_url.clone(),
+            api_key: ai.chat.api_key_enc.clone(),
+            preamble: None,
+        });
+    }
+    let _ = ai;
+    Arc::new(ai_engine::advisor::NoAdvisor)
 }
 
 /// Pick the solver based on AI settings. When the `milp` feature is compiled in AND

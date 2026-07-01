@@ -13,7 +13,7 @@ async fn migration_creates_all_tables() {
         "settings","tags","skills","resources","resource_skills","resource_tags",
         "teams","team_members","team_overrides","work_week_template","holiday","time_off",
         "projects","tasks","task_dependencies","task_skill_requirements","task_tags",
-        "allocations","ai_optimization_runs","resource_project_rates",
+        "allocations","ai_optimization_runs","ai_optimization_suggestions","resource_project_rates",
     ];
     for tbl in expected {
         let exists: (i64,) = sqlx::query_as(

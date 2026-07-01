@@ -21,6 +21,7 @@ import {
 import { useProjectsStore } from "@/stores/projects";
 import WeightsPanel from "@/components/WeightsPanel.vue";
 import PlanReview from "@/components/PlanReview.vue";
+import PlanCompare from "@/components/PlanCompare.vue";
 import type { ObjectiveWeights, RunResult } from "@/types";
 
 const projects = useProjectsStore();
@@ -108,6 +109,9 @@ function setPageSize(n: number) {
   pageSize.value = Math.max(1, n);
   page.value = 1;
 }
+const totalPages = computed(() =>
+  Math.max(1, Math.ceil(opt.history.total / opt.pageSize))
+);
 </script>
 
 <template>
@@ -133,6 +137,7 @@ function setPageSize(n: number) {
         <AlertDescription>{{ viewError }}</AlertDescription>
       </Alert>
       <span v-else class="text-muted-foreground">运行优化后在此查看建议方案。</span>
+      <PlanCompare />
     </div>
   </div>
 
@@ -145,6 +150,7 @@ function setPageSize(n: number) {
         <TableHead>评分</TableHead>
         <TableHead>已采纳</TableHead>
         <TableHead>时间</TableHead>
+        <TableHead>操作</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>
@@ -156,6 +162,11 @@ function setPageSize(n: number) {
         </TableCell>
         <TableCell>{{ row.applied ? "是" : "否" }}</TableCell>
         <TableCell>{{ row.created_at }}</TableCell>
+        <TableCell>
+          <Button variant="outline" size="sm" @click="opt.loadRun(row.id)">
+            查看方案
+          </Button>
+        </TableCell>
       </TableRow>
     </TableBody>
   </Table>

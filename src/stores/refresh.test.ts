@@ -13,7 +13,7 @@ import { api } from "../api";
 vi.mock("../api", () => ({
   api: {
     applySolution: vi.fn().mockResolvedValue(undefined),
-    listOptimizationRuns: vi.fn().mockResolvedValue([]),
+    listOptimizationRuns: vi.fn().mockResolvedValue({ rows: [], total: 0 }),
     createAllocation: vi.fn().mockResolvedValue(1),
     listAllocations: vi.fn().mockResolvedValue([]),
     rejectSolution: vi.fn().mockResolvedValue(undefined),
@@ -21,6 +21,10 @@ vi.mock("../api", () => ({
     addDependency: vi.fn().mockResolvedValue(undefined),
     addHoliday: vi.fn().mockResolvedValue(undefined),
     listHolidays: vi.fn().mockResolvedValue([]),
+    listSuggestions: vi.fn().mockResolvedValue([]),
+    rerun: vi.fn(),
+    setSuggestionStatus: vi.fn().mockResolvedValue(undefined),
+    getOptimizationRun: vi.fn(),
   },
 }));
 beforeEach(() => { setActivePinia(createPinia()); });

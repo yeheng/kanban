@@ -240,6 +240,15 @@ function updateNullableString(
             </div>
           </div>
           <div class="grid gap-2">
+            <Label>启用 LLM 建议</Label>
+            <div class="flex h-9 items-center">
+              <Switch v-model:checked="draft.use_llm_advisor" />
+            </div>
+            <p class="text-xs text-muted-foreground">
+              开启后优化方案将附带结构化改进建议（换人/放宽窗口/解依赖等），可勾选后重跑求解器对比。
+            </p>
+          </div>
+          <div class="grid gap-2">
             <Label>密钥存储</Label>
             <Select v-model="draft.secret_store">
               <SelectTrigger>

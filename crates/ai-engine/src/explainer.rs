@@ -264,6 +264,11 @@ pub mod llm {
         ctx
     }
 
+    /// 给 advisor 复用：渲染默认模板（完整 resources/tasks/metrics/assignments/unscheduled）。
+    pub fn render_default_context(problem: &AllocationProblem, sol: &Solution) -> String {
+        render_template(default_prompt_template(), problem, sol)
+    }
+
     fn format_resources(resources: &[CandidateResource]) -> String {
         if resources.is_empty() {
             return "（无可用资源）".into();

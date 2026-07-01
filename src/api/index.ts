@@ -1,4 +1,4 @@
-import type { Project, KanbanTask, Skill, Tag, Resource, ResourceSkill, ResourceTag, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunRow, Settings } from "../types";
+import type { Project, KanbanTask, Skill, Tag, Resource, ResourceSkill, ResourceTag, TaskStatus, ResourceSummary, TeamSummary, ProjectBurn, Thresholds, AllocationView, Task, Team, TeamMember, TeamOverride, TimeOff, Holiday, WeekTemplate, GanttBar, DepEdge, DayOccupancy, ObjectiveWeights, RunResult, RunList, SuggestionItem, Settings } from "../types";
 
 export type SkillReq = [number, number, boolean, number];
 
@@ -193,12 +193,20 @@ export const api = {
   // ---- Phase 4: AI optimization ----
   runOptimization: (projectId: number, weights: ObjectiveWeights | null): Promise<RunResult> =>
     request("POST", `/api/optimization/run/${projectId}`, weights ?? undefined),
-  listOptimizationRuns: (limit: number | null): Promise<RunRow[]> =>
-    request("GET", `/api/optimization/runs${limit != null ? `?limit=${limit}` : ""}`),
+  listOptimizationRuns: (offset: number, limit: number): Promise<RunList> =>
+    request("GET", `/api/optimization/runs?offset=${offset}&limit=${limit}`),
+  getOptimizationRun: (runId: number): Promise<RunResult> =>
+    request("GET", `/api/optimization/runs/${runId}`),
   applySolution: (runId: number): Promise<number> =>
     request("POST", `/api/optimization/runs/${runId}/apply`),
   rejectSolution: (runId: number): Promise<void> =>
     request("POST", `/api/optimization/runs/${runId}/reject`),
+  listSuggestions: (runId: number): Promise<SuggestionItem[]> =>
+    request("GET", `/api/optimization/runs/${runId}/suggestions`),
+  rerun: (runId: number, suggestionIds: number[]): Promise<RunResult> =>
+    request("POST", `/api/optimization/runs/${runId}/rerun`, { suggestion_ids: suggestionIds }),
+  setSuggestionStatus: (id: number, status: string): Promise<void> =>
+    request("PATCH", `/api/optimization/suggestions/${id}`, { status }),
 
   // ---- Phase 5: reports ----
   /** Fetch a report file and trigger a browser download (no Tauri save dialog — the app is HTTP). */

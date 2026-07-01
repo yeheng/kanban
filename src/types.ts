@@ -99,6 +99,24 @@ export interface SolutionMetrics { overall: number; skill_fit: number; scheduled
 export interface Solution { run_id: number; assignments: ScoredAssignment[]; unscheduled: number[]; metrics: SolutionMetrics; }
 export interface RunResult { run_id: number; plan: { solution: Solution; explanation_md: string; }; }
 export interface RunRow { id: number; objective: string; status: string; applied: number; score_overall: number | null; created_at: string; }
+export interface RunList { rows: RunRow[]; total: number; }
+
+export type Suggestion =
+  | { kind: "swap_resource"; task_id: number; new_resource_id: number }
+  | { kind: "change_percent"; task_id: number; new_percent: number }
+  | { kind: "widen_window"; task_id: number; new_start: string; new_end: string }
+  | { kind: "drop_dependency"; task_id: number; predecessor_id: number }
+  | { kind: "add_resource"; resource_id: number }
+  | { kind: "widen_resource_window"; resource_id: number; new_available_from: string; new_available_to: string }
+  | { kind: "change_resource_capacity"; resource_id: number; new_daily_capacity_pd: number }
+  | { kind: "upsert_resource_skill"; resource_id: number; skill_id: number; new_proficiency: number };
+
+export interface SuggestionItem {
+  id: number;
+  suggestion: Suggestion;
+  rationale_md: string;
+  status: "proposed" | "accepted" | "skipped" | "applied";
+}
 
 // Global settings (design §3.3.1)
 export interface Settings {
@@ -120,6 +138,7 @@ export interface Settings {
   locale: string;
   use_semantic_scorer: boolean;
   use_llm_explainer: boolean;
+  use_llm_advisor: boolean;
   ai_explanation_prompt: string;
   ai_explanation_preamble: string;
   overload_threshold: number;

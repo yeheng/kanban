@@ -193,3 +193,55 @@ pub struct OptimizedPlan {
     pub solution: Solution,
     pub explanation_md: String,
 }
+
+/// LLM 对 solver 方案的一条结构化改进建议。是"对 problem 的修改意图"，采纳后经 rerun
+/// 重跑求解器落地——LLM 从不直接产出最终分配，硬约束始终由求解器保证。
+/// `#[serde(tag = "kind")]` 内部标签：LLM 输出 `{"kind":"swap_resource",...}` 直接反序列化；
+/// 未知 kind 被拒（解析时整条丢弃）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Suggestion {
+    // —— Task 轴 ——
+    SwapResource { task_id: i64, new_resource_id: i64 },
+    ChangePercent { task_id: i64, new_percent: f64 },
+    WidenWindow { task_id: i64, new_start: NaiveDate, new_end: NaiveDate },
+    DropDependency { task_id: i64, predecessor_id: i64 },
+    // —— Resource 轴 ——
+    AddResource { resource_id: i64 },
+    WidenResourceWindow { resource_id: i64, new_available_from: NaiveDate, new_available_to: NaiveDate },
+    ChangeResourceCapacity { resource_id: i64, new_daily_capacity_pd: f64 },
+    UpsertResourceSkill { resource_id: i64, skill_id: i64, new_proficiency: i64 },
+}
+
+impl Suggestion {
+    /// 该建议所针对的 task（resource 轴建议返回 None）。
+    pub fn target_task_id(&self) -> Option<i64> {
+        match self {
+            Suggestion::SwapResource { task_id, .. }
+            | Suggestion::ChangePercent { task_id, .. }
+            | Suggestion::WidenWindow { task_id, .. }
+            | Suggestion::DropDependency { task_id, .. } => Some(*task_id),
+            _ => None,
+        }
+    }
+    /// 该建议所针对的 resource（task 轴的 SwapResource 也涉及 new_resource_id）。
+    pub fn target_resource_id(&self) -> Option<i64> {
+        match self {
+            Suggestion::SwapResource { new_resource_id, .. } => Some(*new_resource_id),
+            Suggestion::AddResource { resource_id }
+            | Suggestion::WidenResourceWindow { resource_id, .. }
+            | Suggestion::ChangeResourceCapacity { resource_id, .. }
+            | Suggestion::UpsertResourceSkill { resource_id, .. } => Some(*resource_id),
+            _ => None,
+        }
+    }
+}
+
+/// 带理由的、可持久化的建议条目。`id` 为 None 直到落库。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SuggestionItem {
+    pub id: Option<i64>,
+    pub suggestion: Suggestion,
+    pub rationale_md: String,
+    pub status: String, // proposed | accepted | skipped | applied
+}
