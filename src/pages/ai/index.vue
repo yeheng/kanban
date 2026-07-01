@@ -109,9 +109,6 @@ function setPageSize(n: number) {
   pageSize.value = Math.max(1, n);
   page.value = 1;
 }
-const totalPages = computed(() =>
-  Math.max(1, Math.ceil(opt.history.total / opt.pageSize))
-);
 </script>
 
 <template>
@@ -163,7 +160,7 @@ const totalPages = computed(() =>
         <TableCell>{{ row.applied ? "是" : "否" }}</TableCell>
         <TableCell>{{ row.created_at }}</TableCell>
         <TableCell>
-          <Button variant="outline" size="sm" @click="opt.loadRun(row.id)">
+          <Button variant="outline" size="sm" @click="loadRun(row.id)">
             查看方案
           </Button>
         </TableCell>
