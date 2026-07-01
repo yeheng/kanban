@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watchEffect } from "vue";
+import { computed, ref } from "vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,18 +8,30 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useTasksStore } from "@/stores/tasks";
+import {
+  useKanbanTasksQuery,
+  useUpdateTaskMutation,
+  useDeleteTaskMutation,
+  useSetTaskStatusMutation,
+  useAddDependencyMutation,
+} from "@/services/api/tasks.api";
 import { useProjectsStore } from "@/stores/projects";
-import { useRefreshStore } from "@/stores/refresh";
 import KanbanColumn from "@/components/KanbanColumn.vue";
 import DateRangePicker from "@/components/DateRangePicker.vue";
 import { fmtDate, parseDate } from "@/utils/date";
 import type { KanbanTask, TaskStatus } from "@/types";
 
-const tasks = useTasksStore();
+const COLUMNS: TaskStatus[] = ["todo", "in_progress", "blocked", "review", "done"];
+
 const projects = useProjectsStore();
-const refreshBus = useRefreshStore();
+const kanbanQuery = useKanbanTasksQuery(computed(() => projects.current));
+const updateTask = useUpdateTaskMutation();
+const deleteTask = useDeleteTaskMutation();
+const setTaskStatus = useSetTaskStatusMutation();
+const addDependency = useAddDependencyMutation();
 const draggingId = ref<number | null>(null);
+
+const tasks = computed(() => kanbanQuery.data.value ?? []);
 
 // Edit modal state
 const editVisible = ref(false);
@@ -43,21 +55,30 @@ function errText(e: unknown): string {
 }
 
 const otherTasks = computed(() =>
-  tasks.tasks.filter((t) => t.id !== editing.value?.id),
+  tasks.value.filter((t) => t.id !== editing.value?.id),
 );
 const predecessorOptions = computed(() =>
   otherTasks.value.map((t) => ({ label: t.title, value: t.id })),
 );
 
-watchEffect(async () => {
-  // Reload kanban when the refresh bus bumps it (allocation write / AI accept).
-  void refreshBus.version.kanban;
-  if (projects.current) await tasks.load(projects.current);
-});
+function byStatus(status: TaskStatus): KanbanTask[] {
+  return tasks.value.filter((t) => t.status === status).sort((a, b) => a.sort_order - b.sort_order);
+}
 
 function onDrop(status: TaskStatus) {
   if (draggingId.value == null) return;
-  tasks.moveStatus(draggingId.value, status);
+  const task = tasks.value.find((t) => t.id === draggingId.value);
+  if (!task) return;
+  const prevStatus = task.status;
+  task.status = status; // optimistic
+  setTaskStatus.mutate(
+    { id: draggingId.value, status, projectId: projects.current ?? undefined },
+    {
+      onError: () => {
+        task.status = prevStatus;
+      },
+    },
+  );
   draggingId.value = null;
 }
 
@@ -79,26 +100,31 @@ async function saveEdit() {
   if (!editing.value || !projects.current) return;
   editError.value = null;
   try {
-    await tasks.update(editing.value.id, {
+    await updateTask.mutateAsync({
+      id: editing.value.id,
+      projectId: projects.current,
       title: editTitle.value,
       estimatePd: editEstimate.value,
       start: editDateRange.value ? fmtDate(editDateRange.value[0]) : null,
       end: editDateRange.value ? fmtDate(editDateRange.value[1]) : null,
       description: editDescription.value || null,
-    }, projects.current);
+    });
     if (depPredecessor.value != null) {
-      await tasks.addDependency(editing.value.id, depPredecessor.value, depLag.value);
+      await addDependency.mutateAsync({
+        taskId: editing.value.id,
+        predecessorId: depPredecessor.value,
+        lagDays: depLag.value,
+        projectId: projects.current,
+      });
     }
     editVisible.value = false;
   } catch (e: unknown) {
-    // Keep the modal open so the user can correct the input (e.g. a dependency cycle → 422).
     editError.value = errText(e);
   }
 }
 
 async function onDelete(id: number) {
-  if (!projects.current) return;
-  await tasks.remove(id, projects.current);
+  await deleteTask.mutateAsync({ id, projectId: projects.current ?? undefined });
 }
 
 function onPredecessorChange(value: unknown) {
@@ -109,12 +135,12 @@ function onPredecessorChange(value: unknown) {
 <template>
   <div class="h-full flex flex-col">
     <h2 class="text-2xl font-bold mt-0 mb-4">看板 / Kanban</h2>
-    <div v-if="tasks.tasks.length" class="flex-1 flex items-start gap-3 min-h-0 overflow-x-auto pb-2">
+    <div v-if="tasks.length" class="flex-1 flex items-start gap-3 min-h-0 overflow-x-auto pb-2">
       <KanbanColumn
-        v-for="col in tasks.columns"
+        v-for="col in COLUMNS"
         :key="col"
         :status="col"
-        :tasks="tasks.byStatus(col)"
+        :tasks="byStatus(col)"
         @drop="onDrop"
         @dragstart-card="(id: number) => (draggingId = id)"
         @delete-card="onDelete"

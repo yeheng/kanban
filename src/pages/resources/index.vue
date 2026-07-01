@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { PlusIcon } from "@lucide/vue";
 import { CalendarIcon } from "@lucide/vue";
 import { CalendarDate, type DateValue } from "@internationalized/date";
@@ -44,28 +44,42 @@ import ResourceForm from "@/components/ResourceForm.vue";
 import ListPage from "@/components/list/ListPage.vue";
 import ListRowActions from "@/components/list/ListRowActions.vue";
 import ListToolbar from "@/components/list/ListToolbar.vue";
-import { useResourcesStore } from "@/stores/resources";
-import { useCatalogStore } from "@/stores/catalog";
+import {
+  useListResourcesQuery,
+  useUpdateResourceMutation,
+  useDeleteResourceMutation,
+  useGetResourceSkillsQuery,
+  useSetResourceSkillsMutation,
+  useGetResourceTagsQuery,
+  useSetResourceTagsMutation,
+} from "@/services/api/resources.api";
+import { useListSkillsQuery, useListTagsQuery } from "@/services/api/catalog.api";
+import { useApiFetch } from "@/services/fetch";
 import { fmtDate, parseDate } from "@/utils/date";
 import type { Resource, ResourceSkill, ResourceTag } from "@/types";
 
-const resources = useResourcesStore();
-const catalog = useCatalogStore();
-onMounted(() => { resources.load(); catalog.load(); });
+const resourcesQuery = useListResourcesQuery();
+const updateResource = useUpdateResourceMutation();
+const deleteResource = useDeleteResourceMutation();
+const setResourceSkills = useSetResourceSkillsMutation();
+const setResourceTags = useSetResourceTagsMutation();
+const skillsQuery = useListSkillsQuery();
+const tagsQuery = useListTagsQuery();
+const { apiFetch } = useApiFetch();
 
 // Filters
 const filterName = ref("");
 const filterStatus = ref("all");
 
 const statusOptions = computed(() => {
-  const set = new Set(resources.items.map((r) => r.status));
+  const set = new Set((resourcesQuery.data.value ?? []).map((r) => r.status));
   return Array.from(set).sort().map((s) => ({ label: s, value: s }));
 });
 
 const isFiltered = computed(() => !!(filterName.value || filterStatus.value !== "all"));
 
 const filteredResources = computed(() => {
-  return resources.items.filter((r) => {
+  return (resourcesQuery.data.value ?? []).filter((r) => {
     const matchesName = !filterName.value || r.name.toLowerCase().includes(filterName.value.toLowerCase());
     const matchesStatus = filterStatus.value === "all" || r.status === filterStatus.value;
     return matchesName && matchesStatus;
@@ -92,8 +106,23 @@ const editRate = ref<number | null>(null);
 const editSkills = ref<{ skillId: number; proficiency: number }[]>([]);
 const editTags = ref<number[]>([]);
 
-const skillOptions = () => catalog.skills.map((s) => ({ label: s.name, value: s.id }));
-const tagOptions = () => catalog.tags.map((t) => ({ label: t.name, value: t.id }));
+const skillOptions = () => (skillsQuery.data.value ?? []).map((s) => ({ label: s.name, value: s.id }));
+const tagOptions = () => (tagsQuery.data.value ?? []).map((t) => ({ label: t.name, value: t.id }));
+
+const editSkillsQuery = useGetResourceSkillsQuery(computed(() => editingId.value));
+const editTagsQuery = useGetResourceTagsQuery(computed(() => editingId.value));
+
+watch(editSkillsQuery.data, (skills) => {
+  if (editingId.value != null && skills) {
+    editSkills.value = skills.map((s) => ({ skillId: s.skill_id, proficiency: s.proficiency }));
+  }
+});
+
+watch(editTagsQuery.data, (tags) => {
+  if (editingId.value != null && tags) {
+    editTags.value = tags.map((t) => t.tag_id);
+  }
+});
 
 function toDateValue(ms: number | null): DateValue | undefined {
   if (ms == null) return undefined;
@@ -141,14 +170,20 @@ function onTagSelect(value: unknown) {
   editTags.value = value as number[];
 }
 
+// Hover-cached inline display of skills/tags (preserves old UX without using the data store).
 const skillCache = ref<Record<number, ResourceSkill[]>>({});
 const tagCache = ref<Record<number, ResourceTag[]>>({});
+
 async function loadDisplay(r: Resource) {
-  if (!skillCache.value[r.id]) skillCache.value[r.id] = await resources.loadSkills(r.id);
-  if (!tagCache.value[r.id]) tagCache.value[r.id] = await resources.loadTags(r.id);
+  if (!skillCache.value[r.id]) {
+    skillCache.value[r.id] = await apiFetch<ResourceSkill[]>(`/api/resources/${r.id}/skills`);
+  }
+  if (!tagCache.value[r.id]) {
+    tagCache.value[r.id] = await apiFetch<ResourceTag[]>(`/api/resources/${r.id}/tags`);
+  }
 }
 
-async function openEdit(r: Resource) {
+function openEdit(r: Resource) {
   editingId.value = r.id;
   editName.value = r.name;
   editEmail.value = r.email ?? "";
@@ -156,27 +191,34 @@ async function openEdit(r: Resource) {
   editAvailTo.value = parseDate(r.available_to);
   editCapacity.value = r.daily_capacity_pd;
   editRate.value = r.daily_rate_pd;
-  const [skills, tags] = await Promise.all([resources.loadSkills(r.id), resources.loadTags(r.id)]);
-  editSkills.value = skills.map((s) => ({ skillId: s.skill_id, proficiency: s.proficiency }));
-  editTags.value = tags.map((t) => t.tag_id);
+  editSkills.value = [];
+  editTags.value = [];
   editVisible.value = true;
 }
 
 async function saveEdit() {
   if (editingId.value == null) return;
-  await resources.update(editingId.value, {
-    name: editName.value,
-    email: editEmail.value || null,
-    availableFrom: editAvailFrom.value != null ? fmtDate(editAvailFrom.value) : null,
-    availableTo: editAvailTo.value != null ? fmtDate(editAvailTo.value) : null,
-    dailyCapacityPd: editCapacity.value,
-    dailyRatePd: editRate.value,
-  });
-  await resources.saveSkills(editingId.value, editSkills.value.map((s) => [s.skillId, s.proficiency]));
-  await resources.saveTags(editingId.value, editTags.value);
-  delete skillCache.value[editingId.value];
-  delete tagCache.value[editingId.value];
-  editVisible.value = false;
+  const id = editingId.value;
+  try {
+    await updateResource.mutateAsync({
+      id,
+      name: editName.value,
+      email: editEmail.value || null,
+      availableFrom: editAvailFrom.value != null ? fmtDate(editAvailFrom.value) : null,
+      availableTo: editAvailTo.value != null ? fmtDate(editAvailTo.value) : null,
+      dailyCapacityPd: editCapacity.value,
+      dailyRatePd: editRate.value,
+    });
+    await setResourceSkills.mutateAsync({ id, skills: editSkills.value.map((s) => [s.skillId, s.proficiency]) });
+    await setResourceTags.mutateAsync({ id, tagIds: editTags.value });
+    delete skillCache.value[id];
+    delete tagCache.value[id];
+    editVisible.value = false;
+    editingId.value = null;
+  } catch (e: unknown) {
+    // Keep the dialog open so the user can retry or correct the input.
+    console.error("Failed to save resource:", e);
+  }
 }
 
 // Delete confirmation dialog state
@@ -192,7 +234,7 @@ function openDelete(r: Resource) {
 
 async function confirmDelete() {
   if (deletingId.value == null) return;
-  await resources.remove(deletingId.value);
+  await deleteResource.mutateAsync(deletingId.value);
   deleteDialogOpen.value = false;
   deletingId.value = null;
   deletingName.value = "";
@@ -395,7 +437,7 @@ async function confirmDelete() {
               <div v-if="editSkills.length" class="flex flex-col gap-2">
                 <div v-for="s in editSkills" :key="s.skillId" class="flex items-center gap-2">
                   <span class="text-xs w-24 truncate">
-                    {{ catalog.skills.find((sk) => sk.id === s.skillId)?.name ?? s.skillId }}
+                    {{ skillOptions().find((sk) => sk.value === s.skillId)?.label ?? s.skillId }}
                   </span>
                   <NumberField v-model="s.proficiency" :min="1" :max="5" :step="1" class="w-28">
                     <NumberFieldContent>

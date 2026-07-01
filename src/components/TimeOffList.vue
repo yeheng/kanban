@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { CalendarIcon } from "@lucide/vue";
 import { CalendarDate, type DateValue } from "@internationalized/date";
-import { useCalendarStore } from "@/stores/calendar";
-import { useResourcesStore } from "@/stores/resources";
+import { useListTimeOffQuery, useAddTimeOffMutation, useDeleteTimeOffMutation } from "@/services/api/calendar.api";
 import { fmtDate, parseDate } from "@/utils/date";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Dialog,
@@ -28,24 +28,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { Resource } from "@/types";
 
-const cal = useCalendarStore();
-const resources = useResourcesStore();
+const props = defineProps<{ resources: Resource[] }>();
+
+const timeOffQuery = useListTimeOffQuery();
+const addTimeOff = useAddTimeOffMutation();
+const deleteTimeOff = useDeleteTimeOffMutation();
+
 const rid = ref<number | null>(null);
 const day = ref<number | null>(null);
 const frac = ref(1);
 const reason = ref("");
 
-const resourceOptions = computed(() =>
-  resources.items.map((r) => ({ label: r.name, value: r.id })),
-);
+const resourceOptions = computed(() => props.resources.map((r) => ({ label: r.name, value: r.id })));
 const fracOptions = [
   { label: "全天", value: 1 },
   { label: "半天", value: 0.5 },
 ];
 
 function resourceName(id: number): string {
-  return resources.items.find((r) => r.id === id)?.name ?? `#${id}`;
+  return props.resources.find((r) => r.id === id)?.name ?? `#${id}`;
 }
 
 function toDateValue(ms: number): DateValue {
@@ -53,7 +56,6 @@ function toDateValue(ms: number): DateValue {
   const [year, month, dayOfMonth] = s.split("-").map(Number);
   return new CalendarDate(year, month, dayOfMonth);
 }
-
 function fromDateValue(dv: DateValue): number {
   return (
     parseDate(`${dv.year}-${String(dv.month).padStart(2, "0")}-${String(dv.day).padStart(2, "0")}`) ??
@@ -72,6 +74,8 @@ const dateDisplay = computed(() =>
   day.value == null ? "选择日期" : fmtDate(day.value),
 );
 
+const error = ref<string | null>(null);
+
 function updateRid(value: unknown) {
   rid.value = typeof value === "number" ? value : null;
 }
@@ -82,12 +86,24 @@ function updateFrac(value: unknown) {
 
 async function add() {
   if (rid.value == null || day.value == null) return;
-  await cal.addTimeOff(rid.value, fmtDate(day.value), frac.value, reason.value || null);
-  day.value = null;
-  reason.value = "";
+  error.value = null;
+  try {
+    await addTimeOff.mutateAsync({ resourceId: rid.value, day: fmtDate(day.value), fraction: frac.value, reason: reason.value || null });
+    day.value = null;
+    reason.value = "";
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
-onMounted(() => cal.loadTimeOff());
+async function removeTimeOff(id: number) {
+  error.value = null;
+  try {
+    await deleteTimeOff.mutateAsync(id);
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
 </script>
 
 <template>
@@ -141,12 +157,16 @@ onMounted(() => cal.loadTimeOff());
         <Input v-model="reason" placeholder="请假原因" class="w-48" />
       </div>
 
-      <Button @click="add">添加请假</Button>
+      <Button :disabled="addTimeOff.isPending" @click="add">添加请假</Button>
     </div>
+
+    <Alert v-if="error" variant="destructive" class="mb-2">
+      <AlertDescription>{{ error }}</AlertDescription>
+    </Alert>
 
     <div class="space-y-2">
       <div
-        v-for="t in cal.timeOff"
+        v-for="t in timeOffQuery.data.value ?? []"
         :key="t.id"
         class="flex items-center justify-between gap-4 rounded-lg border p-3"
       >
@@ -172,7 +192,7 @@ onMounted(() => cal.loadTimeOff());
                 <Button variant="outline">取消</Button>
               </DialogClose>
               <DialogClose as-child>
-                <Button variant="destructive" @click="cal.removeTimeOff(t.id)">确定</Button>
+                <Button variant="destructive" :disabled="deleteTimeOff.isPending" @click="removeTimeOff(t.id)">确定</Button>
               </DialogClose>
             </DialogFooter>
           </DialogContent>
@@ -180,6 +200,6 @@ onMounted(() => cal.loadTimeOff());
       </div>
     </div>
 
-    <p v-if="!cal.timeOff.length" class="text-sm text-muted-foreground">暂无请假记录。</p>
+    <p v-if="!(timeOffQuery.data.value ?? []).length" class="text-sm text-muted-foreground">暂无请假记录。</p>
   </div>
 </template>

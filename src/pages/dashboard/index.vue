@@ -1,12 +1,21 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { useWorkloadStore } from "@/stores/workload";
-import { useResourcesStore } from "@/stores/resources";
+import { computed, ref, watch } from "vue";
+import { useQueries } from "@tanstack/vue-query";
+import { useApiFetch } from "@/services/fetch";
+import { useListResourcesQuery } from "@/services/api/resources.api";
+import { useListTeamsQuery } from "@/services/api/teams.api";
+import { useListProjectsQuery } from "@/services/api/projects.api";
+import { useGetThresholdsQuery } from "@/services/api/config.api";
+import {
+  useProjectBurnQuery,
+  useTeamSummaryQuery,
+  useOverloadsQuery,
+} from "@/services/api/workload.api";
+import { useGetTeamOverrideQuery } from "@/services/api/teams.api";
 import { useProjectsStore } from "@/stores/projects";
-import { useTeamsStore } from "@/stores/teams";
 import { useUnitStore } from "@/stores/unit";
-import { useRefreshStore } from "@/stores/refresh";
 import { parseDateStrict } from "@/utils/date";
+import type { ResourceSummary } from "@/types";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -30,25 +39,21 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  TriangleAlertIcon,
-  RefreshCwIcon,
-  BriefcaseIcon,
-  TrendingUpIcon,
-  PanelRightCloseIcon,
-  PanelRightOpenIcon,
-} from "@lucide/vue";
+import { TriangleAlertIcon, RefreshCwIcon, BriefcaseIcon, TrendingUpIcon, PanelRightCloseIcon, PanelRightOpenIcon } from "@lucide/vue";
 import DateRangePicker from "@/components/DateRangePicker.vue";
+import { fmtDate } from "@/utils/date";
 
-const wl = useWorkloadStore();
-const resources = useResourcesStore();
-const projects = useProjectsStore();
-const teams = useTeamsStore();
+const { apiFetch } = useApiFetch();
+const resourcesQuery = useListResourcesQuery();
+const projectsQuery = useListProjectsQuery();
+const teamsQuery = useListTeamsQuery();
+const thresholdsQuery = useGetThresholdsQuery();
 const unit = useUnitStore();
+const projects = useProjectsStore();
+
 const dateRange = ref<[number, number]>([parseDateStrict("2026-06-29"), parseDateStrict("2026-07-03")]);
 const selectedTeam = ref<number | null>(null);
 const allTeamsValue = "__all__";
-const loading = ref(false);
 const rightPanelOpen = ref(true);
 const activeTab = ref("overview");
 
@@ -59,9 +64,12 @@ const tabs = [
   { label: "Notifications", value: "notifications", disabled: true },
 ];
 
+const startStr = computed(() => fmtDate(dateRange.value[0]));
+const endStr = computed(() => fmtDate(dateRange.value[1]));
+
 const teamOptions = computed(() => [
   { label: "全部团队", value: allTeamsValue },
-  ...teams.items.map((t) => ({ label: t.name, value: String(t.id) })),
+  ...(teamsQuery.data.value ?? []).map((t) => ({ label: t.name, value: String(t.id) })),
 ]);
 
 const selectedTeamValue = computed(() =>
@@ -74,7 +82,7 @@ const selectedTeamLabel = computed(
 
 const resourceNameById = computed(() => {
   const map = new Map<number, string>();
-  for (const r of resources.items) {
+  for (const r of resourcesQuery.data.value ?? []) {
     map.set(r.id, r.name);
   }
   return map;
@@ -84,60 +92,75 @@ function resourceLabel(id: number): string {
   return resourceNameById.value.get(id) ?? `资源 #${id}`;
 }
 
-const averageUtilization = computed(() => {
-  if (!wl.resourceSummaries.length) return 0;
-  const total = wl.resourceSummaries.reduce((sum, s) => sum + s.utilization, 0);
-  return total / wl.resourceSummaries.length;
+const resourceSummaryQueries = useQueries({
+  queries: computed(() => {
+    const start = startStr.value;
+    const end = endStr.value;
+    const resources = resourcesQuery.data.value ?? [];
+    return resources.map((r) => ({
+      queryKey: ["workload-resource", r.id, start, end],
+      queryFn: () =>
+        apiFetch<ResourceSummary>(
+          `/api/workload/resources/${r.id}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+        ),
+      enabled: () => !!start && !!end,
+    }));
+  }),
 });
 
+const resourceSummaries = computed<ResourceSummary[]>(() =>
+  resourceSummaryQueries.value.filter((q) => q.isSuccess && q.data != null).map((q) => q.data!),
+);
+
+const averageUtilization = computed(() => {
+  if (!resourceSummaries.value.length) return 0;
+  const total = resourceSummaries.value.reduce((sum, s) => sum + s.utilization, 0);
+  return total / resourceSummaries.value.length;
+});
+
+const overloadsQuery = useOverloadsQuery(startStr, endStr);
+const projectBurnQuery = useProjectBurnQuery(computed(() => projects.current));
+const teamSummaryQuery = useTeamSummaryQuery(computed(() => selectedTeam.value), startStr, endStr);
+const teamOverrideQuery = useGetTeamOverrideQuery(computed(() => selectedTeam.value));
+
+const loading = ref(false);
+
 async function refresh() {
-  const start = fmtDate(dateRange.value[0]);
-  const end = fmtDate(dateRange.value[1]);
   loading.value = true;
   try {
-    await resources.load();
-    await wl.loadResourceSummaries(
-      resources.items.map((r) => r.id),
-      start,
-      end,
-    );
-    await wl.loadOverloads(start, end);
-    if (projects.current != null) await wl.loadProjectBurn(projects.current);
-    if (selectedTeam.value != null) await wl.loadTeamSummary(selectedTeam.value, start, end);
+    const promises: Promise<unknown>[] = [
+      resourcesQuery.refetch(),
+      projectsQuery.refetch(),
+      teamsQuery.refetch(),
+      thresholdsQuery.refetch(),
+      overloadsQuery.refetch(),
+      ...resourceSummaryQueries.value.map((q) => q.refetch()),
+    ];
+    if (projects.current != null) {
+      promises.push(projectBurnQuery.refetch());
+    }
+    if (selectedTeam.value != null) {
+      promises.push(teamSummaryQuery.refetch());
+      promises.push(teamOverrideQuery.refetch());
+    }
+    await Promise.all(promises);
   } finally {
     loading.value = false;
   }
 }
 
+watch(
+  () => teamOverrideQuery.data.value,
+  (ov) => {
+    unit.applyTeamOverride(ov?.pm_workdays ?? null);
+  },
+  { immediate: true },
+);
+
 async function updateSelectedTeam(value: unknown) {
   const str = String(value);
   selectedTeam.value = str === allTeamsValue ? null : Number(str);
-  if (selectedTeam.value != null) {
-    const ov = await teams.getOverride(selectedTeam.value);
-    unit.applyTeamOverride(ov?.pm_workdays ?? null);
-  } else {
-    unit.applyTeamOverride(null);
-  }
   await refresh();
-}
-
-onMounted(async () => {
-  await wl.loadThresholds();
-  await teams.load();
-  await refresh();
-});
-
-const refreshBus = useRefreshStore();
-watch(
-  () => refreshBus.version.workload,
-  () => {
-    void refresh();
-  },
-);
-
-function fmtDate(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 </script>
 
@@ -188,14 +211,14 @@ function fmtDate(ms: number): string {
               <BriefcaseIcon class="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div v-if="wl.projectBurn" class="text-2xl font-bold">
-                {{ Math.round(wl.projectBurn.usage * 100) }}%
+              <div v-if="projectBurnQuery.data.value" class="text-2xl font-bold">
+                {{ Math.round(projectBurnQuery.data.value.usage * 100) }}%
               </div>
               <Skeleton v-else class="h-8 w-16" />
               <p class="text-xs text-muted-foreground">
-                <span v-if="wl.projectBurn">
-                  {{ unit.formatPd(wl.projectBurn.allocated_pd) }} /
-                  {{ unit.formatPd(wl.projectBurn.budget_pd) }}
+                <span v-if="projectBurnQuery.data.value">
+                  {{ unit.formatPd(projectBurnQuery.data.value.allocated_pd) }} /
+                  {{ unit.formatPd(projectBurnQuery.data.value.budget_pd) }}
                 </span>
                 <span v-else>未选择项目</span>
               </p>
@@ -219,7 +242,7 @@ function fmtDate(ms: number): string {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow v-for="s in wl.resourceSummaries" :key="s.resource_id">
+                  <TableRow v-for="s in resourceSummaries" :key="s.resource_id">
                     <TableCell class="font-medium">{{ resourceLabel(s.resource_id) }}</TableCell>
                     <TableCell>
                       <div class="flex items-center gap-2">
@@ -231,7 +254,7 @@ function fmtDate(ms: number): string {
                       {{ unit.formatPd(s.workload_pd) }} / {{ unit.formatPd(s.capacity_pd) }}
                     </TableCell>
                   </TableRow>
-                  <TableRow v-if="!wl.resourceSummaries.length">
+                  <TableRow v-if="!resourceSummaries.length">
                     <TableCell colspan="3" class="text-center text-muted-foreground py-6">
                       暂无数据，请调整日期范围后刷新
                     </TableCell>
@@ -268,12 +291,12 @@ function fmtDate(ms: number): string {
                   <CardDescription>利用率超过阈值的资源</CardDescription>
                 </CardHeader>
                 <CardContent class="space-y-2">
-                  <Alert v-for="o in wl.overloads" :key="o.resource_id" variant="destructive">
+                  <Alert v-for="o in overloadsQuery.data.value ?? []" :key="o.resource_id" variant="destructive">
                     <TriangleAlertIcon class="h-4 w-4" />
                     <AlertTitle>{{ resourceLabel(o.resource_id) }}</AlertTitle>
                     <AlertDescription>利用率 {{ Math.round(o.utilization * 100) }}%</AlertDescription>
                   </Alert>
-                  <p v-if="!wl.overloads.length" class="text-sm text-muted-foreground">无过载资源 🎉</p>
+                  <p v-if="!(overloadsQuery.data.value ?? []).length" class="text-sm text-muted-foreground">无过载资源 🎉</p>
                 </CardContent>
               </Card>
 
@@ -298,24 +321,24 @@ function fmtDate(ms: number): string {
                     </SelectContent>
                   </Select>
 
-                  <div v-if="wl.teamSummary">
+                  <div v-if="teamSummaryQuery.data.value">
                     <div class="flex items-center justify-between text-sm mb-1">
                       <span>整体利用率</span>
-                      <span class="font-medium">{{ Math.round(wl.teamSummary.utilization * 100) }}%</span>
+                      <span class="font-medium">{{ Math.round(teamSummaryQuery.data.value.utilization * 100) }}%</span>
                     </div>
-                    <Progress :model-value="wl.teamSummary.utilization * 100" class="h-2" />
+                    <Progress :model-value="teamSummaryQuery.data.value.utilization * 100" class="h-2" />
                     <Separator class="my-3" />
                     <div class="text-xs text-muted-foreground">
                       过载成员：
                       <Badge
-                        v-for="id in wl.teamSummary.overloaded_members"
+                        v-for="id in teamSummaryQuery.data.value.overloaded_members"
                         :key="id"
                         variant="destructive"
                         class="mr-1"
                       >
                         #{{ id }}
                       </Badge>
-                      <span v-if="!wl.teamSummary.overloaded_members.length">无</span>
+                      <span v-if="!teamSummaryQuery.data.value.overloaded_members.length">无</span>
                     </div>
                   </div>
                   <p v-else class="text-sm text-muted-foreground">选择团队后查看利用率</p>

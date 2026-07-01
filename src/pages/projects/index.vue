@@ -36,11 +36,15 @@ import ListRowActions from "@/components/list/ListRowActions.vue";
 import ListToolbar from "@/components/list/ListToolbar.vue";
 import ProjectForm from "@/components/ProjectForm.vue";
 import TaskForm from "@/components/TaskForm.vue";
+import { useListProjectsQuery, useUpdateProjectMutation, useDeleteProjectMutation } from "@/services/api/projects.api";
 import { useProjectsStore } from "@/stores/projects";
 import { useUnitStore } from "@/stores/unit";
 import { fmtDate, parseDate } from "@/utils/date";
 import type { Project } from "@/types";
 
+const projectsQuery = useListProjectsQuery();
+const updateProject = useUpdateProjectMutation();
+const deleteProject = useDeleteProjectMutation();
 const projects = useProjectsStore();
 const unit = useUnitStore();
 
@@ -55,7 +59,7 @@ const statusOptions = [
 const isFiltered = computed(() => !!(filterName.value || filterStatus.value !== "all"));
 
 const filteredProjects = computed(() => {
-  return projects.items.filter((p) => {
+  return (projectsQuery.data.value ?? []).filter((p) => {
     const matchesName = !filterName.value || p.name.toLowerCase().includes(filterName.value.toLowerCase());
     const matchesStatus = filterStatus.value === "all" || p.status === filterStatus.value;
     return matchesName && matchesStatus;
@@ -92,7 +96,8 @@ function openEdit(p: Project) {
 
 async function saveEdit() {
   if (editingId.value == null) return;
-  await projects.update(editingId.value, {
+  await updateProject.mutateAsync({
+    id: editingId.value,
     name: editName.value,
     priority: editPriority.value,
     budgetPd: editBudget.value,
@@ -123,7 +128,10 @@ function confirmDelete(id: number, name: string) {
 
 async function doDelete() {
   if (deleteId.value == null) return;
-  await projects.remove(deleteId.value);
+  await deleteProject.mutateAsync(deleteId.value);
+  if (projects.current === deleteId.value) {
+    projects.select(0);
+  }
   deleteId.value = null;
   deleteName.value = "";
 }

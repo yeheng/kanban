@@ -1,36 +1,46 @@
+import { type MaybeRef, computed, toValue } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { DayOccupancy, DepEdge, GanttBar } from "@/types";
 
-export function useGanttProjectQuery(projectId: number) {
+export function useGanttProjectQuery(projectId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(projectId));
   return useQuery<GanttBar[]>({
-    queryKey: ["gantt-project", projectId],
-    queryFn: () => apiFetch<GanttBar[]>(`/api/gantt/projects/${projectId}`),
+    queryKey: computed(() => ["gantt-project", id.value]),
+    queryFn: () => apiFetch<GanttBar[]>(`/api/gantt/projects/${id.value}`),
+    enabled: () => id.value != null,
   });
 }
 
-export function useGanttResourceQuery(resourceId: number) {
+export function useGanttResourceQuery(resourceId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(resourceId));
   return useQuery<GanttBar[]>({
-    queryKey: ["gantt-resource", resourceId],
-    queryFn: () => apiFetch<GanttBar[]>(`/api/gantt/resources/${resourceId}`),
+    queryKey: computed(() => ["gantt-resource", id.value]),
+    queryFn: () => apiFetch<GanttBar[]>(`/api/gantt/resources/${id.value}`),
+    enabled: () => id.value != null,
   });
 }
 
-export function useDependenciesForProjectQuery(projectId: number) {
+export function useDependenciesForProjectQuery(projectId: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(projectId));
   return useQuery<DepEdge[]>({
-    queryKey: ["dependencies", projectId],
-    queryFn: () => apiFetch<DepEdge[]>(`/api/projects/${projectId}/dependencies`),
+    queryKey: computed(() => ["dependencies", id.value]),
+    queryFn: () => apiFetch<DepEdge[]>(`/api/projects/${id.value}/dependencies`),
+    enabled: () => id.value != null,
   });
 }
 
-export function useDailyOccupancyQuery(start: string, end: string) {
+export function useDailyOccupancyQuery(start: MaybeRef<string>, end: MaybeRef<string>) {
   const { apiFetch } = useApiFetch();
+  const s = computed(() => toValue(start));
+  const e = computed(() => toValue(end));
   return useQuery<DayOccupancy[]>({
-    queryKey: ["occupancy", start, end],
+    queryKey: computed(() => ["occupancy", s.value, e.value]),
     queryFn: () =>
-      apiFetch<DayOccupancy[]>(`/api/occupancy?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`),
+      apiFetch<DayOccupancy[]>(`/api/occupancy?start=${encodeURIComponent(s.value)}&end=${encodeURIComponent(e.value)}`),
+    enabled: () => !!s.value && !!e.value,
   });
 }

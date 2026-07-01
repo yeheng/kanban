@@ -1,14 +1,37 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { Button } from "@/components/ui/button";
-import { useCalendarStore } from "@/stores/calendar";
-const cal = useCalendarStore();
+import { useListWorkWeeksQuery, useSetGlobalWorkWeekMutation } from "@/services/api/calendar.api";
+
+const weekQuery = useListWorkWeeksQuery();
+const setWeekMutation = useSetGlobalWorkWeekMutation();
+
 const labels = ["一", "二", "三", "四", "五", "六", "日"];
 
-function cycle(i: number) {
-  const cur = cal.week[i];
+const week = computed(() => {
+  const rows = weekQuery.data.value ?? [];
+  const global = rows.find((r) => r.scope === "global");
+  if (!global) return [1, 1, 1, 1, 1, 0, 0];
+  const f = (bit: number, frac: number) => (bit ? frac : 0);
+  return [
+    f(global.mon, global.mon_frac),
+    f(global.tue, global.tue_frac),
+    f(global.wed, global.wed_frac),
+    f(global.thu, global.thu_frac),
+    f(global.fri, global.fri_frac),
+    f(global.sat, global.sat_frac),
+    f(global.sun, global.sun_frac),
+  ];
+});
+
+async function cycle(i: number) {
+  const cur = week.value[i];
   const next = cur >= 1 ? 0 : cur >= 0.5 ? 1 : 0.5;
-  const w = [...cal.week]; w[i] = next; cal.setWeek(w);
+  const w = [...week.value];
+  w[i] = next;
+  await setWeekMutation.mutateAsync(w);
 }
+
 function dayType(f: number): "default" | "secondary" | "outline" {
   if (f === 0) return "outline";
   if (f === 0.5) return "secondary";
@@ -20,7 +43,7 @@ function dayType(f: number): "default" | "secondary" | "outline" {
   <div>
     <div class="flex gap-1">
       <Button
-        v-for="(f, i) in cal.week"
+        v-for="(f, i) in week"
         :key="i"
         :variant="dayType(f)"
         size="sm"

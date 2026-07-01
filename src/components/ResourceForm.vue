@@ -3,15 +3,15 @@ import { ref } from "vue";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useResourcesStore } from "@/stores/resources";
+import { useCreateResourceMutation } from "@/services/api/resources.api";
 
-const resources = useResourcesStore();
+const createResource = useCreateResourceMutation();
 const name = ref("");
 const email = ref("");
 
 async function submit() {
   if (!name.value.trim()) return;
-  await resources.create(name.value, email.value || null);
+  await createResource.mutateAsync({ name: name.value, email: email.value || null });
   name.value = "";
   email.value = "";
 }

@@ -1,3 +1,4 @@
+import { type MaybeRef, computed, toValue } from "vue";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useApiFetch } from "../fetch";
 import type { Resource, ResourceSkill, ResourceTag } from "@/types";
@@ -55,11 +56,13 @@ export function useDeleteResourceMutation() {
   });
 }
 
-export function useGetResourceSkillsQuery(id: number) {
+export function useGetResourceSkillsQuery(id: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const resourceId = computed(() => toValue(id));
   return useQuery<ResourceSkill[]>({
-    queryKey: ["resource-skills", id],
-    queryFn: () => apiFetch<ResourceSkill[]>(`/api/resources/${id}/skills`),
+    queryKey: computed(() => ["resource-skills", resourceId.value]),
+    queryFn: () => apiFetch<ResourceSkill[]>(`/api/resources/${resourceId.value}/skills`),
+    enabled: () => resourceId.value != null,
   });
 }
 
@@ -75,11 +78,13 @@ export function useSetResourceSkillsMutation() {
   });
 }
 
-export function useGetResourceTagsQuery(id: number) {
+export function useGetResourceTagsQuery(id: MaybeRef<number | null>) {
   const { apiFetch } = useApiFetch();
+  const resourceId = computed(() => toValue(id));
   return useQuery<ResourceTag[]>({
-    queryKey: ["resource-tags", id],
-    queryFn: () => apiFetch<ResourceTag[]>(`/api/resources/${id}/tags`),
+    queryKey: computed(() => ["resource-tags", resourceId.value]),
+    queryFn: () => apiFetch<ResourceTag[]>(`/api/resources/${resourceId.value}/tags`),
+    enabled: () => resourceId.value != null,
   });
 }
 
