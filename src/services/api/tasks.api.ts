@@ -84,6 +84,10 @@ export function useUpdateTaskMutation() {
       if (variables.projectId != null) {
         queryClient.invalidateQueries({ queryKey: ["tasks", variables.projectId] });
         queryClient.invalidateQueries({ queryKey: ["kanban", variables.projectId] });
+      } else {
+        // 调用方未提供 projectId 时，前缀失效清掉所有项目的缓存（更重但避免静默陈旧）
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["kanban"] });
       }
     },
   });
@@ -98,6 +102,9 @@ export function useDeleteTaskMutation() {
       if (variables.projectId != null) {
         queryClient.invalidateQueries({ queryKey: ["tasks", variables.projectId] });
         queryClient.invalidateQueries({ queryKey: ["kanban", variables.projectId] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["kanban"] });
       }
     },
   });
@@ -113,6 +120,9 @@ export function useSetTaskStatusMutation() {
       if (variables.projectId != null) {
         queryClient.invalidateQueries({ queryKey: ["tasks", variables.projectId] });
         queryClient.invalidateQueries({ queryKey: ["kanban", variables.projectId] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
+        queryClient.invalidateQueries({ queryKey: ["kanban"] });
       }
     },
   });
@@ -130,6 +140,8 @@ export function useAddDependencyMutation() {
     onSuccess: (_data, variables) => {
       if (variables.projectId != null) {
         queryClient.invalidateQueries({ queryKey: ["dependencies", variables.projectId] });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ["dependencies"] });
       }
     },
   });

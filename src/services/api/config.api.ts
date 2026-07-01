@@ -32,7 +32,11 @@ export function useUpdateSettingsMutation() {
   return useMutation<void, Error, Settings>({
     mutationFn: (settings) => apiFetch<void>("/api/settings", { method: "PUT", body: settings }),
     onSuccess: () => {
+      // SettingsDto 含 thresholds（overload/underload/utilization_*）与 unit-config（pd_hours/pm_workdays）
+      // 的字段——三者同源（SettingsRepo），故保存设置须一并失效。
       queryClient.invalidateQueries({ queryKey: ["settings"] });
+      queryClient.invalidateQueries({ queryKey: ["thresholds"] });
+      queryClient.invalidateQueries({ queryKey: ["unit-config"] });
     },
   });
 }
