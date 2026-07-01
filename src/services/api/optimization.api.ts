@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
 import { type MaybeRef, computed, toValue } from "vue";
 import { useApiFetch } from "../fetch";
-import type { ObjectiveWeights, RunResult, RunRow } from "@/types";
+import type { ObjectiveWeights, RunList, RunResult, RunRow, SuggestionItem } from "@/types";
 
 import { invalidateAllocationDerivedViews } from "./invalidate";
 
@@ -21,12 +21,17 @@ export function useRunOptimizationMutation() {
   });
 }
 
-export function useListOptimizationRunsQuery(limit: number | null) {
+export function useListOptimizationRunsQuery(
+  offset: MaybeRef<number>,
+  limit: MaybeRef<number>,
+) {
   const { apiFetch } = useApiFetch();
-  return useQuery<RunRow[]>({
-    queryKey: ["optimization-runs", limit],
+  const o = computed(() => toValue(offset));
+  const l = computed(() => toValue(limit));
+  return useQuery<RunList>({
+    queryKey: computed(() => ["optimization-runs", o.value, l.value]),
     queryFn: () =>
-      apiFetch<RunRow[]>(`/api/optimization/runs${limit != null ? `?limit=${limit}` : ""}`),
+      apiFetch<RunList>(`/api/optimization/runs?offset=${o.value}&limit=${l.value}`),
   });
 }
 
@@ -61,5 +66,45 @@ export function useGetOptimizationRunQuery(runId: MaybeRef<number | null>) {
     queryKey: computed(() => ["optimization-run", id.value]),
     queryFn: () => apiFetch<RunResult>(`/api/optimization/runs/${id.value}`),
     enabled: () => id.value != null,
+  });
+}
+
+export function useListSuggestionsQuery(runId: MaybeRef<number | null>) {
+  const { apiFetch } = useApiFetch();
+  const id = computed(() => toValue(runId));
+  return useQuery<SuggestionItem[]>({
+    queryKey: computed(() => ["optimization-suggestions", id.value]),
+    queryFn: () => apiFetch<SuggestionItem[]>(`/api/optimization/runs/${id.value}/suggestions`),
+    enabled: () => id.value != null,
+  });
+}
+
+export function useRerunMutation() {
+  const { apiFetch } = useApiFetch();
+  const queryClient = useQueryClient();
+  return useMutation<RunResult, Error, { runId: number; suggestionIds: number[] }>({
+    mutationFn: (args) =>
+      apiFetch<RunResult>(`/api/optimization/runs/${args.runId}/rerun`, {
+        method: "POST",
+        body: { suggestion_ids: args.suggestionIds },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["optimization-runs"] });
+    },
+  });
+}
+
+export function useSetSuggestionStatusMutation() {
+  const { apiFetch } = useApiFetch();
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, { id: number; status: "accepted" | "skipped" }>({
+    mutationFn: (args) =>
+      apiFetch<void>(`/api/optimization/suggestions/${args.id}`, {
+        method: "PATCH",
+        body: { status: args.status },
+      }),
+    onSuccess: (_, args) => {
+      queryClient.invalidateQueries({ queryKey: ["optimization-suggestions", args.id] });
+    },
   });
 }
