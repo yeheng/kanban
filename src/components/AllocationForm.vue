@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -58,6 +58,10 @@ const startStr = computed(() => fmtDate(dateRange.value[0]));
 const endStr = computed(() => fmtDate(dateRange.value[1]));
 const resourceSummaryQuery = useResourceSummaryQuery(resourceId, startStr, endStr);
 
+watch([resourceId, dateRange], () => {
+  impact.value = null;
+});
+
 async function submit() {
   error.value = null;
   if (resourceId.value == null || taskId.value == null || projects.current == null) return;
@@ -72,6 +76,7 @@ async function submit() {
       percent: percent.value,
       projectId: projects.current,
     });
+    await resourceSummaryQuery.refetch();
     const s = resourceSummaryQuery.data.value;
     impact.value = s ? { utilization: s.utilization, overloaded: s.overloaded } : null;
   } catch (e: unknown) {

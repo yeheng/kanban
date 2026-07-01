@@ -63,8 +63,8 @@ watch(
 );
 
 async function onProjectChange(value: unknown) {
-  const id = value as number | undefined;
-  if (id != null) {
+  const id = Number(value);
+  if (!Number.isNaN(id)) {
     projects.select(id);
     mode.value = "project";
     focusId.value = id;
@@ -72,8 +72,8 @@ async function onProjectChange(value: unknown) {
 }
 
 async function onResource(value: unknown) {
-  const id = value as number | undefined;
-  if (id == null) return;
+  const id = Number(value);
+  if (Number.isNaN(id)) return;
   mode.value = "resource";
   focusId.value = id;
   resourceSelect.value = id;
@@ -85,7 +85,11 @@ function toProjectMode() {
 }
 
 async function onBarUpdate(id: number, start: string, end: string, percent: number) {
-  await updateAllocation.mutateAsync({ id, start, end, percent });
+  try {
+    await updateAllocation.mutateAsync({ id, start, end, percent });
+  } catch (e: unknown) {
+    err.value = e instanceof Error ? e.message : String(e);
+  }
 }
 </script>
 

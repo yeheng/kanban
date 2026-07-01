@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useListAllocationsQuery, useUpdateAllocationMutation, useDeleteAllocationMutation } from "@/services/api/allocations.api";
-import { useListResourcesQuery } from "@/services/api/resources.api";
 import { useProjectsStore } from "@/stores/projects";
 import AllocationForm from "@/components/AllocationForm.vue";
 import DateRangePicker from "@/components/DateRangePicker.vue";
@@ -16,7 +15,6 @@ import type { AllocationView } from "@/types";
 const allocationsQuery = useListAllocationsQuery(computed(() => projects.current));
 const updateAllocation = useUpdateAllocationMutation();
 const deleteAllocation = useDeleteAllocationMutation();
-const resourcesQuery = useListResourcesQuery();
 const projects = useProjectsStore();
 
 // Edit modal state

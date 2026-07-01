@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Dialog,
@@ -73,6 +74,8 @@ const dateDisplay = computed(() =>
   day.value == null ? "选择日期" : fmtDate(day.value),
 );
 
+const error = ref<string | null>(null);
+
 function updateRid(value: unknown) {
   rid.value = typeof value === "number" ? value : null;
 }
@@ -83,9 +86,23 @@ function updateFrac(value: unknown) {
 
 async function add() {
   if (rid.value == null || day.value == null) return;
-  await addTimeOff.mutateAsync({ resourceId: rid.value, day: fmtDate(day.value), fraction: frac.value, reason: reason.value || null });
-  day.value = null;
-  reason.value = "";
+  error.value = null;
+  try {
+    await addTimeOff.mutateAsync({ resourceId: rid.value, day: fmtDate(day.value), fraction: frac.value, reason: reason.value || null });
+    day.value = null;
+    reason.value = "";
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
+}
+
+async function removeTimeOff(id: number) {
+  error.value = null;
+  try {
+    await deleteTimeOff.mutateAsync(id);
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : String(e);
+  }
 }
 </script>
 
@@ -140,8 +157,12 @@ async function add() {
         <Input v-model="reason" placeholder="请假原因" class="w-48" />
       </div>
 
-      <Button @click="add">添加请假</Button>
+      <Button :disabled="addTimeOff.isPending" @click="add">添加请假</Button>
     </div>
+
+    <Alert v-if="error" variant="destructive" class="mb-2">
+      <AlertDescription>{{ error }}</AlertDescription>
+    </Alert>
 
     <div class="space-y-2">
       <div
@@ -171,7 +192,7 @@ async function add() {
                 <Button variant="outline">取消</Button>
               </DialogClose>
               <DialogClose as-child>
-                <Button variant="destructive" @click="deleteTimeOff.mutate(t.id)">确定</Button>
+                <Button variant="destructive" :disabled="deleteTimeOff.isPending" @click="removeTimeOff(t.id)">确定</Button>
               </DialogClose>
             </DialogFooter>
           </DialogContent>
