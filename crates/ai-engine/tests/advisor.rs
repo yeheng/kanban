@@ -43,3 +43,51 @@ async fn no_advisor_returns_empty() {
     let items = advisor.advise(&AllocationProblem::default(), &Solution::default()).await;
     assert!(items.is_empty(), "NoAdvisor must return zero suggestions");
 }
+
+#[cfg(feature = "llm")]
+mod llm_parse_tests {
+    use ai_engine::advisor::llm::parse_suggestions;
+    use ai_engine::types::*;
+    use chrono::NaiveDate;
+
+    fn prob_with_task_resource() -> AllocationProblem {
+        AllocationProblem {
+            tasks: vec![CandidateTask {
+                id: 5, project_id: 1, title: "T5".into(), estimate_pd: 3.0,
+                start: NaiveDate::from_ymd_opt(2026, 7, 1).unwrap(),
+                end: NaiveDate::from_ymd_opt(2026, 7, 7).unwrap(),
+                priority: 3, skill_reqs: vec![],
+            }],
+            resources: vec![CandidateResource {
+                id: 2, name: "Bob".into(), skills: Default::default(), tags: vec![],
+                daily_capacity_pd: 1.0, available_from: None, available_to: None,
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn parse_invalid_json_returns_empty() {
+        let p = AllocationProblem::default();
+        assert!(parse_suggestions("not json at all", &p).is_empty());
+    }
+
+    #[test]
+    fn parse_drops_unknown_kind_keeps_valid() {
+        let p = prob_with_task_resource();
+        let txt = r#"[
+            {"kind":"bogus","task_id":5},
+            {"kind":"widen_window","task_id":5,"new_start":"2026-07-01","new_end":"2026-07-20","rationale":"x"}
+        ]"#;
+        let v = parse_suggestions(txt, &p);
+        assert_eq!(v.len(), 1);
+        assert!(matches!(v[0].suggestion, Suggestion::WidenWindow { .. }));
+    }
+
+    #[test]
+    fn parse_strips_code_fence() {
+        let p = prob_with_task_resource();
+        let txt = "```json\n[{\"kind\":\"widen_window\",\"task_id\":5,\"new_start\":\"2026-07-01\",\"new_end\":\"2026-07-20\",\"rationale\":\"x\"}]\n```";
+        assert_eq!(parse_suggestions(txt, &p).len(), 1);
+    }
+}

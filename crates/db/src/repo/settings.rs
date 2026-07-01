@@ -202,8 +202,8 @@ impl SettingsRepo {
         let row: AiSettingsRow = sqlx::query_as(
             "SELECT ai_provider, ai_base_url, ai_api_key_enc, ai_chat_model, embed_provider, \
              embed_base_url, embed_api_key_enc, embed_model, embed_dim, solver_backend, \
-             solver_timeout_ms, use_semantic_scorer, use_llm_explainer, ai_explanation_prompt, \
-             ai_explanation_preamble FROM settings WHERE id = 1",
+             solver_timeout_ms, use_semantic_scorer, use_llm_explainer, use_llm_advisor, \
+             ai_explanation_prompt, ai_explanation_preamble FROM settings WHERE id = 1",
         )
         .fetch_one(pool)
         .await?;
@@ -225,6 +225,7 @@ impl SettingsRepo {
             solver_timeout_ms: row.solver_timeout_ms.unwrap_or(5000).max(0) as u64,
             use_semantic_scorer: row.use_semantic_scorer.unwrap_or(1) != 0,
             use_llm_explainer: row.use_llm_explainer.unwrap_or(1) != 0,
+            use_llm_advisor: row.use_llm_advisor.unwrap_or(0) != 0,  // 默认关（0），与 use_llm_explainer 默认 1 相反
             explanation_prompt: row.ai_explanation_prompt,
             explanation_preamble: row.ai_explanation_preamble,
         })
@@ -246,6 +247,7 @@ struct AiSettingsRow {
     solver_timeout_ms: Option<i64>,
     use_semantic_scorer: Option<i64>,
     use_llm_explainer: Option<i64>,
+    use_llm_advisor: Option<i64>,
     ai_explanation_prompt: Option<String>,
     ai_explanation_preamble: Option<String>,
 }
@@ -261,6 +263,8 @@ pub struct AiSettings {
     pub use_semantic_scorer: bool,
     /// Whether to use the LLM-based explainer for optimization result summaries.
     pub use_llm_explainer: bool,
+    /// Whether to use the LLM-based advisor for structured optimization suggestions.
+    pub use_llm_advisor: bool,
     /// User-defined prompt template for the LLM explainer.
     pub explanation_prompt: Option<String>,
     /// User-defined system preamble for the LLM explainer.

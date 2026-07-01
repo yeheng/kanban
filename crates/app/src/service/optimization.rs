@@ -463,6 +463,24 @@ fn select_explainer(ai: &db::AiSettings) -> Arc<dyn ai_engine::explainer::Explai
     Arc::new(ai_engine::explainer::TemplateExplainer)
 }
 
+/// Pick the advisor based on AI settings. 当 `llm` feature 编译且 `use_llm_advisor` 为真时
+/// 用 `LlmAdvisor`；否则 `NoAdvisor`（无建议，功能等同关闭）。`LlmAdvisor` 在 provider
+/// 错误或 JSON 解析失败时返回空 Vec（graceful degradation）。
+fn select_advisor(ai: &db::AiSettings) -> Arc<dyn ai_engine::advisor::Advisor> {
+    #[cfg(feature = "llm")]
+    if ai.use_llm_advisor {
+        return Arc::new(ai_engine::advisor::llm::LlmAdvisor {
+            provider: ai.chat.provider.clone(),
+            model: ai.chat.model.clone(),
+            base_url: ai.chat.base_url.clone(),
+            api_key: ai.chat.api_key_enc.clone(),
+            preamble: None,
+        });
+    }
+    let _ = ai;
+    Arc::new(ai_engine::advisor::NoAdvisor)
+}
+
 /// Pick the solver based on AI settings. When the `milp` feature is compiled in AND
 /// `solver_backend == "good_lp"`, use `MilpSolver` (good_lp + HiGHS); otherwise the
 /// deterministic `GreedySolver`. `MilpSolver` self-gates by a feasible-pair threshold and
