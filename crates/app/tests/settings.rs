@@ -58,6 +58,7 @@ async fn update_settings_persists_and_affects_readers() {
         underload_threshold: 0.60,
         utilization_green: 0.75,
         utilization_yellow: 0.95,
+        use_llm_advisor: true
     };
 
     SettingsService::update(&pool, updated.clone()).await.unwrap();

@@ -12,10 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { fmtDate, parseDateStrict } from "@/utils/date";
 import type { AllocationView } from "@/types";
 
+const projects = useProjectsStore();
 const allocationsQuery = useListAllocationsQuery(computed(() => projects.current));
 const updateAllocation = useUpdateAllocationMutation();
 const deleteAllocation = useDeleteAllocationMutation();
-const projects = useProjectsStore();
 
 // Edit modal state
 const editVisible = ref(false);

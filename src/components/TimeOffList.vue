@@ -157,7 +157,7 @@ async function removeTimeOff(id: number) {
         <Input v-model="reason" placeholder="请假原因" class="w-48" />
       </div>
 
-      <Button :disabled="addTimeOff.isPending" @click="add">添加请假</Button>
+      <Button :disabled="addTimeOff.isPending.value" @click="add">添加请假</Button>
     </div>
 
     <Alert v-if="error" variant="destructive" class="mb-2">
@@ -192,7 +192,7 @@ async function removeTimeOff(id: number) {
                 <Button variant="outline">取消</Button>
               </DialogClose>
               <DialogClose as-child>
-                <Button variant="destructive" :disabled="deleteTimeOff.isPending" @click="removeTimeOff(t.id)">确定</Button>
+                <Button variant="destructive" :disabled="deleteTimeOff.isPending.value" @click="removeTimeOff(t.id)">确定</Button>
               </DialogClose>
             </DialogFooter>
           </DialogContent>

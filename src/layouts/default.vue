@@ -57,12 +57,12 @@ const tagsQuery = useListTagsQuery();
 const unitConfigQuery = useGetUnitConfigQuery();
 
 const ready = computed(() =>
-  projectsQuery.isSuccess && skillsQuery.isSuccess && tagsQuery.isSuccess && unitConfigQuery.isSuccess,
+  projectsQuery.isSuccess.value && skillsQuery.isSuccess.value && tagsQuery.isSuccess.value && unitConfigQuery.isSuccess.value,
 );
 
 const error = computed(() => {
   const queries = [projectsQuery, skillsQuery, tagsQuery, unitConfigQuery];
-  const failed = queries.find((q) => q.isError);
+  const failed = queries.find((q) => q.isError.value);
   if (!failed) return null;
   const e = failed.error.value;
   return e instanceof Error ? e.message : String(e);

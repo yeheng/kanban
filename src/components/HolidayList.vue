@@ -101,7 +101,7 @@ const confirmOpen = ref<Record<number, boolean>>({});
         <Label>名称</Label>
         <Input v-model="name" placeholder="节假日名称" class="w-[200px]" />
       </div>
-      <Button :disabled="addHoliday.isPending" @click="add">添加节假日</Button>
+      <Button :disabled="addHoliday.isPending.value" @click="add">添加节假日</Button>
     </div>
 
     <Alert v-if="error" variant="destructive" class="mb-2">
@@ -127,7 +127,7 @@ const confirmOpen = ref<Record<number, boolean>>({});
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" @click="confirmOpen[h.id] = false">取消</Button>
-              <Button variant="destructive" :disabled="deleteHoliday.isPending" @click="removeHoliday(h.id)">删除</Button>
+              <Button variant="destructive" :disabled="deleteHoliday.isPending.value" @click="removeHoliday(h.id)">删除</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

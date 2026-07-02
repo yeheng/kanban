@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -95,10 +96,28 @@ function updateNullableString(
       <p class="text-muted-foreground">全局配置与偏好</p>
     </div>
 
-    <div v-if="settingsQuery.isLoading || !draft" class="space-y-4">
+    <div v-if="settingsQuery.isLoading.value" class="space-y-4">
       <Skeleton class="h-32 w-full" />
       <Skeleton class="h-32 w-full" />
       <Skeleton class="h-32 w-full" />
+    </div>
+
+    <div v-else-if="settingsQuery.isError.value" class="space-y-4">
+      <Alert variant="destructive">
+        <AlertTitle>加载设置失败</AlertTitle>
+        <AlertDescription>
+          {{ settingsQuery.error instanceof Error ? settingsQuery.error.message : String(settingsQuery.error) }}
+        </AlertDescription>
+      </Alert>
+      <Button variant="outline" @click="settingsQuery.refetch()">重试</Button>
+    </div>
+
+    <div v-else-if="!draft" class="space-y-4">
+      <Alert variant="destructive">
+        <AlertTitle>设置数据为空</AlertTitle>
+        <AlertDescription>无法获取设置数据，请检查后端服务是否正常运行。</AlertDescription>
+      </Alert>
+      <Button variant="outline" @click="settingsQuery.refetch()">重试</Button>
     </div>
 
     <div v-else class="space-y-6">
@@ -386,15 +405,15 @@ function updateNullableString(
 
       <div class="flex items-center gap-4">
         <div class="flex gap-2">
-          <Button type="button" :disabled="updateSettings.isPending || !draft" @click="save">
-            <Loader2Icon v-if="updateSettings.isPending" class="mr-2 h-4 w-4 animate-spin" />
-            {{ updateSettings.isPending ? "保存中..." : "保存设置" }}
+          <Button type="button" :disabled="updateSettings.isPending.value || !draft" @click="save">
+            <Loader2Icon v-if="updateSettings.isPending.value" class="mr-2 h-4 w-4 animate-spin" />
+            {{ updateSettings.isPending.value ? "保存中..." : "保存设置" }}
           </Button>
-          <Button type="button" variant="outline" :disabled="updateSettings.isPending || !draft" @click="reset">
+          <Button type="button" variant="outline" :disabled="updateSettings.isPending.value || !draft" @click="reset">
             重置
           </Button>
         </div>
-        <p v-if="updateSettings.isPending" class="text-muted-foreground text-sm">正在保存设置...</p>
+        <p v-if="updateSettings.isPending.value" class="text-muted-foreground text-sm">正在保存设置...</p>
       </div>
     </div>
   </div>
