@@ -9,6 +9,7 @@ use db::{AllocationsRepo, ResourcesRepo, SettingsRepo, TeamOverridesRepo};
 use domain::{capacity_pd, workload_pd, Window};
 use serde::Serialize;
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 #[derive(Debug, Serialize)]
 pub struct ResourceSummary {
@@ -76,6 +77,8 @@ impl WorkloadService {
     /// All resources whose utilization exceeds their effective threshold (Dashboard alert list).
     /// The calendar and per-team thresholds are loaded ONCE (not per resource) to avoid the
     /// N+1 `team_of_resource`/override lookups at scale (design §4.9 <5ms target).
+    /// Allocations are loaded in ONE batch query (`list_for_resources`) instead of N
+    /// per-resource queries, then grouped by `resource_id` in memory.
     #[tracing::instrument(skip(pool))]
     pub async fn overloads(
         pool: &SqlitePool,
@@ -88,12 +91,19 @@ impl WorkloadService {
         let ids: Vec<i64> = resources.iter().map(|r| r.id).collect();
         let thr_map = effective_thresholds_map(pool, &ids).await?;
         let global = SettingsRepo::thresholds(pool).await?;
+
+        // Batch-load all allocations for all resources in one query.
+        let all_rows = db::AllocationsRepo::list_for_resources(pool, &ids, start, end).await?;
+        let mut allocs_by_res: HashMap<i64, Vec<domain::Allocation>> = HashMap::new();
+        for row in all_rows {
+            allocs_by_res.entry(row.resource_id).or_default().push(row.to_domain());
+        }
+
         let mut out = Vec::new();
         for r in resources {
-            let rows = AllocationsRepo::list_for_resource(pool, r.id, start, end).await?;
-            let allocs: Vec<domain::Allocation> = rows.iter().map(|row| row.to_domain()).collect();
+            let allocs = allocs_by_res.get(&r.id).map(|v| v.as_slice()).unwrap_or(&[]);
             let thr = thr_map.get(&r.id).unwrap_or(&global);
-            let s = Self::summarize(&cal, &allocs, r.id, r.daily_capacity_pd, w, thr);
+            let s = Self::summarize(&cal, allocs, r.id, r.daily_capacity_pd, w, thr);
             if s.overloaded {
                 out.push(s);
             }
@@ -164,6 +174,7 @@ pub struct ProjectBurn {
 impl WorkloadService {
     /// Team utilization = Σ workload / Σ capacity over members (design §4.9 team_utilization).
     /// Also lists members whose individual utilization exceeds their threshold.
+    /// Allocations are batch-loaded in one query (no N+1 per member).
     #[tracing::instrument(skip(pool), fields(team_id = team_id))]
     pub async fn team_summary(
         pool: &SqlitePool,
@@ -180,15 +191,21 @@ impl WorkloadService {
         // Per-member effective thresholds, batched (no N+1).
         let thr_map = effective_thresholds_map(pool, &ids).await?;
 
+        // Batch-load all member allocations in one query.
+        let all_rows = db::AllocationsRepo::list_for_resources(pool, &ids, start, end).await?;
+        let mut allocs_by_res: HashMap<i64, Vec<domain::Allocation>> = HashMap::new();
+        for row in all_rows {
+            allocs_by_res.entry(row.resource_id).or_default().push(row.to_domain());
+        }
+
         let mut total_wl = 0.0;
         let mut total_cap = 0.0;
         let mut overloaded = Vec::new();
         for &rid in &ids {
             let resource = ResourcesRepo::get(pool, rid).await?;
-            let rows = AllocationsRepo::list_for_resource(pool, rid, start, end).await?;
-            let allocs: Vec<domain::Allocation> = rows.iter().map(|r| r.to_domain()).collect();
+            let allocs = allocs_by_res.get(&rid).map(|v| v.as_slice()).unwrap_or(&[]);
             let cap = capacity_pd(&cal, 0, rid, resource.daily_capacity_pd, w);
-            let wl = workload_pd(&cal, &allocs, rid, w);
+            let wl = workload_pd(&cal, allocs, rid, w);
             total_wl += wl;
             total_cap += cap;
             let util = if cap > 0.0 { wl / cap } else { 0.0 };

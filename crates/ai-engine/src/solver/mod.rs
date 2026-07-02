@@ -1,5 +1,6 @@
 use crate::types::*;
-use chrono::{Days, NaiveDate};
+use chrono::NaiveDate;
+use domain::each_day;
 use std::collections::HashMap;
 
 #[cfg(feature = "milp")]
@@ -23,16 +24,6 @@ pub trait Solver: Send + Sync {
 /// total committed ratio-days. The workload engine remains authoritative for display.
 pub struct GreedySolver;
 
-/// Walk every calendar day in [start, end] inclusive. Panics on a pathological
-/// range (chrono's checked_add_days returning None); real task windows never hit it.
-pub(crate) fn each_day<F: FnMut(NaiveDate)>(start: NaiveDate, end: NaiveDate, mut f: F) {
-    let mut d = start;
-    while d <= end {
-        f(d);
-        d = d.checked_add_days(Days::new(1)).unwrap();
-    }
-}
-
 /// Per-day capacity factor for (resource, day). Missing ⇒ full day (1.0).
 pub(crate) fn day_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, day: NaiveDate) -> f64 {
     caps.get(&(r, day)).copied().unwrap_or(1.0)
@@ -40,9 +31,7 @@ pub(crate) fn day_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, day: N
 
 /// Σ capacity factor over [start, end] for resource r.
 pub(crate) fn sum_capacity(caps: &HashMap<(i64, NaiveDate), f64>, r: i64, start: NaiveDate, end: NaiveDate) -> f64 {
-    let mut s = 0.0;
-    each_day(start, end, |d| s += day_capacity(caps, r, d));
-    s
+    each_day(start, end).map(|d| day_capacity(caps, r, d)).sum()
 }
 
 /// Σ committed load over [start, end] for resource r — the balance signal.
@@ -53,13 +42,10 @@ fn window_load(
     start: NaiveDate,
     end: NaiveDate,
 ) -> f64 {
-    let mut s = 0.0;
-    each_day(start, end, |d| {
-        if day_capacity(caps, r, d) > 0.0 {
-            s += load.get(&(r, d)).copied().unwrap_or(0.0);
-        }
-    });
-    s
+    each_day(start, end)
+        .filter(|d| day_capacity(caps, r, *d) > 0.0)
+        .map(|d| load.get(&(r, d)).copied().unwrap_or(0.0))
+        .sum()
 }
 
 /// Uniform daily percent needed to deliver `estimate_pd` over a window whose
@@ -88,22 +74,20 @@ fn fits(
     end: NaiveDate,
     needed: f64,
 ) -> bool {
-    let mut d = start;
-    while d <= end {
+    each_day(start, end).all(|d| {
         let limit = day_capacity(caps, r, d);
         if limit > 0.0 {
             let cur = load.get(&(r, d)).copied().unwrap_or(0.0);
-            if cur + needed > limit + 1e-9 {
-                return false;
-            }
+            cur + needed <= limit + 1e-9
+        } else {
+            true
         }
-        d = d.checked_add_days(Days::new(1)).unwrap();
-    }
-    true
+    })
 }
 
-/// Jain fairness index on a slice of per-resource loads: (Σx)² / (n·Σx²). Returns
-/// 1.0 for the all-zero case (no imbalance exists) and for n == 0.
+/// Jain fairness index on a slice of per-resource loads: (Σx)² / (n·Σx²).
+/// Returns 0.0 for n == 0 and for the all-zero case (no work distributed → no
+/// fairness to speak of — a do-nothing solution is not "perfectly balanced").
 fn jain(xs: &[f64]) -> f64 {
     let n = xs.len() as f64;
     if n == 0.0 {
@@ -112,7 +96,7 @@ fn jain(xs: &[f64]) -> f64 {
     let sum: f64 = xs.iter().sum();
     let sq: f64 = xs.iter().map(|x| x * x).sum();
     if sq == 0.0 {
-        return 1.0;
+        return 0.0;
     }
     (sum * sum) / (n * sq)
 }
@@ -131,12 +115,12 @@ impl Solver for GreedySolver {
         let mut load: HashMap<(i64, NaiveDate), f64> = HashMap::new();
         let mut total_load: HashMap<i64, f64> = HashMap::new();
         for e in &problem.existing {
-            each_day(e.start, e.end, |d| {
+            for d in each_day(e.start, e.end) {
                 if day_capacity(&caps, e.resource_id, d) > 0.0 {
                     *load.entry((e.resource_id, d)).or_insert(0.0) += e.percent;
                     *total_load.entry(e.resource_id).or_insert(0.0) += e.percent;
                 }
-            });
+            }
         }
 
         // Order tasks by dependency topology first (predecessors before dependents), then by
@@ -228,12 +212,12 @@ impl Solver for GreedySolver {
 
             match chosen {
                 Some((r, needed, sc)) => {
-                    each_day(t.start, t.end, |d| {
+                    for d in each_day(t.start, t.end) {
                         if day_capacity(&caps, r.id, d) > 0.0 {
                             *load.entry((r.id, d)).or_insert(0.0) += needed;
                             *total_load.entry(r.id).or_insert(0.0) += needed;
                         }
-                    });
+                    }
                     score_sum += sc;
                     planned_pd += t.estimate_pd;
                     scheduled.insert(t.id);
@@ -294,7 +278,7 @@ pub(crate) fn topo_order<'a>(
     tasks: &'a [CandidateTask],
     dependencies: &[TaskDependency],
 ) -> Vec<&'a CandidateTask> {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{HashMap, HashSet, VecDeque};
     let id_idx: HashMap<i64, usize> = tasks.iter().enumerate().map(|(i, t)| (t.id, i)).collect();
     // in-degree counts predecessors that are themselves candidate tasks.
     let mut indeg: Vec<usize> = vec![0; tasks.len()];
@@ -306,14 +290,14 @@ pub(crate) fn topo_order<'a>(
         indeg[ti] += 1;
         succ.entry(pi).or_default().push(ti);
     }
-    // Kahn's algorithm, seeded with all zero-in-degree tasks sorted by the greedy key.
-    let mut ready: Vec<usize> = (0..tasks.len()).filter(|&i| indeg[i] == 0).collect();
-    ready.sort_by(|&a, &b| tasks[a].priority.cmp(&tasks[b].priority)
+    // Kahn's algorithm with a sorted VecDeque: pop_front is O(1) (vs O(n) for Vec::remove(0)),
+    // and new entries are inserted in sorted position via binary_search.
+    let mut ready: VecDeque<usize> = (0..tasks.len()).filter(|&i| indeg[i] == 0).collect();
+    ready.make_contiguous().sort_by(|&a, &b| tasks[a].priority.cmp(&tasks[b].priority)
         .then_with(|| tasks[b].estimate_pd.total_cmp(&tasks[a].estimate_pd)));
     let mut out: Vec<&CandidateTask> = Vec::with_capacity(tasks.len());
     let mut emitted: HashSet<usize> = HashSet::new();
-    while let Some(i) = ready.first().copied() {
-        ready.remove(0);
+    while let Some(i) = ready.pop_front() {
         emitted.insert(i);
         out.push(&tasks[i]);
         if let Some(next) = succ.get(&i) {
@@ -321,7 +305,7 @@ pub(crate) fn topo_order<'a>(
                 indeg[j] -= 1;
                 if indeg[j] == 0 && !emitted.contains(&j) {
                     // insert keeping the priority/estimate order
-                    let pos = ready.binary_search_by(|&k| {
+                    let pos = ready.make_contiguous().binary_search_by(|&k| {
                         tasks[k].priority.cmp(&tasks[j].priority)
                             .then_with(|| tasks[j].estimate_pd.total_cmp(&tasks[k].estimate_pd))
                     }).unwrap_or_else(|e| e);
@@ -346,6 +330,11 @@ pub(crate) fn topo_order<'a>(
 /// - `chosen`     : number of assignments placed (denominator of skill_fit & scheduled_ratio;
 ///   passed explicitly because two assignments may share a resource, so `loads`'s non-zero
 ///   count would undercount vs. `assignments.len()`).
+///
+/// Weight→metric mapping: `skill_fit` weight → avg score, `balance` weight → Jain fairness,
+/// `budget` weight → budget adherence. Coverage (`scheduled_ratio`) is reported as its own
+/// sub-metric and is an implicit objective of both solvers (greedy schedules everything it
+/// can; MILP has an explicit coverage term), not a component of `overall`.
 pub(crate) fn compute_metrics(
     problem: &AllocationProblem,
     score_sum: &f64,
@@ -368,7 +357,7 @@ pub(crate) fn compute_metrics(
     let fairness = jain(loads) * 100.0;
     SolutionMetrics {
         overall: skill_fit * problem.weights.skill_fit
-            + scheduled_ratio * problem.weights.balance
+            + fairness * problem.weights.balance
             + budget_score * problem.weights.budget,
         skill_fit,
         scheduled_ratio,

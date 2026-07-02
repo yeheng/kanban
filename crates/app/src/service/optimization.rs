@@ -2,7 +2,8 @@ use crate::error::AppError;
 use ai_engine::scorer::FallbackScorer;
 use ai_engine::solver::{GreedySolver, Solver};
 use ai_engine::types::*;
-use chrono::{Days, NaiveDate};
+use chrono::NaiveDate;
+use domain::each_day;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use std::collections::{HashMap, HashSet};
@@ -29,121 +30,8 @@ impl OptimizationService {
     ) -> Result<RunResult, AppError> {
         let mut problem = build_problem(pool, project_id).await?;
         if let Some(w) = weights { problem.weights = w; }
-        let ai = db::SettingsRepo::ai_settings(pool).await?;
-
-        // Objective weights drive the scorer coefficient split (jaccard↔skill_fit,
-        // proficiency↔balance) and the greedy objective's metric blend. Budget is an
-        // unconditional hard gate when budget_pd > 0 (not weight-gated); weights only
-        // tune how the budget *score* feeds into `overall` (design §5 multi-objective, G3).
-        let total = (problem.weights.skill_fit + problem.weights.balance).max(0.001);
-        let scorer: Arc<dyn ai_engine::scorer::Scorer> = select_scorer(&ai, problem.weights.skill_fit / total, problem.weights.balance / total);
-        let explainer: Arc<dyn ai_engine::explainer::Explainer> = select_explainer(&ai);
-        let (solver, effective_backend) = select_solver(&ai);
-        // `effective_backend` is what ACTUALLY ran (greedy if good_lp was requested but the milp
-        // feature isn't compiled in). Persist it into the problem snapshot so the explainer prompt
-        // and the persisted run row both reflect reality.
-        problem.config.backend = effective_backend.to_string();
-        problem.config.timeout_ms = ai.solver_timeout_ms;
-        let milp_active = cfg!(feature = "milp") && ai.solver_backend == "good_lp";
-        let started = chrono::Utc::now();
-        // Score → solve (spawn_blocking + timeout + greedy fallback for the MILP path) → explain.
-        // solve() is synchronous CPU-bound (greedy cheap, HiGHS heavy); the exact solver runs
-        // off the async runtime and is bounded by both HiGHS's own time_limit and an outer
-        // tokio::time::timeout. Infeasible/timeout/error ⇒ greedy fallback, status=Feasible
-        // (design §5.8.4: infeasible ⇒ degrade to greedy, never empty/panic).
-        let scores = scorer.matrix(&problem).await;
-        let solution = solve_with_fallback(&ai, solver, milp_active, &problem, &scores).await;
-        let explanation_md = explainer.explain(&problem, &solution).await;
-        let mut plan = ai_engine::OptimizedPlan { solution, explanation_md };
-        let finished = chrono::Utc::now();
-        let duration_ms = (finished - started).num_milliseconds();
-
-        let cfg = serde_json::to_string(&problem.config).unwrap_or_default();
-        // `seed` is bound 0: both solvers are deterministic (greedy + MILP), so a seed carries no
-        // information; the column is kept only to satisfy NOT NULL. `constraints_json` is bound ''
-        // here and backfilled below with the dependency-edge snapshot this run honored.
-        let wts = serde_json::to_string(&problem.weights).unwrap_or_default();
-
-        // Insert with empty JSON snapshots to get the autoincrement id first (avoids the
-        // MAX(id)+1 race — two concurrent runs could both predict the same run_id, baking a
-        // stale value into the persisted JSON). scope='full' (this is a full project re-plan;
-        // 'incremental' is reserved for when the solver respects existing allocations).
-        //
-        // constraints_json / input_snapshot_json / output_plan_json are bound as '' here and
-        // backfilled by the UPDATE below (after the real run_id is known) — keeping the
-        // placeholder/bind order aligned with the column order so each bind lands on the
-        // right column (an earlier version off-by-one mis-stored score columns).
-        //   binds: seed scope proj cfg wts overall skill sched fair expl prov chat embed
-        //          backend status started finished duration   (= 18 binds, 19 `?` + 3 '' + 1
-        //          'proposed' literal = 22 columns)
-        let (run_id,): (i64,) = sqlx::query_as(
-            "INSERT INTO ai_optimization_runs (seed, scope, scope_project_ids, config_json, constraints_json, \
-                weights_json, input_snapshot_json, output_plan_json, score_overall, score_skill_fit, \
-                score_scheduled_ratio, score_fairness, explanation_md, provider, chat_model, embed_model, \
-                solver_backend, solver_status, status, started_at, finished_at, duration_ms) \
-             VALUES (?,?,?,?,'',?,'','',?,?,?,?,?,?,?,?,?,?,'proposed',?,?,?) RETURNING id")
-            .bind(0i64).bind("full").bind(format!("[{}]", project_id))
-            .bind(cfg).bind(wts)
-            .bind(plan.solution.metrics.overall).bind(plan.solution.metrics.skill_fit)
-            .bind(plan.solution.metrics.scheduled_ratio).bind(plan.solution.metrics.fairness)
-            .bind(&plan.explanation_md)
-            .bind(&ai.chat.provider).bind(&ai.chat.model).bind(&ai.embed.model).bind(effective_backend)
-            .bind(plan.solution.status.as_str())
-            .bind(started.to_rfc3339()).bind(finished.to_rfc3339()).bind(duration_ms)
-            .fetch_one(pool).await?;
-
-        // Now stamp the real run_id into the problem + solution, serialize, and backfill the
-        // snapshot/plan JSON so the persisted row is self-consistent for reproducibility.
-        problem.run_id = run_id;
-        plan.solution.run_id = run_id;
-        let snap = serde_json::to_string(&problem).unwrap_or_default();
-        let out = serde_json::to_string(&plan.solution.assignments).unwrap_or_default();
-        // constraints_json: the dependency edges this run honored (design §3.3.12), serialized
-        // for reproducibility. Previously bound '' and left empty (vestigial when ConstraintFlags
-        // existed); now it carries real constraint data. Seed stays 0 — both solvers are
-        // deterministic, so it carries no information (kept to satisfy the NOT NULL column).
-        let cons = serde_json::to_string(&problem.dependencies).unwrap_or_else(|_| "[]".into());
-        sqlx::query("UPDATE ai_optimization_runs SET input_snapshot_json=?, output_plan_json=?, constraints_json=? WHERE id=?")
-            .bind(snap).bind(out).bind(cons).bind(run_id)
-            .execute(pool).await?;
-
-        // LLM 建议：若启用 advisor，审视方案产出结构化建议并写表（status='proposed'）。
-        // 无建议（LLM 不可用/解析空）时表里无行，前端显示"AI 无建议"。
-        let advisor = select_advisor(&ai);
-        let suggestions = advisor.advise(&problem, &plan.solution).await;
-        for item in &suggestions {
-            let kind = match &item.suggestion {
-                ai_engine::types::Suggestion::SwapResource { .. } => "swap_resource",
-                ai_engine::types::Suggestion::ChangePercent { .. } => "change_percent",
-                ai_engine::types::Suggestion::WidenWindow { .. } => "widen_window",
-                ai_engine::types::Suggestion::DropDependency { .. } => "drop_dependency",
-                ai_engine::types::Suggestion::AddResource { .. } => "add_resource",
-                ai_engine::types::Suggestion::WidenResourceWindow { .. } => "widen_resource_window",
-                ai_engine::types::Suggestion::ChangeResourceCapacity { .. } => "change_resource_capacity",
-                ai_engine::types::Suggestion::UpsertResourceSkill { .. } => "upsert_resource_skill",
-            };
-            let payload = serde_json::to_string(&item.suggestion).unwrap_or_default();
-            sqlx::query(
-                "INSERT INTO ai_optimization_suggestions (run_id, kind, target_task_id, target_resource_id, payload_json, rationale_md, status) \
-                 VALUES (?,?,?,?,?,?,?)")
-                .bind(run_id).bind(kind)
-                .bind(item.suggestion.target_task_id())
-                .bind(item.suggestion.target_resource_id())
-                .bind(payload).bind(&item.rationale_md).bind("proposed")
-                .execute(pool).await?;
-        }
-        tracing::debug!(run_id = run_id, suggestions = suggestions.len(), "advisor suggestions persisted");
-
-        tracing::info!(
-            run_id = run_id,
-            duration_ms = duration_ms,
-            solver_backend = effective_backend,
-            assignments = plan.solution.assignments.len(),
-            unscheduled = plan.solution.unscheduled.len(),
-            overall = plan.solution.metrics.overall,
-            "optimization run completed"
-        );
-        Ok(RunResult { run_id, plan })
+        let scope = format!("[{}]", project_id);
+        solve_and_persist(pool, &mut problem, &scope, None).await
     }
 
     /// Accept a proposed run: write its assignments as allocations (source='ai', run_id) and
@@ -367,61 +255,135 @@ impl OptimizationService {
             }
         }
 
-        // 4. 复用 run_for_project 的下半段（scorer/solve/explain/persist）。
+        // 4. 复用 solve_and_persist（scorer/solve/explain/persist/advisor）。
         problem.run_id = 0;
-        let ai = db::SettingsRepo::ai_settings(pool).await?;
-        let total = (problem.weights.skill_fit + problem.weights.balance).max(0.001);
-        let scorer = select_scorer(&ai, problem.weights.skill_fit / total, problem.weights.balance / total);
-        let explainer = select_explainer(&ai);
-        let (solver, effective_backend) = select_solver(&ai);
-        problem.config.backend = effective_backend.to_string();
-        problem.config.timeout_ms = ai.solver_timeout_ms;
-        let milp_active = cfg!(feature = "milp") && ai.solver_backend == "good_lp";
-        let started = chrono::Utc::now();
-        let scores = scorer.matrix(&problem).await;
-        let solution = solve_with_fallback(&ai, solver, milp_active, &problem, &scores).await;
-        let explanation_md = explainer.explain(&problem, &solution).await;
-        let mut plan = ai_engine::OptimizedPlan { solution, explanation_md };
-        let finished = chrono::Utc::now();
-        let duration_ms = (finished - started).num_milliseconds();
+        let scope = parent.scope_project_ids.unwrap_or_else(|| "[]".into());
+        let result = solve_and_persist(pool, &mut problem, &scope, Some(parent_run_id)).await?;
 
-        let cfg = serde_json::to_string(&problem.config).unwrap_or_default();
-        let wts = serde_json::to_string(&problem.weights).unwrap_or_default();
-        // 5. 插新 run（parent_run_id 指回父 run）。列顺序与 run_for_project 的 INSERT 对齐，末尾多 parent_run_id。
-        //    23 列：4 字面量（constraints_json='', input_snapshot_json='', output_plan_json='',
-        //    status='proposed'）→ 19 个 `?` 占位符，19 个 bind。
-        let (run_id,): (i64,) = sqlx::query_as(
-            "INSERT INTO ai_optimization_runs (seed, scope, scope_project_ids, config_json, constraints_json, \
-                weights_json, input_snapshot_json, output_plan_json, score_overall, score_skill_fit, \
-                score_scheduled_ratio, score_fairness, explanation_md, provider, chat_model, embed_model, \
-                solver_backend, solver_status, status, started_at, finished_at, duration_ms, parent_run_id) \
-             VALUES (?,?,?,?,'',?,'','',?,?,?,?,?,?,?,?,?,?,'proposed',?,?,?,?) RETURNING id")
-            .bind(0i64).bind("full").bind(parent.scope_project_ids)
-            .bind(cfg).bind(wts)
-            .bind(plan.solution.metrics.overall).bind(plan.solution.metrics.skill_fit)
-            .bind(plan.solution.metrics.scheduled_ratio).bind(plan.solution.metrics.fairness)
-            .bind(&plan.explanation_md)
-            .bind(&ai.chat.provider).bind(&ai.chat.model).bind(&ai.embed.model).bind(effective_backend)
-            .bind(plan.solution.status.as_str())
-            .bind(started.to_rfc3339()).bind(finished.to_rfc3339()).bind(duration_ms)
-            .bind(parent_run_id)
-            .fetch_one(pool).await?;
-        problem.run_id = run_id;
-        plan.solution.run_id = run_id;
-        let snap = serde_json::to_string(&problem).unwrap_or_default();
-        let out = serde_json::to_string(&plan.solution.assignments).unwrap_or_default();
-        let cons = serde_json::to_string(&problem.dependencies).unwrap_or_else(|_| "[]".into());
-        sqlx::query("UPDATE ai_optimization_runs SET input_snapshot_json=?, output_plan_json=?, constraints_json=? WHERE id=?")
-            .bind(snap).bind(out).bind(cons).bind(run_id).execute(pool).await?;
-
-        // 6. 标采纳建议 applied。
+        // 5. 标采纳建议 applied。
         for id in &applied_suggestion_ids {
             sqlx::query("UPDATE ai_optimization_suggestions SET status='applied' WHERE id=?")
                 .bind(id).execute(pool).await?;
         }
-        tracing::info!(run_id = run_id, parent_run_id = parent_run_id, applied_suggestions = applied_suggestion_ids.len(), "rerun completed");
-        Ok(RunResult { run_id, plan })
+        tracing::info!(run_id = result.run_id, parent_run_id = parent_run_id, applied_suggestions = applied_suggestion_ids.len(), "rerun completed");
+        Ok(result)
     }
+}
+
+/// Shared pipeline used by both `run_for_project` and `rerun`:
+/// select scorer/solver/explainer from AI settings → score → solve (with MILP fallback) →
+/// explain → INSERT run row (get real run_id) → backfill JSON snapshots → persist advisor
+/// suggestions. `parent_run_id` is `Some` for rerun (links the new run to its parent).
+///
+/// This was previously duplicated ~60 lines between the two callers. The only differences
+/// were `scope_project_ids` (from the project vs. inherited from the parent run) and
+/// `parent_run_id` (None vs. Some) — both now passed as parameters.
+async fn solve_and_persist(
+    pool: &SqlitePool,
+    problem: &mut AllocationProblem,
+    scope_project_ids: &str,
+    parent_run_id: Option<i64>,
+) -> Result<RunResult, AppError> {
+    let ai = db::SettingsRepo::ai_settings(pool).await?;
+
+    // Objective weights drive the scorer coefficient split (jaccard↔skill_fit,
+    // proficiency↔balance) and the greedy objective's metric blend. Budget is an
+    // unconditional hard gate when budget_pd > 0 (not weight-gated).
+    let total = (problem.weights.skill_fit + problem.weights.balance).max(0.001);
+    let scorer: Arc<dyn ai_engine::scorer::Scorer> =
+        select_scorer(&ai, problem.weights.skill_fit / total, problem.weights.balance / total);
+    let explainer: Arc<dyn ai_engine::explainer::Explainer> = select_explainer(&ai);
+    let (solver, effective_backend) = select_solver(&ai);
+    problem.config.backend = effective_backend.to_string();
+    problem.config.timeout_ms = ai.solver_timeout_ms;
+    let milp_active = cfg!(feature = "milp") && ai.solver_backend == "good_lp";
+    let started = chrono::Utc::now();
+    let scores = scorer.matrix(problem).await;
+    let solution = solve_with_fallback(&ai, solver, milp_active, problem, &scores).await;
+    let explanation_md = explainer.explain(problem, &solution).await;
+    let mut plan = ai_engine::OptimizedPlan { solution, explanation_md };
+    let finished = chrono::Utc::now();
+    let duration_ms = (finished - started).num_milliseconds();
+
+    let cfg = serde_json::to_string(&problem.config).unwrap_or_default();
+    let wts = serde_json::to_string(&problem.weights).unwrap_or_default();
+
+    // Insert with empty JSON snapshots to get the autoincrement id first (avoids the
+    // MAX(id)+1 race). constraints_json / input_snapshot_json / output_plan_json are
+    // backfilled by the UPDATE below after the real run_id is known.
+    let insert_sql = if parent_run_id.is_some() {
+        "INSERT INTO ai_optimization_runs (seed, scope, scope_project_ids, config_json, constraints_json, \
+            weights_json, input_snapshot_json, output_plan_json, score_overall, score_skill_fit, \
+            score_scheduled_ratio, score_fairness, explanation_md, provider, chat_model, embed_model, \
+            solver_backend, solver_status, status, started_at, finished_at, duration_ms, parent_run_id) \
+         VALUES (?,?,?,?,'',?,'','',?,?,?,?,?,?,?,?,?,?,'proposed',?,?,?,?) RETURNING id"
+    } else {
+        "INSERT INTO ai_optimization_runs (seed, scope, scope_project_ids, config_json, constraints_json, \
+            weights_json, input_snapshot_json, output_plan_json, score_overall, score_skill_fit, \
+            score_scheduled_ratio, score_fairness, explanation_md, provider, chat_model, embed_model, \
+            solver_backend, solver_status, status, started_at, finished_at, duration_ms) \
+         VALUES (?,?,?,?,'',?,'','',?,?,?,?,?,?,?,?,?,?,'proposed',?,?,?) RETURNING id"
+    };
+    let mut query = sqlx::query_as::<_, (i64,)>(insert_sql)
+        .bind(0i64).bind("full").bind(scope_project_ids)
+        .bind(cfg).bind(wts)
+        .bind(plan.solution.metrics.overall).bind(plan.solution.metrics.skill_fit)
+        .bind(plan.solution.metrics.scheduled_ratio).bind(plan.solution.metrics.fairness)
+        .bind(&plan.explanation_md)
+        .bind(&ai.chat.provider).bind(&ai.chat.model).bind(&ai.embed.model).bind(effective_backend)
+        .bind(plan.solution.status.as_str())
+        .bind(started.to_rfc3339()).bind(finished.to_rfc3339()).bind(duration_ms);
+    if let Some(pid) = parent_run_id {
+        query = query.bind(pid);
+    }
+    let (run_id,): (i64,) = query.fetch_one(pool).await?;
+
+    // Stamp the real run_id, serialize, and backfill the snapshot/plan JSON.
+    problem.run_id = run_id;
+    plan.solution.run_id = run_id;
+    let snap = serde_json::to_string(problem).unwrap_or_default();
+    let out = serde_json::to_string(&plan.solution.assignments).unwrap_or_default();
+    let cons = serde_json::to_string(&problem.dependencies).unwrap_or_else(|_| "[]".into());
+    sqlx::query("UPDATE ai_optimization_runs SET input_snapshot_json=?, output_plan_json=?, constraints_json=? WHERE id=?")
+        .bind(snap).bind(out).bind(cons).bind(run_id)
+        .execute(pool).await?;
+
+    // LLM advisor: if enabled, review the solution and persist structured suggestions.
+    let advisor = select_advisor(&ai);
+    let suggestions = advisor.advise(problem, &plan.solution).await;
+    for item in &suggestions {
+        let kind = match &item.suggestion {
+            ai_engine::types::Suggestion::SwapResource { .. } => "swap_resource",
+            ai_engine::types::Suggestion::ChangePercent { .. } => "change_percent",
+            ai_engine::types::Suggestion::WidenWindow { .. } => "widen_window",
+            ai_engine::types::Suggestion::DropDependency { .. } => "drop_dependency",
+            ai_engine::types::Suggestion::AddResource { .. } => "add_resource",
+            ai_engine::types::Suggestion::WidenResourceWindow { .. } => "widen_resource_window",
+            ai_engine::types::Suggestion::ChangeResourceCapacity { .. } => "change_resource_capacity",
+            ai_engine::types::Suggestion::UpsertResourceSkill { .. } => "upsert_resource_skill",
+        };
+        let payload = serde_json::to_string(&item.suggestion).unwrap_or_default();
+        sqlx::query(
+            "INSERT INTO ai_optimization_suggestions (run_id, kind, target_task_id, target_resource_id, payload_json, rationale_md, status) \
+             VALUES (?,?,?,?,?,?,?)")
+            .bind(run_id).bind(kind)
+            .bind(item.suggestion.target_task_id())
+            .bind(item.suggestion.target_resource_id())
+            .bind(payload).bind(&item.rationale_md).bind("proposed")
+            .execute(pool).await?;
+    }
+    tracing::debug!(run_id = run_id, suggestions = suggestions.len(), "advisor suggestions persisted");
+
+    tracing::info!(
+        run_id = run_id,
+        duration_ms = duration_ms,
+        solver_backend = effective_backend,
+        assignments = plan.solution.assignments.len(),
+        unscheduled = plan.solution.unscheduled.len(),
+        overall = plan.solution.metrics.overall,
+        "optimization run completed"
+    );
+    Ok(RunResult { run_id, plan })
 }
 
 #[derive(Debug, sqlx::FromRow, Serialize)]
@@ -632,14 +594,12 @@ async fn build_problem(pool: &SqlitePool, project_id: i64) -> Result<AllocationP
             let cal = db::repo::calendar::hydrate(pool).await?;
             let mut caps = Vec::new();
             for r in &cand {
-                let mut day = h_start;
-                while day <= h_end {
+                for day in each_day(h_start, h_end) {
                     caps.push(DailyCapacity {
                         resource_id: r.id,
                         day,
                         factor: cal.day_factor(project_id, r.id, day),
                     });
-                    day = day.checked_add_days(Days::new(1)).unwrap();
                 }
             }
             (existing, caps)

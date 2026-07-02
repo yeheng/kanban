@@ -3,6 +3,7 @@ use crate::service::dates;
 use chrono::{Days, NaiveDate};
 use db::models::AllocationView;
 use db::AllocationsRepo;
+use domain::each_day;
 use std::collections::HashMap;
 use sqlx::SqlitePool;
 
@@ -202,9 +203,7 @@ async fn validate_capacity(
 
     let mut load_by_day: HashMap<NaiveDate, f64> = HashMap::new();
     for (_id, existing_project_id, s, e, existing_percent) in rows {
-        let mut d = s.max(start_date);
-        let last = e.min(end_date);
-        while d <= last {
+        for d in each_day(s.max(start_date), e.min(end_date)) {
             // Each existing allocation is rated against ITS OWN project's calendar
             // (consistent with `domain::workload_pd` / `alloc_pd`), NOT the new task's
             // project. This fixes a bug where a cross-project allocation on a day that is
@@ -213,12 +212,10 @@ async fn validate_capacity(
             if cal.day_factor(existing_project_id, resource_id, d) > 0.0 {
                 *load_by_day.entry(d).or_default() += existing_percent;
             }
-            d = d.checked_add_days(Days::new(1)).unwrap();
         }
     }
 
-    let mut d = start_date;
-    while d <= end_date {
+    for d in each_day(start_date, end_date) {
         let limit = cal.day_factor(project_id, resource_id, d);
         if limit > 0.0 {
             let load = load_by_day.get(&d).copied().unwrap_or(0.0) + percent;
@@ -231,7 +228,6 @@ async fn validate_capacity(
                 .into());
             }
         }
-        d = d.checked_add_days(Days::new(1)).unwrap();
     }
     Ok(())
 }
