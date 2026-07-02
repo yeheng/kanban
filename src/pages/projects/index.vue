@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import type { ColumnDef } from "@tanstack/vue-table";
+import { computed, h, ref } from "vue";
 import { PlusIcon } from "@lucide/vue";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,17 +22,14 @@ import {
   NumberFieldIncrement,
   NumberFieldInput,
 } from "@/components/ui/number-field";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import DateRangePicker from "@/components/DateRangePicker.vue";
-import ListPage from "@/components/list/ListPage.vue";
+import { BasicPage } from "@/components/global-layout";
+import {
+  DataTable,
+  DataTableColumnHeader,
+  useGenerateVueTable,
+} from "@/components/data-table";
 import ListRowActions from "@/components/list/ListRowActions.vue";
 import ListToolbar from "@/components/list/ListToolbar.vue";
 import ProjectForm from "@/components/ProjectForm.vue";
@@ -70,6 +68,83 @@ function resetFilters() {
   filterName.value = "";
   filterStatus.value = "all";
 }
+
+const loading = computed(() => projectsQuery.isLoading.value);
+
+function rowClass(p: Project) {
+  return p.id === projects.current ? "bg-muted/50" : "";
+}
+
+// Column definitions
+// Cast generic component so h() can infer props without manual type args.
+const ColumnHeader = DataTableColumnHeader as any;
+
+const columns: ColumnDef<Project>[] = [
+  {
+    accessorKey: "name",
+    header: ({ column }) => h(ColumnHeader, { column, title: "项目名" }),
+    cell: ({ row }) =>
+      h(
+        "button",
+        {
+          class: [
+            "text-left hover:underline",
+            row.original.id === projects.current ? "font-bold" : "font-medium",
+          ],
+          onClick: () => projects.select(row.original.id),
+        },
+        row.original.name,
+      ),
+  },
+  {
+    accessorKey: "status",
+    header: ({ column }) => h(ColumnHeader, { column, title: "状态" }),
+    cell: ({ row }) =>
+      h(
+        Badge,
+        { variant: row.original.status === "done" ? "secondary" : "default" },
+        () => row.original.status,
+      ),
+  },
+  {
+    accessorKey: "priority",
+    header: ({ column }) => h(ColumnHeader, { column, title: "优先级" }),
+    cell: ({ row }) => row.original.priority,
+  },
+  {
+    accessorKey: "budget_pd",
+    header: ({ column }) => h(ColumnHeader, { column, title: "预算" }),
+    cell: ({ row }) => unit.formatPd(row.original.budget_pd),
+  },
+  {
+    id: "period",
+    header: ({ column }) => h(ColumnHeader, { column, title: "周期" }),
+    cell: ({ row }) => {
+      const p = row.original;
+      return p.start_date && p.end_date ? `${p.start_date} ~ ${p.end_date}` : "-";
+    },
+  },
+  {
+    accessorKey: "description",
+    header: ({ column }) => h(ColumnHeader, { column, title: "描述" }),
+    cell: ({ row }) => row.original.description || "-",
+  },
+  {
+    id: "actions",
+    cell: ({ row }) =>
+      h(ListRowActions, {
+        onEdit: () => openEdit(row.original),
+        onDelete: () => confirmDelete(row.original.id, row.original.name),
+      }),
+  },
+];
+
+const table = useGenerateVueTable<Project>({
+  columns,
+  get data() {
+    return filteredProjects.value;
+  },
+});
 
 // Edit dialog state
 const editVisible = ref(false);
@@ -141,7 +216,7 @@ const createVisible = ref(false);
 </script>
 
 <template>
-  <ListPage title="项目 / Projects" description="管理项目并维护预算与优先级">
+  <BasicPage title="项目 / Projects" description="管理项目并维护预算与优先级">
     <template #actions>
       <Button @click="createVisible = true">
         <PlusIcon class="mr-2 h-4 w-4" />
@@ -149,11 +224,13 @@ const createVisible = ref(false);
       </Button>
     </template>
 
-    <Card>
-      <CardHeader class="pb-3">
-        <CardTitle class="text-base">项目列表</CardTitle>
-      </CardHeader>
-      <CardContent class="space-y-4">
+    <DataTable
+      :table="table"
+      :columns="columns"
+      :loading="loading"
+      :row-class="rowClass"
+    >
+      <template #toolbar>
         <ListToolbar
           v-model:search="filterName"
           v-model:filter="filterStatus"
@@ -163,68 +240,8 @@ const createVisible = ref(false);
           :filter-options="statusOptions"
           @reset="resetFilters"
         />
-
-        <div class="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>项目名</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>优先级</TableHead>
-                <TableHead>预算</TableHead>
-                <TableHead class="hidden md:table-cell">周期</TableHead>
-                <TableHead class="hidden lg:table-cell">描述</TableHead>
-                <TableHead class="w-[60px]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              <TableRow
-                v-for="p in filteredProjects"
-                :key="p.id"
-                :class="{ 'bg-muted/50': p.id === projects.current }"
-              >
-                <TableCell class="font-medium">
-                  <button
-                    class="text-left hover:underline"
-                    :class="{ 'font-bold': p.id === projects.current }"
-                    @click="projects.select(p.id)"
-                  >
-                    {{ p.name }}
-                  </button>
-                </TableCell>
-                <TableCell>
-                  <Badge :variant="p.status === 'done' ? 'secondary' : 'default'">
-                    {{ p.status }}
-                  </Badge>
-                </TableCell>
-                <TableCell>{{ p.priority }}</TableCell>
-                <TableCell>{{ unit.formatPd(p.budget_pd) }}</TableCell>
-                <TableCell class="hidden md:table-cell text-muted-foreground whitespace-nowrap">
-                  <span v-if="p.start_date && p.end_date">
-                    {{ p.start_date }} ~ {{ p.end_date }}
-                  </span>
-                  <span v-else>-</span>
-                </TableCell>
-                <TableCell class="hidden lg:table-cell max-w-xs truncate text-muted-foreground">
-                  {{ p.description || "-" }}
-                </TableCell>
-                <TableCell class="text-right">
-                  <ListRowActions
-                    @edit="openEdit(p)"
-                    @delete="confirmDelete(p.id, p.name)"
-                  />
-                </TableCell>
-              </TableRow>
-              <TableRow v-if="!filteredProjects.length">
-                <TableCell colspan="7" class="text-center text-muted-foreground py-6">
-                  无匹配项目
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-      </CardContent>
-    </Card>
+      </template>
+    </DataTable>
 
     <Card>
       <CardHeader>
@@ -337,5 +354,5 @@ const createVisible = ref(false);
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </ListPage>
+  </BasicPage>
 </template>

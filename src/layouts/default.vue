@@ -43,10 +43,13 @@ import {
 } from "@lucide/vue";
 import { useProjectsStore } from "@/stores/projects";
 import { useUnitStore } from "@/stores/unit";
+import { useAppNav } from "@/composables/use-app-nav";
+import CommandMenuPanel from "@/components/command-menu-panel/index.vue";
 import { useListProjectsQuery } from "@/services/api/projects.api";
 import { useListSkillsQuery, useListTagsQuery } from "@/services/api/catalog.api";
 import { useGetUnitConfigQuery } from "@/services/api/config.api";
 
+const { items: navItems } = useAppNav();
 const projects = useProjectsStore();
 const unit = useUnitStore();
 const route = useRoute();
@@ -83,22 +86,6 @@ watch(() => projectsQuery.data.value, (items) => {
   }
 });
 
-const navItems = [
-  { to: "/dashboard", label: "仪表盘 Dashboard", icon: LayoutDashboardIcon },
-  { to: "/kanban", label: "看板 Kanban", icon: KanbanIcon },
-  { to: "/projects", label: "项目 Projects", icon: FolderKanbanIcon },
-  { to: "/resources", label: "资源 Resources", icon: UsersIcon },
-  { to: "/teams", label: "团队 Teams", icon: UsersRoundIcon },
-  { to: "/allocations", label: "分配 Allocations", icon: ListChecksIcon },
-  { to: "/calendar", label: "日历 Calendar", icon: CalendarIcon },
-  { to: "/gantt", label: "甘特图 Gantt", icon: BarChart3Icon },
-  { to: "/calendar-grid", label: "占用网格 Calendar Grid", icon: LayoutGridIcon },
-  { to: "/catalog", label: "技能标签 Catalog", icon: TagsIcon },
-  { to: "/ai", label: "AI 优化 Optimization", icon: SparklesIcon },
-  { to: "/reports", label: "报表 Reports", icon: FileTextIcon },
-  { to: "/settings", label: "设置 Settings", icon: SettingsIcon },
-];
-
 const activePath = computed(() => route.path);
 
 const projectOptions = computed(() =>
@@ -122,15 +109,15 @@ function onProjectChange(value: unknown) {
         <SidebarGroup>
           <SidebarGroupLabel>导航</SidebarGroupLabel>
           <SidebarMenu>
-            <SidebarMenuItem v-for="item in navItems" :key="item.to">
+            <SidebarMenuItem v-for="item in navItems" :key="item.url">
               <SidebarMenuButton
                 as-child
-                :tooltip="item.label"
-                :is-active="activePath === item.to"
+                :tooltip="item.title"
+                :is-active="activePath === item.url"
               >
-                <RouterLink :to="item.to">
+                <RouterLink :to="item.url">
                   <component :is="item.icon" class="size-4" />
-                  <span>{{ item.label }}</span>
+                  <span>{{ item.title }}</span>
                 </RouterLink>
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -184,6 +171,10 @@ function onProjectChange(value: unknown) {
               </SelectContent>
             </Select>
           </div>
+
+          <Separator orientation="vertical" class="h-6 hidden sm:block" />
+
+          <CommandMenuPanel />
         </div>
       </header>
 
