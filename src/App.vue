@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { VueQueryDevtools } from "@tanstack/vue-query-devtools";
 import { Toaster } from "@/components/ui/sonner";
+import { useSystemTheme } from "@/composables/use-system-theme";
+
+useSystemTheme();
 
 // 模板表达式作用域无法直接用 import.meta，故在 setup 中预计算。
 // TanStack devtools v6 为组件（非插件），且内部按 NODE_ENV 自裁剪，

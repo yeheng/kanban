@@ -1,66 +1,38 @@
 <script setup lang="ts">
 import { computed, watch } from "vue";
-import { useRoute, RouterLink } from "vue-router";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarInset,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarRail,
-  SidebarTrigger,
-} from "@/components/ui/sidebar";
-import {
-  LayoutDashboardIcon,
-  KanbanIcon,
-  FolderKanbanIcon,
-  UsersIcon,
-  TagsIcon,
-  UsersRoundIcon,
-  ListChecksIcon,
-  CalendarIcon,
-  BarChart3Icon,
-  LayoutGridIcon,
-  SparklesIcon,
-  FileTextIcon,
-  SettingsIcon,
-} from "@lucide/vue";
-import { useProjectsStore } from "@/stores/projects";
-import { useUnitStore } from "@/stores/unit";
-import { useAppNav } from "@/composables/use-app-nav";
+import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import AppSidebar from "@/components/app-sidebar/index.vue";
+import ToggleTheme from "@/components/toggle-theme.vue";
+import ThemePopover from "@/components/custom-theme/theme-popover.vue";
 import CommandMenuPanel from "@/components/command-menu-panel/index.vue";
+import { useThemeStore } from "@/stores/theme";
+import { useProjectsStore } from "@/stores/projects";
 import { useListProjectsQuery } from "@/services/api/projects.api";
 import { useListSkillsQuery, useListTagsQuery } from "@/services/api/catalog.api";
 import { useGetUnitConfigQuery } from "@/services/api/config.api";
+import { cn } from "@/lib/utils";
 
-const { items: navItems } = useAppNav();
+const themeStore = useThemeStore();
+const contentLayout = computed(() => themeStore.contentLayout);
+
 const projects = useProjectsStore();
-const unit = useUnitStore();
-const route = useRoute();
 
+// Bootstrap queries — gate router-view readiness until core data is loaded.
 const projectsQuery = useListProjectsQuery();
 const skillsQuery = useListSkillsQuery();
 const tagsQuery = useListTagsQuery();
 const unitConfigQuery = useGetUnitConfigQuery();
 
-const ready = computed(() =>
-  projectsQuery.isSuccess.value && skillsQuery.isSuccess.value && tagsQuery.isSuccess.value && unitConfigQuery.isSuccess.value,
+const ready = computed(
+  () =>
+    projectsQuery.isSuccess.value &&
+    skillsQuery.isSuccess.value &&
+    tagsQuery.isSuccess.value &&
+    unitConfigQuery.isSuccess.value,
 );
 
 const error = computed(() => {
@@ -80,105 +52,45 @@ async function retry() {
   ]);
 }
 
-watch(() => projectsQuery.data.value, (items) => {
-  if (projects.current == null && items && items.length > 0) {
-    projects.select(items[0].id);
-  }
-});
-
-const activePath = computed(() => route.path);
-
-const projectOptions = computed(() =>
-  (projectsQuery.data.value ?? []).map((p) => ({ label: p.name, value: String(p.id) })),
+// Auto-select the first project once data arrives.
+watch(
+  () => projectsQuery.data.value,
+  (items) => {
+    if (projects.current == null && items && items.length > 0) {
+      projects.select(items[0].id);
+    }
+  },
 );
-
-function onProjectChange(value: unknown) {
-  const id = Number(value);
-  if (!Number.isNaN(id)) projects.select(id);
-}
 </script>
 
 <template>
   <SidebarProvider>
-    <Sidebar collapsible="icon" class="z-50">
-      <SidebarHeader>
-        <div class="font-semibold text-lg px-2 truncate">Kanban</div>
-      </SidebarHeader>
+    <AppSidebar />
 
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>导航</SidebarGroupLabel>
-          <SidebarMenu>
-            <SidebarMenuItem v-for="item in navItems" :key="item.url">
-              <SidebarMenuButton
-                as-child
-                :tooltip="item.title"
-                :is-active="activePath === item.url"
-              >
-                <RouterLink :to="item.url">
-                  <component :is="item.icon" class="size-4" />
-                  <span>{{ item.title }}</span>
-                </RouterLink>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-      </SidebarContent>
-
-      <SidebarRail />
-    </Sidebar>
-
-    <SidebarInset>
-      <header class="flex h-14 items-center gap-3 border-b bg-card px-4 shrink-0">
-        <SidebarTrigger />
+    <SidebarInset
+      class="w-full max-w-full peer-data-[state=collapsed]:w-[calc(100%-var(--sidebar-width-icon)-1rem)] peer-data-[state=expanded]:w-[calc(100%-var(--sidebar-width))]"
+    >
+      <header
+        class="flex items-center gap-3 sm:gap-4 h-14 p-4 shrink-0 border-b bg-card transition-[width,height] ease-linear"
+      >
+        <SidebarTrigger class="-ml-1" />
         <Separator orientation="vertical" class="h-6" />
-
+        <CommandMenuPanel />
         <div class="flex-1" />
-
-        <div class="flex items-center gap-3">
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-muted-foreground hidden md:inline">项目</span>
-            <Select
-              :model-value="projects.current ? String(projects.current) : undefined"
-              @update:model-value="onProjectChange"
-            >
-              <SelectTrigger class="w-[140px] md:w-[180px]">
-                <SelectValue placeholder="选择项目" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="opt in projectOptions"
-                  :key="opt.value"
-                  :value="opt.value"
-                >
-                  {{ opt.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Separator orientation="vertical" class="h-6 hidden sm:block" />
-
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-muted-foreground hidden md:inline">单位</span>
-            <Select v-model="unit.unit">
-              <SelectTrigger class="w-[80px] md:w-[100px]">
-                <SelectValue placeholder="单位" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="PD">PD</SelectItem>
-                <SelectItem value="PM">PM</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <Separator orientation="vertical" class="h-6 hidden sm:block" />
-
-          <CommandMenuPanel />
+        <div class="ml-auto flex items-center space-x-4">
+          <ToggleTheme />
+          <ThemePopover />
         </div>
       </header>
 
-      <main class="flex-1 overflow-auto p-6">
+      <main
+        :class="
+          cn(
+            'p-6 grow overflow-auto',
+            contentLayout === 'centered' ? 'container mx-auto' : '',
+          )
+        "
+      >
         <div v-if="error" class="space-y-4">
           <Alert variant="destructive">
             <AlertTitle>加载失败</AlertTitle>
