@@ -2,6 +2,20 @@ use crate::calendar::Calendar;
 use crate::types::{Allocation, Window};
 use chrono::{Days, NaiveDate};
 
+/// Iterator over every calendar day in [start, end] inclusive.
+/// Never panics — if the range is pathological (e.g. date overflow), the iterator
+/// simply ends. Use this everywhere day-by-day iteration is needed instead of
+/// hand-rolling `while d <= end { ...; d = d.checked_add_days(1).unwrap(); }`.
+pub fn each_day(start: NaiveDate, end: NaiveDate) -> impl Iterator<Item = NaiveDate> {
+    std::iter::successors(Some(start), move |d| {
+        if d < &end {
+            d.checked_add_days(Days::new(1))
+        } else {
+            None
+        }
+    })
+}
+
 /// Calendar-day count between two inclusive dates (>=1 when a<=b), else 0.
 pub fn count_calendar_days(a: NaiveDate, b: NaiveDate) -> i64 {
     if b < a { 0 } else { (b - a).num_days() + 1 }
@@ -17,13 +31,7 @@ pub fn overlap(a: Window, b: Window) -> Option<(NaiveDate, NaiveDate)> {
 /// Sum of day_factor across a [start,end] range (shared basis for capacity & alloc).
 fn sum_day_factors(cal: &Calendar, project_id: i64, resource_id: i64,
                    start: NaiveDate, end: NaiveDate) -> f64 {
-    let mut sum = 0.0;
-    let mut d = start;
-    while d <= end {
-        sum += cal.day_factor(project_id, resource_id, d);
-        d = d.checked_add_days(Days::new(1)).unwrap();
-    }
-    sum
+    each_day(start, end).map(|d| cal.day_factor(project_id, resource_id, d)).sum()
 }
 
 /// Raw capacity (no percent) in PD for a window (design §4.3).

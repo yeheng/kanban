@@ -3,8 +3,9 @@ use crate::service::thresholds::{band, effective_thresholds_map};
 use chrono::NaiveDate;
 use db::models::DayOccupancy;
 use db::SettingsRepo;
-use domain::{capacity_pd, workload_pd, Window};
+use domain::{each_day, capacity_pd, workload_pd, Window};
 use sqlx::SqlitePool;
+use std::collections::HashMap;
 
 pub struct CalendarOccupancyService;
 
@@ -14,6 +15,7 @@ impl CalendarOccupancyService {
     /// Reuses Phase 2 `hydrate()` + Phase 0 per-day math, so per-day values are
     /// consistent with the window aggregates in `WorkloadService`. Each day's color
     /// band uses the resource's EFFECTIVE (per-team) thresholds, batched once (no N+1).
+    /// Allocations are batch-loaded in one query (no N+1 per resource).
     #[tracing::instrument(skip(pool), fields(start = %start, end = %end))]
     pub async fn range(
         pool: &SqlitePool, start: &str, end: &str,
@@ -28,18 +30,22 @@ impl CalendarOccupancyService {
         let thr_map = effective_thresholds_map(pool, &ids).await?;
         let global = SettingsRepo::thresholds(pool).await?;
 
+        // Batch-load all allocations in one query, grouped by resource_id.
+        let all_rows = db::AllocationsRepo::list_for_resources(pool, &ids, start, end).await?;
+        let mut allocs_by_res: HashMap<i64, Vec<domain::Allocation>> = HashMap::new();
+        for row in all_rows {
+            allocs_by_res.entry(row.resource_id).or_default().push(row.to_domain());
+        }
+
         let mut out = Vec::new();
         for r in resources {
             let thr = thr_map.get(&r.id).unwrap_or(&global);
-            // Load this resource's allocations once (shared across all days in range).
-            let rows = db::AllocationsRepo::list_for_resource(pool, r.id, start, end).await?;
-            let allocs: Vec<domain::Allocation> = rows.iter().map(|row| row.to_domain()).collect();
-            let mut d = s;
-            while d <= e {
+            let allocs = allocs_by_res.get(&r.id).map(|v| v.as_slice()).unwrap_or(&[]);
+            for d in each_day(s, e) {
                 let w = Window { start: d, end: d };
                 let cap = capacity_pd(&cal, 0, r.id, r.daily_capacity_pd, w); // 0 ⇒ global calendar
                 if cap > 0.0 {
-                    let wl = workload_pd(&cal, &allocs, r.id, w);
+                    let wl = workload_pd(&cal, allocs, r.id, w);
                     let util = wl / cap;
                     out.push(DayOccupancy {
                         date: d, resource_id: r.id, resource_name: r.name.clone(),
@@ -48,7 +54,6 @@ impl CalendarOccupancyService {
                         status: band(util, thr).to_string(),
                     });
                 }
-                d = d.succ_opt().unwrap();
             }
         }
         tracing::info!(resource_count = ids.len(), day_count = out.len(), "computed daily occupancy");

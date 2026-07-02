@@ -28,10 +28,11 @@
 //! per-day continuous model remains a future enhancement once `allocations` supports
 //! per-day / split assignment rows.
 use crate::solver::{
-    compute_metrics, day_capacity, each_day, needed_percent, sum_capacity, Solver,
+    compute_metrics, day_capacity, needed_percent, sum_capacity, Solver,
 };
 use crate::types::*;
 use chrono::NaiveDate;
+use domain::each_day;
 use std::collections::HashMap;
 
 #[allow(unused_imports)]
@@ -87,11 +88,11 @@ impl Solver for MilpSolver {
         // Seed committed load from existing allocations (same semantics as GreedySolver).
         let mut load: HashMap<(i64, NaiveDate), f64> = HashMap::new();
         for e in &problem.existing {
-            each_day(e.start, e.end, |day| {
+            for day in each_day(e.start, e.end) {
                 if day_capacity(&caps, e.resource_id, day) > 0.0 {
                     *load.entry((e.resource_id, day)).or_insert(0.0) += e.percent;
                 }
-            });
+            }
         }
 
         // 1. Enumerate feasible (r, t) pairs + their uniform percent (reusing needed_percent).
@@ -171,18 +172,23 @@ impl Solver for MilpSolver {
 
         let eps = 1e-9;
         let mut obj = good_lp::Expression::default();
+        // Coverage weight = w_skill_fit + w_balance. Coverage (scheduling a task at all) is
+        // valued by both non-budget objectives: skill matching (an assigned task is the
+        // prerequisite for skill-fit reward) and load balance (an unassigned task means idle
+        // capacity). Budget is excluded because it's a hard constraint, not a coverage motive.
+        // This also guarantees coverage reward > balance penalty when w_skill_fit > 0, so
+        // zero-score feasible tasks are still scheduled.
+        let cov_w = problem.weights.skill_fit + problem.weights.balance;
         for (f, &x) in feasible.iter().zip(xs.iter()) {
+            // Skill fit: weighted by w_skill_fit, normalized against max possible Σ best-score.
             let skill_term = if max_skill > eps { f.score / max_skill } else { 0.0 };
-            // Coverage reward: scheduling a task is a core objective, weighted by
-            // (skill_fit + balance) so it is always positive — never cancelled to zero by the
-            // balance penalty (which uses w_balance alone). Without this, two zero-score tasks
-            // on distinct days had reward == penalty ⇒ MILP chose to assign nothing.
+            // Coverage reward: unconditional per-task reward (priority-weighted), independent
+            // of skill score. Even when score=0, this term is strictly positive.
             let cov_term = if total_priority > eps {
                 priority_w(f.priority) / total_priority
             } else {
                 0.0
             };
-            let cov_w = problem.weights.skill_fit + problem.weights.balance;
             obj += (problem.weights.skill_fit * skill_term + cov_w * cov_term) * x;
         }
         // Balance penalty: L_max is a per-resource committed ratio (≤ 1.0 = one full day's
@@ -209,11 +215,11 @@ impl Solver for MilpSolver {
         let mut days_by_resource: HashMap<i64, Vec<NaiveDate>> = HashMap::new();
         for f in &feasible {
             let r = &problem.resources[f.r_idx];
-            each_day(f.t_start(problem), f.t_end(problem), |day| {
+            for day in each_day(f.t_start(problem), f.t_end(problem)) {
                 if day_capacity(&caps, r.id, day) > 0.0 {
                     days_by_resource.entry(r.id).or_default().push(day);
                 }
-            });
+            }
         }
         for (r_id, days) in &mut days_by_resource {
             days.sort();

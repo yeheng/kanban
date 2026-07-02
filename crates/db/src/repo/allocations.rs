@@ -59,6 +59,39 @@ impl AllocationsRepo {
         Ok(rows)
     }
 
+    /// All active allocations for MULTIPLE resources overlapping [start, end] — a batch
+    /// version of `list_for_resource` to avoid N+1 queries in dashboard/team-summary loops.
+    /// Returns all rows in one query; the caller groups by `resource_id` in memory.
+    #[tracing::instrument(skip_all, level = "debug", fields(resource_count = resource_ids.len()))]
+    pub async fn list_for_resources(
+        pool: &SqlitePool,
+        resource_ids: &[i64],
+        start: &str,
+        end: &str,
+    ) -> Result<Vec<AllocationRow>, DbError> {
+        if resource_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = resource_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT a.id, a.resource_id, a.task_id, t.project_id, r.daily_capacity_pd, \
+                    a.start_date, a.end_date, a.percent, a.status, a.source, a.run_id \
+             FROM allocations a \
+             JOIN tasks t ON t.id = a.task_id \
+             JOIN resources r ON r.id = a.resource_id \
+             WHERE a.deleted_at IS NULL AND t.deleted_at IS NULL \
+               AND a.resource_id IN ({placeholders}) \
+               AND a.start_date <= ? AND a.end_date >= ? \
+             ORDER BY a.resource_id, a.start_date"
+        );
+        let mut query = sqlx::query_as::<_, AllocationRow>(&sql);
+        for id in resource_ids {
+            query = query.bind(id);
+        }
+        let rows = query.bind(end).bind(start).fetch_all(pool).await?;
+        Ok(rows)
+    }
+
     /// All active allocations on a project, joined with resource name + task title.
     /// Column order matches `AllocationView` field order.
     #[tracing::instrument(skip_all, level = "debug", fields(project_id))]
