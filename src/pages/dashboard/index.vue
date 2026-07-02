@@ -109,7 +109,9 @@ const resourceSummaryQueries = useQueries({
 });
 
 const resourceSummaries = computed<ResourceSummary[]>(() =>
-  resourceSummaryQueries.value.filter((q) => q.isSuccess.value && q.data.value != null).map((q) => q.data.value!),
+  resourceSummaryQueries.value
+    .filter((q: any) => q.isSuccess.value && q.data.value != null)
+    .map((q: any) => q.data.value as ResourceSummary),
 );
 
 const averageUtilization = computed(() => {

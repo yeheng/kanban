@@ -6,9 +6,13 @@
 // biome-ignore lint: disable
 export {}
 declare global {
+  const CONTENT_LAYOUTS: typeof import('../constants/themes').CONTENT_LAYOUTS
   const DEFAULT_PAGE_SIZE: typeof import('../constants/pagination').DEFAULT_PAGE_SIZE
   const EffectScope: typeof import('vue').EffectScope
   const PAGE_SIZES: typeof import('../constants/pagination').PAGE_SIZES
+  const RADIUS: typeof import('../constants/themes').RADIUS
+  const THEMES: typeof import('../constants/themes').THEMES
+  const THEME_PRIMARY_COLORS: typeof import('../constants/themes').THEME_PRIMARY_COLORS
   const computed: typeof import('vue').computed
   const createApp: typeof import('vue').createApp
   const customRef: typeof import('vue').customRef
@@ -67,8 +71,11 @@ declare global {
   const useProjectsStore: typeof import('../stores/projects').useProjectsStore
   const useRoute: typeof import('vue-router').useRoute
   const useRouter: typeof import('vue-router').useRouter
+  const useSidebarConfigStore: typeof import('../stores/sidebar-config').useSidebarConfigStore
   const useSlots: typeof import('vue').useSlots
+  const useSystemTheme: typeof import('../composables/use-system-theme').useSystemTheme
   const useTemplateRef: typeof import('vue').useTemplateRef
+  const useThemeStore: typeof import('../stores/theme').useThemeStore
   const useUnitStore: typeof import('../stores/unit').useUnitStore
   const watch: typeof import('vue').watch
   const watchEffect: typeof import('vue').watchEffect
@@ -83,4 +90,10 @@ declare global {
   // @ts-ignore
   export type { NavItem } from '../composables/use-app-nav'
   import('../composables/use-app-nav')
+  // @ts-ignore
+  export type { Theme, Radius, ContentLayout } from '../constants/themes'
+  import('../constants/themes')
+  // @ts-ignore
+  export type { NavigationMode } from '../stores/sidebar-config'
+  import('../stores/sidebar-config')
 }
